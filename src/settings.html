@@ -1,0 +1,30 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:; connect-src 'none'; object-src 'none'; base-uri 'none'">
+<title>Codex 女仆 · 设置</title><link rel="stylesheet" href="settings.css"></head><body>
+<header><img class="app-logo" src="../assets/icons/app-256.png" alt="紫晶龙女仆图标" width="54" height="54"><div><h1>让她陪你写代码</h1><p>Codex 女仆 · 桌面挂件</p></div><span class="version" id="version"></span></header>
+<main><section class="status-card"><div><span id="status-dot" class="status-dot"></span><strong id="status-text">正在连接 Codex</strong><button id="refresh">刷新 ↻</button></div><p id="data-detail">额度来自本机 Codex app-server；不需要填写密钥。</p><p class="error" id="error" hidden></p></section>
+<section class="characters-section" id="characters-section"><h2>形象库 <span>CHARACTERS</span></h2>
+<div class="character-library-header"><div class="current-character"><img id="preview" alt="当前使用的形象"><div><small>当前使用</small><strong id="current-character-name">正在读取形象</strong><span id="character-count" class="character-count"></span></div></div><button id="import-characters" type="button">＋ 导入形象</button></div>
+<p class="hint character-import-hint">可一次导入多张 PNG、WebP、GIF 或 JPG，每张不超过 15 MB。建议使用透明图片。文件会保存在本机，删除原文件也能继续使用。</p>
+<div id="character-feedback" class="character-feedback" role="status" aria-live="polite" hidden></div>
+<div id="character-grid" class="character-grid" aria-label="已保存的形象"></div>
+</section>
+<section><h2>额度与气泡 <span>DATA & BUBBLE</span></h2>
+<label class="row"><span>显示的额度桶</span><select id="bucketId"><option value="">自动选择</option></select></label>
+<label class="row"><span>默认气泡内容</span><select id="mode"><option value="quota">额度与重置倒计时</option><option value="today">今日 token 用量</option><option value="week">本周 token 用量</option><option value="lastTurn">本机最近一轮</option><option value="phrase">女仆台词</option></select></label>
+<label class="row"><span>自动刷新</span><select id="refreshSeconds"><option value="30">30 秒</option><option value="60">60 秒</option><option value="120">2 分钟</option><option value="300">5 分钟</option><option value="600">10 分钟</option></select></label>
+<label class="row"><span>显示气泡</span><input id="showBubble" type="checkbox" role="switch"></label>
+<label class="row"><span>气泡自动收起</span><select id="autoHideSeconds"><option value="0">始终显示</option><option value="10">10 秒后</option><option value="30">30 秒后</option><option value="60">60 秒后</option></select></label>
+</section>
+<section><h2>她的样子 <span>APPEARANCE</span></h2>
+<label class="range-row"><span>挂件大小 <output id="scale-value">100%</output></span><input id="scale" type="range" min="0.6" max="1.6" step="0.05"><small>100% = 原版的 60%，默认更小巧</small></label>
+<label class="range-row"><span>不透明度 <output id="opacity-value">100%</output></span><input id="opacity" type="range" min="0.35" max="1" step="0.05"></label>
+<label class="row"><span>始终置顶</span><input id="alwaysOnTop" type="checkbox" role="switch"></label>
+<label class="row"><span>鼠标穿透<small>可从系统托盘或快捷键解除</small></span><input id="clickThrough" type="checkbox" role="switch"></label>
+<label class="row"><span>弹跳音效<small>默认开启，可随时关闭</small></span><input id="sound" type="checkbox" role="switch"></label>
+<label class="row"><span>跟随 Codex 桌面端<small id="autostart-note">默认开启：打开客户端时启动，退出客户端后自动退出。Windows 可携版支持。</small></span><input id="followCodex" type="checkbox" role="switch"></label>
+</section>
+<section><h2>想对你说的话 <span>PERSONALITY</span></h2><p class="hint">每行一句。点击爱心或切换台词气泡时，依次出现。</p><textarea id="phrases" rows="4" maxlength="8000" aria-label="自定义台词"></textarea><button id="save-phrases">保存台词</button><span id="saved" role="status"></span></section>
+<section class="help"><h2>相处小指南</h2><p>拖动角色或气泡移动位置，靠近屏幕四边自动吸附，靠左时角色翻转。点击角色弹跳；点击气泡刷新额度；点击 ··· 切换气泡内容；右键打开设置。</p><dl><dt>显示 / 隐藏</dt><dd>Ctrl + Alt + M</dd><dt>弹跳</dt><dd>Ctrl + Alt + Q</dd><dt>切换鼠标穿透</dt><dd>Ctrl + Alt + Shift + M</dd></dl><p>订阅额度显示剩余百分比。Token 是用量，不是账单金额。本周按本地时间周一至今统计；本机日志汇总包含此设备各账号，不能代表当前账号的跨设备用量。没有数据时显示 --。</p></section>
+</main><footer>本地运行 · 不上传聊天 · 不发起模型请求 <span id="demo-note"></span></footer>
+<script src="settings.js"></script></body></html>

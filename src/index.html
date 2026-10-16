@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:; connect-src 'none'; object-src 'none'; base-uri 'none'">
+<title>Codex 女仆</title><link rel="stylesheet" href="widget.css"></head>
+<body><main id="widget" class="widget">
+  <div id="bubble-motion" class="bubble-motion">
+  <section id="bubble" class="bubble interactive hidden-bubble" aria-label="Codex 额度气泡" aria-hidden="true" inert>
+    <svg class="bubble-outline" viewBox="0 0 354 246" aria-hidden="true" focusable="false">
+      <defs><linearGradient id="bubble-fill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-opacity=".97"/><stop offset="1" stop-opacity=".97"/></linearGradient></defs>
+      <path d="M177 5 C272.6 5 350 55.1 350 117 C350 178.9 272.6 229 177 229 C169.2 229 161.5 228.7 154 228 C151.8 228 152.2 232.3 147.7 236.8 C139.8 245.8 114.6 243.9 109.4 230.7 C107.8 226.8 109.7 221.9 105.3 220.6 C45.5 203 4 163.2 4 117 C4 55.1 81.4 5 177 5 Z" fill="url(#bubble-fill)" stroke-width="5" stroke-linejoin="round"/>
+    </svg>
+    <div class="bubble-content">
+    <header><span class="brand-mark" aria-hidden="true"><img src="../assets/codex-mark.svg" alt=""></span><span>Codex <b id="bubble-label">额度</b></span><span id="connection" class="connection" title="正在连接"></span></header>
+    <div id="quota-view"><div class="headline"><span class="quota-value"><span id="remaining" class="rolling">--</span><span class="percent">%</span></span><span class="remaining-label">剩余</span></div>
+      <div class="quota-track"><span id="primary-bar"></span></div>
+      <div class="quota-details"><span id="primary-label">额度读取中</span><span id="secondary">周额度 --</span></div>
+      <div class="reset-row"><span id="reset-tag" class="reset-tag">重置</span><time id="countdown">--:--:--</time></div>
+    </div>
+    <div id="today-view" class="alternate" hidden><span class="eyebrow">TODAY · 今日用量</span><strong id="today-tokens">--</strong><span id="today-detail">等待用量数据</span></div>
+    <div id="week-view" class="alternate" hidden><span class="eyebrow">THIS WEEK · 本周用量</span><strong id="week-tokens">--</strong><span id="week-detail">周一至今 · 等待用量数据</span></div>
+    <div id="lastTurn-view" class="alternate" hidden><span class="eyebrow">LATEST TURN · 最近一轮</span><strong id="last-tokens">--</strong><span id="last-detail">完成对话后在这里查看</span></div>
+    <div id="phrase-view" class="phrase-view" hidden><span class="eyebrow">MAID'S NOTE</span><p id="phrase"></p><span class="phrase-heart">✧</span></div>
+    <footer><button id="cycle" title="切换气泡内容" aria-label="切换气泡内容"><span class="cycle-dots" aria-hidden="true"><span></span><span></span><span></span></span></button></footer>
+    </div>
+  </section>
+  <div class="thought-dot dot-one hidden-dots"></div><div class="thought-dot dot-two hidden-dots"></div>
+  </div>
+  <div id="character" class="character interactive" role="button" tabindex="0" aria-label="拖动女仆，点击弹跳，右键打开设置"><img id="maid-image" alt="紫晶龙 Codex 女仆" draggable="false"></div>
+  <nav class="toolbar interactive" aria-label="挂件操作"><button id="refresh" title="刷新额度" aria-label="刷新额度">↻</button><button id="talk" title="换句台词" aria-label="换句台词">♡</button><button id="settings" title="打开设置" aria-label="打开设置">⚙</button><button id="hide" title="隐藏（托盘可恢复）" aria-label="隐藏挂件">−</button></nav>
+  <div id="notice" class="notice" role="status" hidden></div>
+  <div id="demo-label" class="demo-label" hidden>演示数据</div>
+</main><script src="character-theme.js"></script><script src="widget.js"></script></body></html>

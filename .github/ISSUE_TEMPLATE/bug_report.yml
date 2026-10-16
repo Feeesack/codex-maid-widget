@@ -1,0 +1,17 @@
+name: Bug report / 问题反馈
+description: Report a reproducible issue without private data.
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: OS and app version / 系统与版本
+      placeholder: Windows 11 x64, app 0.3.12
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps, expected and actual behavior / 复现步骤及预期与实际表现
+      description: Remove account data, tokens, personal paths and conversation content. 请勿附带账户、令牌、个人路径或聊天内容。
+    validations:
+      required: true

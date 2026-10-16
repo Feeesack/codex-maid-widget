@@ -1,0 +1,25 @@
+Codex Maid Widget - Windows x64
+
+This installer contains the complete application, Electron runtime, character
+assets and Codex plugin. Node.js, npm and this source project are not required.
+
+Use the Start menu or desktop shortcut to open the widget. Existing Windows
+features and behavior are preserved. Widget preferences and imported
+characters are stored in your user profile under .codex-maid-widget.
+
+To enable maid tools inside Codex, select "Connect Codex plugin" at the end of
+installation, or use "Connect Codex plugin" in the Start menu. Codex itself must
+already be installed. The connection wizard can locate Codex or ask you to choose
+its command-line executable. Restart Codex and open a new chat after connecting.
+You can use the widget normally even before connecting the optional plugin.
+
+Use Windows Settings > Apps > Installed apps to uninstall. Your widget settings,
+characters and Codex files are preserved. Upgrades close only the installed
+widget; a portable copy in another folder and Codex itself are left running.
+
+This build is unsigned. Windows may ask you to confirm its source. Download it
+from the project's official GitHub Releases page.
+
+Project code: MIT (LICENSE). Project character and icon artwork: CC BY 4.0
+(ARTWORK_LICENSE.md and licenses/CC-BY-4.0.txt). NOTICE contains credits and
+third-party attribution. Electron's runtime license is preserved separately.

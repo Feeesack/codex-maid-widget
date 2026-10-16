@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "maid": {
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/mcp.cjs"]
+    }
+  }
+}

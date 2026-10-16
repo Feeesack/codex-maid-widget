@@ -1,0 +1,46 @@
+Codex Maid Widget
+https://github.com/Feeesack/codex-maid-widget
+
+Original project code and documentation: MIT (see LICENSE).
+Project-provided character and application icon artwork: CC BY 4.0
+(see ARTWORK_LICENSE.md and licenses/CC-BY-4.0.txt).
+Artwork credit: Codex Maid Widget contributors; generated with GPTimage2.5
+as stated by the project author.
+
+Design references and acknowledgements
+-------------------------------------
+MeteorNOX/DeepSeek-Balance-Whale-Widget
+https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget
+The DeepSeek/DSH whale widget inspired the desktop-companion, bubble,
+drag-and-snap, and interaction ideas.
+
+Yang-huai406/Codex-Whale-Public
+https://github.com/Yang-huai406/Codex-Whale-Public
+Studied as a reference for a Codex desktop companion.
+
+The project independently implements its code and interface. It does not
+redistribute those reference projects' code, whale artwork, animations,
+or audio. Their respective authors retain their rights.
+
+OpenAI mark
+-----------
+assets/codex-mark.svg and the matching macOS copy originate from:
+https://github.com/openai/openai-agents-python/blob/main/docs/assets/logo.svg
+The mark is excluded from the project's artwork license. OpenAI names and
+marks remain third-party property. This project grants no trademark rights
+and makes no claim of OpenAI affiliation or endorsement.
+
+Runtime and build dependencies
+------------------------------
+Electron: https://www.electronjs.org/ (MIT; bundled third-party components
+retain their own notices).
+Node.js: https://nodejs.org/ (MIT and third-party component notices).
+Inno Setup: https://jrsoftware.org/isinfo.php (its own license; used to
+generate the Windows installer).
+@electron/packager and other development dependencies retain their own
+licenses. Consult the installed dependency packages for complete notices.
+Packaged runtimes include Electron's LICENSE and LICENSES.chromium.html;
+retain those files when redistributing the runtime.
+
+Codex app-server and plugin interfaces are provided by OpenAI. Codex is
+installed and authenticated separately and is not redistributed here.

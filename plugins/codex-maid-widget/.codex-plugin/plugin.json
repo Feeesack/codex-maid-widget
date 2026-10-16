@@ -1,0 +1,24 @@
+{
+  "name": "codex-maid-widget",
+  "version": "0.3.12",
+  "description": "查看 Codex 女仆桌面挂件的额度与本地用量，控制显示、刷新和互动。",
+  "author": {
+    "name": "Codex Maid Widget contributors"
+  },
+  "license": "MIT",
+  "mcpServers": "./.mcp.json",
+  "requires_local_executor": true,
+  "interface": {
+    "displayName": "Codex 女仆挂件",
+    "shortDescription": "额度提醒与桌面陪伴",
+    "longDescription": "连接本机正在运行的女仆挂件，查看安全的额度快照与本地用量，显示、隐藏、刷新或打开设置。无需 API key；不会读取聊天正文。",
+    "developerName": "Codex Maid Widget contributors",
+    "category": "Productivity",
+    "brandColor": "#176f70",
+    "defaultPrompt": [
+      "查看女仆挂件状态",
+      "显示女仆挂件",
+      "刷新挂件的额度"
+    ]
+  }
+}

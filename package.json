@@ -1,0 +1,27 @@
+{
+  "name": "codex-maid-widget",
+  "version": "0.3.12",
+  "description": "Codex 女仆额度桌面挂件 · 透明悬浮、真实额度与本地用量",
+  "main": "src/entry.cjs",
+  "private": true,
+  "license": "MIT",
+  "author": "Codex Maid Widget contributors",
+  "scripts": {
+    "start": "electron .",
+    "demo": "electron . --demo",
+    "test": "node --test test/*.test.cjs",
+    "smoke": "electron scripts/smoke.cjs",
+    "check:native": "node scripts/check-native.cjs",
+    "check:follow": "node scripts/check-follow.cjs",
+    "check:launch": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/check-launch-job.ps1",
+    "profile:background": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/profile-background.ps1",
+    "icons": "electron scripts/render-icons.cjs",
+    "build": "node scripts/build.cjs",
+    "probe": "node scripts/probe-codex.cjs",
+    "icons:clean-background": "electron scripts/clean-icon-background.cjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "44.7.2"
+  }
+}

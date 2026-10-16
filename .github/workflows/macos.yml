@@ -1,0 +1,133 @@
+name: macOS universal installer and native verification
+on:
+  workflow_dispatch:
+    inputs:
+      validate_only:
+        description: Run source checks without rebuilding the installer
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  actions: read
+jobs:
+  validate:
+    runs-on: macos-15
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: macos
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: macos/package-lock.json
+      - name: Require matching Windows and macOS application versions
+        run: node ../distribution/check-versions.cjs
+      - name: Verify version mismatch protection
+        run: node --test ../distribution/test/version.test.cjs
+      - run: npm ci
+      - run: npm test
+      - run: npm run smoke
+        env:
+          CODEX_MAID_SCREENSHOTS: ${{ runner.temp }}/maid-smoke
+      - run: npm run check:native
+      - run: npm run check:follow
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macOS-smoke
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/maid-smoke
+  build:
+    if: ${{ !inputs.validate_only }}
+    runs-on: macos-15
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: macos
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: macos/package-lock.json
+      - name: Require matching Windows and macOS application versions
+        run: node ../distribution/check-versions.cjs
+      - run: npm ci
+      - name: Build a complete ARM64 and Intel universal Apple Installer package
+        run: npm run build:installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Codex-Maid-Widget-macOS-universal-installer
+          if-no-files-found: error
+          compression-level: 0
+          path: |
+            macos/release/**/installers/*.pkg
+            macos/release/**/installers/*.sha256
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macOS-smoke-build
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/maid-smoke
+  install:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: macos
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: macos/package-lock.json
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: Codex-Maid-Widget-macOS-universal-installer
+          path: macos/tmp/installer
+      - name: Verify checksum and native package contents
+        run: |
+          package=$(find "$PWD/tmp/installer" -type f -name '*.pkg' -print -quit)
+          test -n "$package"
+          cd "$(dirname "$package")"
+          shasum -a 256 -c *.sha256
+          cd "$GITHUB_WORKSPACE/macos"
+          node scripts/verify-installer.cjs --file "$package"
+      - name: Install the actual package with Apple's installer
+        run: |
+          package=$(find "$PWD/tmp/installer" -type f -name '*.pkg' -print -quit)
+          sudo /usr/sbin/installer -pkg "$package" -target /
+          /usr/sbin/pkgutil --pkg-info com.codexmaid.widget.installer
+      - name: Verify installed .app startup and features using bundled runtime
+        run: |
+          node scripts/verify-package.cjs --arch universal --directory /Applications
+          node scripts/check-package.cjs --directory /Applications
+          runtime='/Applications/Codex-Maid-Widget.app/Contents/MacOS/Codex-Maid-Widget'
+          test "$(ELECTRON_RUN_AS_NODE=1 "$runtime" -p 'process.arch')" = '${{ matrix.arch }}'
+          test -x '/Applications/Codex-Maid-Widget-连接 Codex.command'
+          ELECTRON_RUN_AS_NODE=1 "$runtime" '/Applications/Codex-Maid-Widget.app/Contents/Resources/integration/connect.cjs'
+      - name: Run platform tests and native checks on each real architecture
+        run: |
+          npm test
+          npm run check:native
+          npm run check:follow
+      - name: Verify the installed background helper with real launchd
+        run: node scripts/check-macos-startup.cjs --directory /Applications

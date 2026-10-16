@@ -1,0 +1,382 @@
+'use strict';
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, globalShortcut, dialog } = require('electron');
+const fs = require('node:fs');
+const path = require('node:path');
+const http = require('node:http');
+const crypto = require('node:crypto');
+const os = require('node:os');
+const { readSettings, writeSettings, sanitize, widgetDimensions, constrainPosition, snapBounds } = require('./settings.cjs');
+const { CharacterLibrary } = require('./character-library.cjs');
+const { CodexDataSource } = require('./codex-data.cjs');
+const { CodexDesktopMonitor, buildLaunchArgs } = require('./codex-desktop.cjs');
+const { watchAuthChanges } = require('./auth-change-watch.cjs');
+const { launchThroughExplorer } = require('./windows-launch.cjs');
+const { prepareDataHome } = require('./data-home.cjs');
+const { readDesktopObservation } = require('./desktop-observation.cjs');
+app.setName('codex-maid-widget');
+const demoMode = process.argv.includes('--demo');
+const root = path.join(__dirname, '..');
+const windowIcon = process.platform === 'win32' ? path.join(root, 'assets', 'app-icon.ico') : path.join(root, 'assets', 'icons', 'app-256.png');
+const dataDir = prepareDataHome({legacyDir:app.getPath('userData')});
+process.env.CODEX_MAID_HOME = dataDir;
+fs.mkdirSync(dataDir,{recursive:true});
+app.setPath('userData',dataDir);
+const settingsFile = path.join(dataDir, 'settings.json');
+let settings = readSettings(settingsFile);
+let widget, settingsWindow, tray, source, timer, controlServer, library, desktopMonitor, stopAuthWatch, authRefreshTimer;
+let followRegistered = null, followLaunchGeneration = 0, refreshGeneration = 0;
+const followSupported = process.platform === 'win32' && app.isPackaged && !demoMode;
+let followError = '';
+let snapshot = { status: 'connecting', buckets: [], today: null, lastTurn: null };
+let quitting = false, drag = null, refreshing = null, ownsControl = false;
+function save() { writeSettings(settingsFile, settings); }
+function state() {
+  const characters = library.list();
+  const active = characters.find(item => item.id === settings.activeCharacterId && item.available) || characters.find(item => item.id === library.defaultId);
+  return { settings, snapshot, demo: demoMode, version: app.getVersion(), characters, followSupported, followError,
+    activeCharacterId: active.id, characterUrl: active.url, characterName: active.name };
+}
+function broadcast() {
+  for (const win of [widget, settingsWindow]) if (win && !win.isDestroyed()) win.webContents.send('state', state());
+}
+function dimensions() { return widgetDimensions(settings.scale); }
+function applyWindowSettings() {
+  widget.setAlwaysOnTop(settings.alwaysOnTop, 'floating');
+  widget.setOpacity(settings.opacity);
+  widget.setIgnoreMouseEvents(settings.clickThrough, { forward: true });
+  const old = widget.getBounds();
+  const size = dimensions();
+  const area = screen.getDisplayMatching(old).workArea;
+  const p = constrainPosition({ ...old, ...size }, area);
+  widget.setBounds({ ...p, ...size });
+  syncDesktopFollow();
+  updateTray();
+}
+function readyWatcherRecord() {
+  try {
+    const record = JSON.parse(fs.readFileSync(path.join(dataDir,'watcher.json'),'utf8'));
+    if (!Number.isInteger(record.pid) || record.pid <= 0 || record.version !== app.getVersion() ||
+        typeof record.executable !== 'string' || path.resolve(record.executable).toLowerCase() !== path.resolve(process.execPath).toLowerCase() ||
+        typeof record.loginStartupEnabled !== 'boolean') return null;
+    process.kill(record.pid,0);
+    return record;
+  } catch { return null; }
+}
+function dispatchDesktopWatcher(extraArgs = []) {
+  return launchThroughExplorer({ executable:process.execPath, args:[...buildLaunchArgs({packaged:app.isPackaged,appRoot:root,flag:'--watch-codex'}),'--maid-home='+dataDir,...extraArgs], cwd:path.dirname(process.execPath) });
+}
+async function ensureDesktopWatcher(generation) {
+  // A detached child can still belong to Codex's Windows Job. Ask the existing
+  // Explorer desktop to own this process so closing Codex cannot kill it.
+  await dispatchDesktopWatcher();
+  const deadline = Date.now()+6000;
+  while (!quitting && settings.followCodex && generation === followLaunchGeneration) {
+    const record = readyWatcherRecord();
+    if (record) return record;
+    if (Date.now() >= deadline) throw new Error('watcher-not-ready');
+    await new Promise(resolve => setTimeout(resolve,150));
+  }
+}
+async function disableDesktopWatcher(generation) {
+  const requestId = crypto.randomUUID();
+  await dispatchDesktopWatcher(['--follow-request='+requestId]);
+  const deadline = Date.now()+6000;
+  while (!quitting && !settings.followCodex && generation === followLaunchGeneration) {
+    let record;
+    try { record = JSON.parse(fs.readFileSync(path.join(dataDir,'follow-startup.json'),'utf8')); } catch {}
+    if (record?.requestId === requestId && record.version === app.getVersion() &&
+        typeof record.executable === 'string' && path.resolve(record.executable).toLowerCase() === path.resolve(process.execPath).toLowerCase()) {
+      if (record.loginStartupEnabled !== false || record.loginStartupError) throw new Error('startup-removal-failed');
+      return;
+    }
+    if (Date.now() >= deadline) throw new Error('startup-removal-not-confirmed');
+    await new Promise(resolve => setTimeout(resolve,150));
+  }
+}
+function syncDesktopFollow() {
+  if (!followSupported || followRegistered === settings.followCodex) return;
+  const generation = ++followLaunchGeneration;
+  try {
+    // The Explorer-owned helper registers the real Windows startup entry.
+    // Writes from a Codex/MSIX child can land in a private registry view.
+    followError = ''; followRegistered = settings.followCodex;
+    if (settings.followCodex) {
+      void ensureDesktopWatcher(generation).then(record => {
+        if (!record || quitting || !settings.followCodex || generation !== followLaunchGeneration) return;
+        followError = record.loginStartupEnabled ? '' : 'Windows 登录启动项未启用，请在系统启动应用中开启 CodexMaidFollow。';
+        broadcast();
+      }).catch(() => {
+        if (quitting || !settings.followCodex || generation !== followLaunchGeneration) return;
+        followError = '后台启动助手未能就绪，请重新开启跟随开关；需保持 Windows 资源管理器运行。';
+        followRegistered = null; broadcast();
+      });
+      desktopMonitor?.stop();
+      desktopMonitor = new CodexDesktopMonitor({ query: () => readDesktopObservation({ dataDir, executable: process.execPath, version: app.getVersion() }),
+        onMissing: () => { if (settings.followCodex && !quitting) app.quit(); } });
+      desktopMonitor.start();
+    } else {
+      desktopMonitor?.stop(); desktopMonitor = null;
+      // Dispatch even if the old helper is gone so disabling follow also
+      // removes its real login entry outside the MSIX registry view.
+      void disableDesktopWatcher(generation).catch(() => {
+        if (quitting || settings.followCodex || generation !== followLaunchGeneration) return;
+        followError = '未能移除 Windows 登录启动项，请重新开启再关闭跟随开关。';
+        followRegistered = null; broadcast();
+      });
+    }
+  } catch {
+    followRegistered = null;
+    followError = '未能保存自动跟随设置，请检查 Windows 启动项权限后重试。';
+  }
+}
+function updateSettings(patch) {
+  // File paths and window positions are only set by trusted native actions.
+  const { characterPath, activeCharacterId, position, ...safe } = patch || {};
+  settings = sanitize({ ...settings, ...safe });
+  save(); applyWindowSettings(); schedule(); broadcast();
+  return state();
+}
+function updateTray() {
+  if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: '显示女仆 · Ctrl+Alt+M', click: show },
+    { label: '刷新额度', click: () => refresh() },
+    { label: '切换形象', submenu: characterMenuItems() },
+    { label: '设置', click: openSettings },
+    { type: 'separator' },
+    { label: '鼠标穿透 · Ctrl+Alt+Shift+M', type: 'checkbox', checked: settings.clickThrough, click: i => updateSettings({ clickThrough: i.checked }) },
+    { label: '始终置顶', type: 'checkbox', checked: settings.alwaysOnTop, click: i => updateSettings({ alwaysOnTop: i.checked }) },
+    { label: '重置位置', click: resetPosition },
+    { label: '隐藏挂件', click: () => widget.hide() },
+    { type: 'separator' },
+    { label: '退出', click: () => app.quit() },
+  ]));
+}
+function characterMenuItems() {
+  const activeId = state().activeCharacterId;
+  return [
+    ...library.list().map(item => ({ label: item.name.replace(/&/g,'&&'), type: 'radio', checked: item.id === activeId, enabled: item.available, click: () => selectCharacter(item.id) })),
+    { type: 'separator' },
+    { label: '管理形象…', click: openSettings },
+  ];
+}
+function selectCharacter(id) {
+  const item = library.get(id);
+  if (!item || !item.available) throw new Error('该形象不存在或图片已损坏，请重新导入。');
+  settings.activeCharacterId = item.id;
+  settings.characterPath = '';
+  save(); updateTray(); broadcast();
+  return state();
+}
+async function validateBrowserImage(file) {
+  if (typeof file !== 'string' || !path.isAbsolute(file)) throw new Error('请选择本地图片。');
+  const info = fs.statSync(file);
+  if (!info.isFile() || info.size > 15 * 1024 * 1024) throw new Error('请选择小于 15 MB 的图片。');
+  // Windows nativeImage decodes PNG/JPEG but not GIF/WebP; validate those in Chromium.
+  if (!/\.(gif|webp)$/i.test(file)) return;
+  const url = require('node:url').pathToFileURL(file).href;
+  const decoded = await widget.webContents.executeJavaScript(`new Promise(resolve => {
+    const img = new Image(); let finished = false;
+    const done = value => { if(finished)return;finished=true;clearTimeout(timer);img.onload=null;img.onerror=null;img.src='';resolve(value); };
+    const timer = setTimeout(()=>done(null),5000);
+    img.onload = () => done({width:img.naturalWidth,height:img.naturalHeight});
+    img.onerror = () => done(null);
+    img.src = ${JSON.stringify(url)};
+  })`);
+  if (!decoded?.width || !decoded?.height) throw new Error('无法读取这张图片，请重新导出后导入。');
+  if (decoded.width > 16384 || decoded.height > 16384 || decoded.width * decoded.height > 64000000) throw new Error('图片尺寸过大，请先缩小图片后导入。');
+}
+async function importCharacterFiles(paths) {
+  const result = {imported:[],existing:[],errors:[]};
+  for (const file of paths) {
+    try {
+      await validateBrowserImage(file);
+      const next = library.importFiles([file]);
+      for (const key of Object.keys(result)) result[key].push(...next[key]);
+    } catch(error) {
+      result.errors.push({name:typeof file==='string'?path.basename(file):'图片',message:error.code==='ENOENT'?'图片不存在或已移动。':error.message});
+    }
+  }
+  return result;
+}
+function show() { widget.show(); widget.moveTop(); broadcast(); }
+function resetPosition() {
+  const area = screen.getPrimaryDisplay().workArea;
+  const size = dimensions();
+  settings.position = { x: area.x + area.width - size.width, y: area.y + area.height - size.height };
+  settings.mirror = false;
+  widget.setBounds({ ...settings.position, ...size });
+  save(); show();
+}
+async function refresh() {
+  if (refreshing) return refreshing;
+  const generation = refreshGeneration;
+  const task = (async () => {
+    broadcast();
+    try {
+      const next = demoMode ? require('./demo.cjs')() : await source.read();
+      if (generation !== refreshGeneration || next.invalidated || quitting) return snapshot;
+      snapshot = next.error && !next.clearPrevious && !next.accountChanged && !next.buckets?.length && snapshot.buckets?.length
+        ? { ...next, buckets: snapshot.buckets, updatedAt: snapshot.updatedAt, stale: true }
+        : next;
+    }
+    catch { if (generation !== refreshGeneration || quitting) return snapshot; snapshot = { ...snapshot, status: 'offline', account:null, buckets:[], stale:false, error: '暂时无法读取 Codex，请稍后刷新。' }; }
+    broadcast();
+    return snapshot;
+  })().finally(() => { if (refreshing === task) refreshing = null; });
+  refreshing = task;
+  return task;
+}
+function authChanged() {
+  refreshGeneration++; source?.invalidate(); refreshing = null;
+  // Device token totals survive account switches; only account-specific data is cleared.
+  snapshot = { ...snapshot, account:null, buckets:[], stale:false, status:'connecting', accountChanged:true, error:null };
+  broadcast(); clearTimeout(authRefreshTimer);
+  authRefreshTimer = setTimeout(() => { if (!quitting) refresh(); }, 500);
+}
+function schedule() { clearInterval(timer); timer = setInterval(() => refresh(), settings.refreshSeconds * 1000); }
+function openSettings() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) { settingsWindow.show(); settingsWindow.focus(); return; }
+  settingsWindow = new BrowserWindow({ width: 550, height: 760, minWidth: 470, minHeight: 520,
+    icon: windowIcon,
+    title: 'Codex 女仆 · 设置', backgroundColor: '#f5faf8', autoHideMenuBar: true,
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  secureWindow(settingsWindow);
+  settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
+  settingsWindow.on('closed', () => { settingsWindow = null; });
+}
+function secureWindow(win) {
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', event => event.preventDefault());
+  win.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+}
+function action(name) {
+  switch (name) {
+    case 'show': show(); break;
+    case 'hide': widget.hide(); break;
+    case 'refresh': return refresh();
+    case 'bounce': widget.webContents.send('bounce'); break;
+    case 'settings': openSettings(); break;
+    default: throw new Error('未知操作');
+  }
+}
+function setupIpc() {
+  const trusted = event => event.sender === widget?.webContents || event.sender === settingsWindow?.webContents;
+  const handle = (name, callback) => ipcMain.handle(name, (event, ...args) => {
+    if (!trusted(event)) throw new Error('无效窗口');
+    return callback(event, ...args);
+  });
+  handle('state', () => state());
+  handle('refresh', () => refresh());
+  handle('settings', (event, patch) => {
+    if (event.sender !== settingsWindow?.webContents && event.sender !== widget.webContents) throw new Error('无效窗口');
+    return updateSettings(patch);
+  });
+  handle('action', (_event, name) => action(name));
+  handle('import-characters', async () => {
+    const result = await dialog.showOpenDialog(settingsWindow || widget, { title: '导入形象（可多选，推荐透明 PNG）', properties: ['openFile','multiSelections'], filters: [{ name: '图片', extensions: ['png','webp','jpg','jpeg','gif'] }] });
+    if (result.canceled) return { state: state(), importedCount: 0, existingCount: 0, errors: [] };
+    const imported = await importCharacterFiles(result.filePaths);
+    updateTray(); broadcast();
+    return { state: state(), importedCount: imported.imported.length, existingCount: imported.existing.length, errors: imported.errors };
+  });
+  handle('select-character', (_event,id) => selectCharacter(id));
+  handle('rename-character', (_event,id,name) => { library.rename(id,name); updateTray(); broadcast(); return state(); });
+  handle('remove-character', (_event,id) => {
+    library.remove(id);
+    if (settings.activeCharacterId === id) { settings.activeCharacterId = library.defaultId; save(); }
+    updateTray(); broadcast(); return state();
+  });
+  ipcMain.on('drag-start', event => {
+    if (event.sender !== widget.webContents || settings.clickThrough) return;
+    drag = { cursor: screen.getCursorScreenPoint(), origin: widget.getPosition() };
+    widget.setIgnoreMouseEvents(false);
+  });
+  ipcMain.on('drag-move', event => {
+    if (event.sender !== widget.webContents || !drag) return;
+    const cursor = screen.getCursorScreenPoint();
+    widget.setPosition(drag.origin[0] + cursor.x - drag.cursor.x, drag.origin[1] + cursor.y - drag.cursor.y);
+  });
+  ipcMain.on('drag-end', event => {
+    if (event.sender !== widget.webContents || !drag) return;
+    drag = null;
+    const bounds = widget.getBounds();
+    const p = snapBounds(bounds, screen.getDisplayMatching(bounds).workArea);
+    settings.position = { x: p.x, y: p.y }; settings.mirror = p.mirror;
+    widget.setPosition(p.x, p.y); save(); broadcast();
+  });
+  ipcMain.on('pointer-region', (event, inside) => {
+    if (event.sender === widget.webContents && !settings.clickThrough && !drag) widget.setIgnoreMouseEvents(!inside, { forward: true });
+  });
+}
+async function startControl() {
+  const token = crypto.randomBytes(32).toString('hex');
+  controlServer = http.createServer(async (req, res) => {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    if (req.headers.origin || req.headers.authorization !== `Bearer ${token}`) { res.writeHead(403); res.end('{"error":"Forbidden"}'); return; }
+    if (req.method === 'GET' && req.url === '/status') {
+      const character = state();
+      res.end(JSON.stringify({ ...snapshot, visible: widget.isVisible(), demo: demoMode, version: app.getVersion(), activeCharacterId: character.activeCharacterId, characterName: character.characterName, characterCount: character.characters.length, followCodex:settings.followCodex, followSupported, followError })); return;
+    }
+    if (req.method !== 'POST' || req.url !== '/action') { res.writeHead(404); res.end('{}'); return; }
+    let body = '';
+    for await (const chunk of req) { body += chunk; if (body.length > 2048) { res.writeHead(413); res.end('{}'); return; } }
+    try { const input = JSON.parse(body); await action(input.action); res.end(JSON.stringify({ ok: true })); }
+    catch { res.writeHead(400); res.end('{"error":"Invalid action"}'); }
+  });
+  await new Promise((resolve, reject) => { controlServer.once('error', reject); controlServer.listen(0, '127.0.0.1', resolve); });
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(path.join(dataDir, 'control.json'), JSON.stringify({ port: controlServer.address().port, token, pid: process.pid }), { mode: 0o600 });
+  ownsControl = true;
+}
+if (!app.requestSingleInstanceLock()) app.quit();
+else {
+  app.on('second-instance', () => widget && show());
+  app.whenReady().then(async () => {
+    library = new CharacterLibrary({ dataDir, assetRoot: path.join(root,'assets'), validateImage: file => {
+      if (/\.(gif|webp)$/i.test(file)) return; // Decoded by validateBrowserImage before import/migration.
+      const decoded = nativeImage.createFromPath(file);
+      if (decoded.isEmpty()) throw new Error('无法读取这张图片，请选择有效的 PNG、WebP、GIF 或 JPEG。');
+      const size = decoded.getSize();
+      if (size.width > 16384 || size.height > 16384 || size.width * size.height > 64000000) throw new Error('图片尺寸过大，请先缩小图片后导入。');
+    } });
+    if (!library.get(settings.activeCharacterId)?.available) settings.activeCharacterId = library.defaultId;
+    source = new CodexDataSource();
+    if (!demoMode) stopAuthWatch = watchAuthChanges(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), authChanged);
+    widget = new BrowserWindow({ ...dimensions(), frame: false, transparent: true, resizable: false,
+      icon: windowIcon,
+      hasShadow: false, skipTaskbar: true, show: false, backgroundColor: '#00000000',
+      webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+    secureWindow(widget); setupIpc();
+    const area = screen.getPrimaryDisplay().workArea;
+    const p = settings.position || { x: area.x + area.width - dimensions().width, y: area.y + area.height - dimensions().height };
+    widget.setPosition(p.x, p.y); applyWindowSettings();
+    save();
+    await widget.loadFile(path.join(__dirname, 'index.html'));
+    if (settings.characterPath && fs.existsSync(settings.characterPath)) {
+      try {
+        await validateBrowserImage(settings.characterPath);
+        const legacy = library.migrateLegacy(settings.characterPath);
+        if (legacy) { settings.activeCharacterId = legacy.id; settings.characterPath = ''; save(); }
+      } catch {
+        // Keep the original path for recovery; an invalid old picture must not block startup.
+      }
+    }
+    // On Windows the ICO path lets Electron request an actual DPI-sized HICON.
+    // A composed PNG NativeImage uses its 1x bitmap in this Electron version,
+    // which Windows then enlarges and blurs on high-DPI displays.
+    tray = new Tray(process.platform === 'win32' ? path.join(root, 'assets', 'app-icon.ico') : path.join(root, 'assets', 'icons', 'tray-32.png'));
+    tray.setToolTip('Codex 女仆 · 额度与陪伴'); tray.on('click', show); updateTray();
+    widget.on('close', event => { if (!quitting) { event.preventDefault(); widget.hide(); } });
+    screen.on('display-removed', () => resetPosition());
+    globalShortcut.register('Control+Alt+M', () => widget.isVisible() ? widget.hide() : show());
+    globalShortcut.register('Control+Alt+Q', () => action('bounce'));
+    globalShortcut.register('Control+Alt+Shift+M', () => updateSettings({ clickThrough: !settings.clickThrough }));
+    await startControl(); show(); schedule(); refresh();
+  }).catch(error => { dialog.showErrorBox('Codex 女仆启动失败', error.message); app.quit(); });
+}
+app.on('window-all-closed', () => {});
+app.on('before-quit', () => {
+  quitting = true; clearInterval(timer); clearTimeout(authRefreshTimer); stopAuthWatch?.(); desktopMonitor?.stop(); globalShortcut.unregisterAll(); source?.close(); controlServer?.close();
+  if (ownsControl) try { fs.unlinkSync(path.join(dataDir, 'control.json')); } catch {}
+});

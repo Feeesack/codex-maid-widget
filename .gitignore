@@ -1,0 +1,21 @@
+# Dependencies, local state and generated artifacts
+**/node_modules/
+**/release/
+**/tmp/
+**/coverage/
+**/.DS_Store
+Thumbs.db
+Desktop.ini
+*.log
+*.tmp
+.env
+.env.*
+!.env.example
+/auth.json
+/control.json
+/watcher.json
+/settings.json
+/characters/
+/userData/
+chat_backup/
+docs/coordination/

@@ -1,0 +1,39 @@
+{
+  "name": "codex-maid-widget",
+  "version": "0.3.12",
+  "description": "Codex 女仆额度桌面挂件 · macOS 适配版",
+  "main": "src/entry.cjs",
+  "private": true,
+  "license": "MIT",
+  "author": "Codex Maid Widget contributors",
+  "scripts": {
+    "start": "electron .",
+    "demo": "electron . --demo",
+    "test": "node --test test/*.test.cjs",
+    "smoke": "electron scripts/smoke.cjs",
+    "check:native": "node scripts/check-native.cjs",
+    "check:follow": "node scripts/check-follow.cjs",
+    "icons": "electron scripts/render-icons.cjs && node scripts/mac-icon.cjs",
+    "build": "node scripts/build.cjs",
+    "probe": "node scripts/probe-codex.cjs",
+    "icons:clean-background": "electron scripts/clean-icon-background.cjs",
+    "icons:mac": "node scripts/mac-icon.cjs",
+    "build:mac": "node scripts/build.cjs",
+    "build:mac:arm64": "node scripts/build.cjs --arch arm64",
+    "build:mac:x64": "node scripts/build.cjs --arch x64",
+    "verify:package": "node scripts/verify-package.cjs",
+    "check:package": "node scripts/check-package.cjs",
+    "bundle:source": "node scripts/source-bundle.cjs",
+    "plugin:prepare": "node scripts/prepare-plugin.cjs",
+    "build:mac:universal": "node scripts/build.cjs --arch universal",
+    "build:installer": "node scripts/build-installer.cjs",
+    "verify:installer": "node scripts/verify-installer.cjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "44.7.2"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

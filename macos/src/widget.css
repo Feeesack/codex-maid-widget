@@ -1,0 +1,117 @@
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;user-select:none;font-family:"Segoe UI","Microsoft YaHei",-apple-system,"PingFang SC",sans-serif;color:#23433f}
+button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
+button:focus-visible,[role=button]:focus-visible{outline:3px solid var(--theme-progress-start);outline-offset:3px}
+.widget{width:380px;height:480px;position:relative;transform-origin:0 0;color:var(--theme-text);
+  --theme-outline:#1d7e74;--theme-fill-start:#fff;--theme-fill-end:#f4fffb;
+  --theme-text:#23433f;--theme-accent:#157469;--theme-muted:#54796f;
+  --theme-track:#e3eee9;--theme-progress-start:#8ad9bf;--theme-progress-end:#26897a;
+  --theme-pill:#e4f2ec;--theme-pill-hover:#cce8dc;--theme-soft:#f9fffc;
+  --theme-toolbar-border:#d6e9e0;--theme-toolbar-text:#418b7b;--theme-notice:#183f36;
+  --theme-quota-base:#12675e;--theme-quota-mid:#2d9e87;--theme-quota-deep:#0d5b57;--theme-quota-glow:#97ddbc}
+
+/* The ellipse and its rounded tail share one path, so the outline has no seam. */
+.bubble-motion{position:absolute;inset:0;pointer-events:none;z-index:2;transform-origin:142px 254px}
+.bubble{position:absolute;left:12px;top:8px;width:354px;height:246px;z-index:2;padding:25px 40px 23px;text-align:center;cursor:grab;isolation:isolate;pointer-events:auto;opacity:1;scale:1;translate:0 0;transform-origin:130px 228px;transition:opacity .18s ease .23s,scale .28s cubic-bezier(.2,.8,.3,1) .23s,translate .28s cubic-bezier(.2,.8,.3,1) .23s}
+.bubble-content{opacity:1;transition:opacity .16s ease .33s}
+.bubble:active{cursor:grabbing}
+.bubble-outline{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:-1;filter:drop-shadow(0 4px 7px color-mix(in srgb,var(--theme-outline) 5%,transparent))}
+.bubble-outline path{stroke:var(--theme-outline)}
+.bubble-outline stop:first-child{stop-color:var(--theme-fill-start)}
+.bubble-outline stop:last-child{stop-color:var(--theme-fill-end)}
+header{display:flex;justify-content:center;align-items:center;gap:7px;height:27px;font-size:19px;font-weight:650;letter-spacing:.1px;line-height:27px}
+header b{font-weight:650}
+.brand-mark{display:inline-flex;align-items:center;justify-content:center;flex:0 0 25px;width:25px;height:25px}
+.brand-mark img{display:block;width:38px;height:38px;max-width:none}
+.connection{width:6px;height:6px;background:#a8bbb6;border-radius:50%;margin-left:1px;box-shadow:0 0 0 3px #e8eeeb}
+.connection.live{background:var(--theme-progress-end);box-shadow:0 0 0 3px var(--theme-pill)}
+.connection.offline{background:#d99b62}
+.headline{display:flex;justify-content:center;align-items:baseline;gap:2px;height:71px;margin-top:4px;color:var(--theme-accent);font-variant-numeric:tabular-nums}
+.rolling{font-weight:800;font-size:60px;letter-spacing:-2px;line-height:1.1}
+.percent{font-size:31px;font-weight:750}
+.remaining-label{font-size:11px;margin-left:6px;color:var(--theme-muted);font-weight:600}
+.quota-track{height:4px;border-radius:5px;background:var(--theme-track);overflow:hidden;width:208px;margin:4px auto 8px}
+.quota-track span{height:100%;width:0;display:block;border-radius:5px;background:linear-gradient(90deg,var(--theme-progress-start),var(--theme-progress-end));transition:width 1s}
+.quota-details{display:flex;align-items:center;justify-content:center;gap:16px;color:var(--theme-muted);font-size:13px;font-weight:600;line-height:18px;white-space:nowrap}
+.reset-row{display:flex;justify-content:center;align-items:center;gap:7px;height:29px;margin-top:7px}
+.reset-tag{background:var(--theme-accent);border-radius:6px;color:#fff;font-size:10px;line-height:18px;padding:0 6px}
+time{font-size:19px;font-weight:750;color:var(--theme-accent);font-variant-numeric:tabular-nums}
+footer{display:flex;justify-content:center;align-items:center;color:var(--theme-muted);margin-top:3px;height:22px;position:relative;z-index:3}
+footer button{display:flex;align-items:center;justify-content:center;padding:0 8px;width:40px;height:22px;border-radius:11px;background:var(--theme-pill)}
+footer button:hover{background:var(--theme-pill-hover);color:var(--theme-accent)}
+.cycle-dots{display:flex;align-items:center;gap:4px}
+.cycle-dots span{display:block;width:3.5px;height:3.5px;border-radius:50%;background:currentColor}
+.thought-dot{position:absolute;border:4px solid var(--theme-outline);background:var(--theme-soft);border-radius:50%;z-index:2;pointer-events:none;opacity:1;scale:1;transition:opacity .14s ease,scale .2s cubic-bezier(.2,.8,.3,1)}
+.dot-one{left:119px;top:260px;width:29px;height:20px;transform:rotate(-8deg);transition-delay:.12s}
+.dot-two{left:153px;top:287px;width:18px;height:13px;transition-delay:0s}
+.character{position:absolute;width:330px;height:305px;right:-5px;bottom:-4px;transform-origin:50% 100%;cursor:grab;z-index:1;transition:filter .2s}
+.character:active{cursor:grabbing}
+.character img{display:block;width:100%;height:100%;object-fit:contain;object-position:bottom;pointer-events:none;filter:drop-shadow(0 2px 1px color-mix(in srgb,var(--theme-outline) 9%,transparent));animation:breathe 5s ease-in-out infinite;transform-origin:bottom center}
+.character:hover{filter:brightness(1.025)}
+.widget.is-mirrored .character img{scale:-1 1}
+.character.bounce{animation:squish .65s cubic-bezier(.24,.7,.35,1)}
+.bubble-motion.bounce{animation:bubbleFollow .65s cubic-bezier(.24,.7,.35,1)}
+.toolbar{position:absolute;left:29px;bottom:29px;display:flex;flex-direction:column;gap:5px;opacity:0;transform:translateX(7px);transition:opacity .2s,transform .2s;z-index:4}
+.widget:hover .toolbar,.toolbar:focus-within{opacity:1;transform:none}
+.toolbar button{width:30px;height:30px;border:1px solid var(--theme-toolbar-border);border-radius:50%;background:#fffffff0;box-shadow:0 2px 7px color-mix(in srgb,var(--theme-outline) 5%,transparent);color:var(--theme-toolbar-text);font-size:19px;line-height:25px}
+.toolbar button:hover{background:var(--theme-pill);scale:1.08}
+.toolbar button:active{scale:.93}
+.notice{position:absolute;bottom:12px;left:77px;width:270px;background:color-mix(in srgb,var(--theme-notice) 94%,transparent);color:white;padding:9px 12px;border-radius:13px;font-size:12px;line-height:1.5;z-index:6;text-align:center}
+.demo-label{position:absolute;left:17px;top:2px;font-size:9px;color:#855a28;background:#fff0d7;padding:2px 7px;border-radius:5px;z-index:5}
+.alternate{height:143px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;padding-top:8px}
+.alternate strong{font-size:36px;font-weight:800;letter-spacing:-1px;color:var(--theme-accent);font-variant-numeric:tabular-nums;max-width:100%;white-space:nowrap}
+.alternate>span:last-child{font-size:16px;line-height:22px;font-weight:600;color:var(--theme-muted)}
+.eyebrow{font-size:16px;line-height:22px;letter-spacing:.8px;color:var(--theme-muted);font-weight:650}
+.phrase-view{height:143px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px}
+.phrase-view p{width:100%;font-size:24px;line-height:1.3;font-weight:650;margin:0;color:var(--theme-accent);max-height:94px;flex-shrink:0;overflow:visible;overflow-wrap:anywhere}
+.phrase-heart{font-size:18px;line-height:18px;color:var(--theme-progress-start)}
+.bubble.hidden-bubble{opacity:0;pointer-events:none;scale:.86;translate:0 12px;transition-delay:.12s}
+.hidden-bubble .bubble-content{opacity:0;transition-delay:0s;transition-duration:.12s}
+.thought-dot.hidden-dots{opacity:0;scale:.2}
+.dot-one.hidden-dots{transition-delay:.24s}
+.dot-two.hidden-dots{transition-delay:.34s}
+[hidden]{display:none!important}
+.warning .headline,.warning time{color:#b77a35}
+.warning .quota-track span{background:#d7a25f}
+.warning .reset-tag{background:#b77a35}
+.disconnected .headline{color:#829b94}
+@keyframes breathe{0%,100%{transform:translateY(0) rotate(-.3deg)}50%{transform:translateY(-3px) rotate(.3deg)}}
+@keyframes squish{0%{transform:scale(1,1)}18%{transform:scale(1.13,.83)}42%{transform:translateY(-20px) scale(.94,1.08)}66%{transform:scale(1.06,.95)}85%{transform:translateY(-4px)}100%{transform:none}}
+/* A lighter response than the character keeps the bubble inside the window. */
+@keyframes bubbleFollow{0%,100%{transform:translateY(0) scale(1)}18%{transform:translateY(14px) scale(1.025,.94)}42%{transform:translateY(-4px) scale(.99,1.01)}66%{transform:translateY(5px) scale(1.012,.985)}85%{transform:translateY(-2px) scale(1)} }
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Mirror the outline and positions, keeping the content and controls readable. */
+.widget.is-mirrored .bubble{left:auto;right:12px}
+.widget.is-mirrored .bubble{transform-origin:224px 228px}
+.widget.is-mirrored .bubble-motion{transform-origin:238px 254px}
+.widget.is-mirrored .bubble-outline{transform:scaleX(-1)}
+.widget.is-mirrored .dot-one{left:auto;right:119px;transform:rotate(8deg)}
+.widget.is-mirrored .dot-two{left:auto;right:153px}
+.widget.is-mirrored .character{left:-5px;right:auto}
+.widget.is-mirrored .toolbar{left:auto;right:29px;transform:translateX(-7px)}
+.widget.is-mirrored:hover .toolbar,.widget.is-mirrored .toolbar:focus-within{transform:none}
+.widget.is-mirrored .notice{left:auto;right:77px}
+.widget.is-mirrored .demo-label{left:auto;right:17px}
+
+.quota-value{display:inline-flex;align-items:baseline;gap:2px}
+/* The moving highlight follows the character palette without changing numeric layout. */
+@supports ((background-clip:text) or (-webkit-background-clip:text)){
+  .quota-shimmer .quota-value{
+    --quota-base:var(--theme-quota-base);
+    --quota-mid:var(--theme-quota-mid);
+    --quota-deep:var(--theme-quota-deep);
+    --quota-glow:var(--theme-quota-glow);
+    background-image:linear-gradient(110deg,transparent 39%,var(--quota-glow) 48%,var(--quota-glow) 51%,transparent 61%),linear-gradient(100deg,var(--quota-base),var(--quota-mid) 35%,var(--quota-deep) 70%,var(--quota-base));
+    background-size:250% 100%,200% 100%;
+    background-position:200% 0,0% 0;
+    background-clip:text;
+    -webkit-background-clip:text;
+    -webkit-text-fill-color:transparent;
+    animation:quotaShimmer 4.2s linear infinite;
+  }
+  .warning .quota-shimmer .quota-value{--quota-base:#a46529;--quota-mid:#cf8e36;--quota-deep:#8f5125;--quota-glow:#efc575}
+  .hidden-bubble .quota-shimmer .quota-value{animation-play-state:paused}
+}
+@keyframes quotaShimmer{from{background-position:200% 0,0% 0}to{background-position:-100% 0,200% 0}}
+@media(prefers-reduced-motion:reduce){.quota-shimmer .quota-value{animation:none;background-position:60% 0,0% 0}}

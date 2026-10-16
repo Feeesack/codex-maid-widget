@@ -1,0 +1,55 @@
+name: Source checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: node distribution/check-versions.cjs
+      - run: npm ci
+      - run: npm test
+      - run: node --test distribution/test/*.test.cjs distribution/integration/test/*.test.cjs
+      - run: npm run smoke
+      - run: npm run check:native
+      - run: npm run check:follow
+      - run: npm run build
+      - run: node distribution/windows/build.cjs
+      - run: node distribution/windows/test-install.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows-x64-installer
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            release/installers/*-windows-x64-setup.exe
+            release/installers/*-windows-x64-setup.exe.sha256
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: macos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: macos/package-lock.json
+      - run: node ../distribution/check-versions.cjs
+      - run: npm ci
+      - run: npm test
+      - run: npm run smoke
+      - run: npm run check:native
+      - run: npm run check:follow

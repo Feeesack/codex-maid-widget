@@ -1,0 +1,12 @@
+{
+  "name": "codex-maid-local",
+  "interface": { "displayName": "Codex 女仆挂件 · 本地" },
+  "plugins": [
+    {
+      "name": "codex-maid-widget",
+      "source": { "source": "local", "path": "./plugins/codex-maid-widget" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}
