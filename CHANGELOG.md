@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.13 — 2026-10-17
+
+- Keep filenames and edited character labels in the local UI, while returning fixed character labels from MCP tools.
+- Add explicit local-plugin disconnection on both platforms. Windows offers it during interactive uninstallation; Mac includes a disconnection launcher in Applications. Other plugins and user data are retained.
+- Read the Windows app-server handshake version from the application manifest, matching macOS and the shared release version.
+
 ## 0.3.12 — 2026-10-17
 
 Initial public release, with one shared version for Windows and macOS.

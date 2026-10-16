@@ -10,12 +10,12 @@
 
 ## 下载与安装
 
-Windows 和 macOS 的当前版本都是 **v0.3.12**。
+Windows 和 macOS 的当前版本都是 **v0.3.13**。
 
 | 平台 | 安装包 |
 | --- | --- |
-| Windows x64 | [下载 Windows 安装包（.exe）](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.12/Codex-Maid-Widget-0.3.12-windows-x64-setup.exe) |
-| macOS 13 及以上，Apple 芯片与 Intel | [下载 Mac 通用安装包（.pkg）](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.12/Codex-Maid-Widget-0.3.12-macOS-universal.pkg) |
+| Windows x64 | [下载 Windows 安装包（.exe）](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.13/Codex-Maid-Widget-0.3.13-windows-x64-setup.exe) |
+| macOS 13 及以上，Apple 芯片与 Intel | [下载 Mac 通用安装包（.pkg）](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.13/Codex-Maid-Widget-0.3.13-macOS-universal.pkg) |
 
 更新说明和 SHA-256 校验值放在 [Releases](https://github.com/Feeesack/codex-maid-widget/releases)。安装包已带上运行环境和可选的本地 Codex 插件，不用另装 Node.js、npm，也不用下载源码。
 
@@ -69,9 +69,13 @@ Windows 和 macOS 的当前版本都是 **v0.3.12**。
 
 连接器会通过官方 Codex CLI 注册本地插件。连接完成后，重启 Codex 并新建聊天；使用工具时，请让挂件保持运行。连接器也使用安装包自带的运行环境，不用另装 Node.js。本机插件设置只会在你主动运行连接器时修改。
 
+如果连接过插件，卸载挂件前请先运行 Windows 开始菜单中的 **Disconnect Codex plugin**，或 Mac“应用程序”中的 **Codex-Maid-Widget-断开 Codex.command**，然后重启 Codex。断开只移除挂件自己的本地插件，保留形象和设置，也不影响其他插件。Windows 卸载时也会询问是否先断开；静默卸载请提前手动断开。
+
 ## 数据与隐私
 
 挂件从本机 Codex app-server 读取额度，从本机会话和归档日志中读取 token 计数事件。登录认证交给 Codex 处理，挂件不读取 `auth.json` 正文，不需要你填写 API key，不发送模型提示词，也没有接入应用分析统计。
+
+导入图片仍默认用文件名命名，自己改的名称也会照常保留在本地。MCP 工具不会带出这些名称，只返回固定的内置形象名或“自定义形象”。
 
 设置、导入的形象和本地插件文件保存在 `~/.codex-maid-widget`。可选控制接口只监听本机回环地址，每次启动都会换一个随机令牌。接口只支持固定的挂件操作，不能执行任意命令或请求任意 URL。
 

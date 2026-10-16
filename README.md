@@ -10,12 +10,12 @@ A small desktop companion for Codex. It shows your remaining quota and local tok
 
 ## Download and install
 
-Both platforms are on **v0.3.12**.
+Both platforms are on **v0.3.13**.
 
 | Platform | Installer |
 | --- | --- |
-| Windows x64 | [Download Windows installer (.exe)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.12/Codex-Maid-Widget-0.3.12-windows-x64-setup.exe) |
-| macOS 13+, Apple Silicon and Intel | [Download universal Mac installer (.pkg)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.12/Codex-Maid-Widget-0.3.12-macOS-universal.pkg) |
+| Windows x64 | [Download Windows installer (.exe)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.13/Codex-Maid-Widget-0.3.13-windows-x64-setup.exe) |
+| macOS 13+, Apple Silicon and Intel | [Download universal Mac installer (.pkg)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.13/Codex-Maid-Widget-0.3.13-macOS-universal.pkg) |
 
 Release notes and SHA-256 checksums are on the [Releases](https://github.com/Feeesack/codex-maid-widget/releases) page. The installers include the runtime and optional local Codex plugin, so you don't need to install Node.js or npm, or download the source.
 
@@ -69,9 +69,13 @@ Turning off the follow setting removes the helper's login registration. If the o
 
 This registers a local plugin through the official Codex CLI. After connecting, restart Codex and start a new chat. Keep the widget running while using its tools. The connector uses the installer's bundled runtime, so no separate Node.js installation is needed. It only changes the connection setup when you choose to run it.
 
+Before uninstalling a connected widget, use **Disconnect Codex plugin** in the Windows Start menu, or **Codex-Maid-Widget-断开 Codex.command** in Mac Applications. This removes the widget's local plugin, keeps your images and settings, and leaves other plugins alone. Restart Codex afterwards. The Windows uninstaller also offers this step; for silent uninstallation, disconnect first.
+
 ## Data and privacy
 
 The widget gets quota from the local Codex app-server and reads token counter events from local session and archived-session logs. Codex handles authentication. The widget doesn't read the contents of `auth.json`, ask for an API key, or send prompts to a model. It has no application analytics.
+
+Imported images still use their filenames as the default local names. Those names, including any labels you edit, stay out of MCP tool results; tools use fixed built-in labels or “自定义形象” (custom character).
 
 Settings, imported character images, and local integration files live in `~/.codex-maid-widget`. The optional control interface listens only on loopback, uses a new random token each time the widget starts, and accepts a fixed set of widget actions. It can't run arbitrary commands or fetch URLs.
 

@@ -1,6 +1,6 @@
 # Installers and local integration
 
-The Windows and macOS installers share version **0.3.12** and include the application runtime and optional Codex plugin connector. End users do not need Node.js, npm, a source checkout, or an API key. Real quota requires an installed, signed-in Codex desktop app.
+The Windows and macOS installers share version **0.3.13** and include the application runtime and optional Codex plugin connector. End users do not need Node.js, npm, a source checkout, or an API key. Real quota requires an installed, signed-in Codex desktop app.
 
 - [Download and installation](../docs/INSTALLATION.md)
 - [Build commands and verification](../docs/BUILDING.md)
@@ -16,7 +16,7 @@ The Windows and macOS installers share version **0.3.12** and include the applic
 | `test/` | Release-version guard checks |
 | `../macos/scripts/build-installer.cjs` | Universal macOS package construction |
 
-From a current source checkout, build the target platform following the build guide. Windows outputs installers under `release/installers/`; macOS outputs under `macos/release/0.3.12/installers/`.
+From a current source checkout, build the target platform following the build guide. Windows outputs installers under `release/installers/`; macOS outputs under `macos/release/0.3.13/installers/`.
 
 Connecting the local plugin is a user action performed by the installed connector; building or packaging must not install the plugin into the developer's personal Codex profile. Automated installer and lifecycle checks use isolated profiles or disposable CI runners.
 

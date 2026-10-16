@@ -28,11 +28,15 @@ async function verifyInstaller({ file, version = require('../package.json').vers
     assert.equal(fs.existsSync(path.join(component, 'Scripts')), false, 'Installer must not run as root against user profiles');
     const applications = path.join(component, 'Payload', 'Applications');
     const entries = fs.readdirSync(applications).sort();
-    assert.deepEqual(entries, [`${APP_NAME}-连接 Codex.command`, `${APP_NAME}.app`].sort());
+    assert.deepEqual(entries, [`${APP_NAME}-连接 Codex.command`, `${APP_NAME}-断开 Codex.command`, `${APP_NAME}.app`].sort());
     const result = await verifyPackage({ directory: applications, arch: 'universal', version });
     assert.ok(fs.statSync(result.executable).mode & 0o111, 'Installed runtime must retain executable permissions');
     const connector = path.join(applications, `${APP_NAME}-连接 Codex.command`);
     assert.ok(fs.statSync(connector).mode & 0o111, 'Connection launcher must retain executable permissions');
+    const disconnector = path.join(applications, `${APP_NAME}-断开 Codex.command`);
+    assert.ok(fs.statSync(disconnector).mode & 0o111, 'Disconnection launcher must retain executable permissions');
+    assert.match(fs.readFileSync(disconnector, 'utf8'), /connect\.cjs" --remove/);
+    for (const launcher of [connector, disconnector]) execFileSync('/bin/sh', ['-n', launcher]);
     for (const file of ['connect.cjs', 'connect.command', 'runtime.json']) assert.ok(fs.statSync(path.join(result.resources, 'integration', file)).isFile(), 'Missing self-contained integration file: ' + file);
     console.log('PASS: real .pkg container, offline payload, universal runtime, executable permissions, framework links, signature and integration resources.');
     return { file, version, architectures: result.architectures };

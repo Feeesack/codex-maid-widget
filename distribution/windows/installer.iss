@@ -53,6 +53,7 @@ Source: "lifecycle.ps1"; Flags: dontcopy
 [Icons]
 Name: "{group}\Codex Maid Widget"; Filename: "{app}\Codex-Maid-Widget.exe"; WorkingDir: "{app}"; Check: not IsTestMode
 Name: "{group}\Connect Codex plugin"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\resources\integration\connect.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\Codex-Maid-Widget.exe"; Check: not IsTestMode
+Name: "{group}\Disconnect Codex plugin"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\resources\integration\connect.vbs"" --remove"; WorkingDir: "{app}"; IconFilename: "{app}\Codex-Maid-Widget.exe"; Check: not IsTestMode
 Name: "{group}\Installation help"; Filename: "{app}\resources\installer\INSTALLATION.txt"; Check: not IsTestMode
 Name: "{group}\Uninstall Codex Maid Widget"; Filename: "{uninstallexe}"; Check: not IsTestMode
 Name: "{userdesktop}\Codex Maid Widget"; Filename: "{app}\Codex-Maid-Widget.exe"; WorkingDir: "{app}"; Tasks: desktopicon; Check: not IsTestMode
@@ -76,6 +77,35 @@ begin
     Result := 'CodexMaidWidget.InstallerTest'
   else
     Result := 'CodexMaidWidget.Windows';
+end;
+
+function InitializeUninstall: Boolean;
+var
+  Answer, ResultCode: Integer;
+begin
+  Result := True;
+  { Silent/test uninstall must never silently alter the user's Codex profile. }
+  if IsTestMode or UninstallSilent then
+    Exit;
+  Answer := MsgBox('If you connected the optional Codex plugin, disconnect it before removing the widget to avoid missing-runtime errors.' + #13#10 +
+    'Disconnect now? Other plugins and your widget settings will be kept.' + #13#10 +
+    'Yes = disconnect first; No = leave Codex configuration unchanged; Cancel = keep the widget.' + #13#10#13#10 +
+    '如果连接过本地 Codex 插件，请先断开，避免卸载后启动报错。现在断开吗？其他插件、挂件设置与形象均保留。' + #13#10 +
+    '是：先断开；否：保留 Codex 配置继续卸载；取消：保留挂件。', mbConfirmation, MB_YESNOCANCEL);
+  if Answer = IDCANCEL then begin
+    Result := False;
+    Exit;
+  end;
+  if Answer = IDYES then begin
+    if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoLogo -NoProfile -ExecutionPolicy Bypass -File "' +
+      ExpandConstant('{app}\resources\integration\connect.ps1') + '" -Remove -Quiet',
+      ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then begin
+      MsgBox('The plugin could not be disconnected. The widget has not been uninstalled. Update Codex and retry, or remove codex-maid-widget@codex-maid-installed in Codex first.' + #13#10 +
+        '插件未能断开，挂件尚未卸载。请更新 Codex 后重试，或先在 Codex 中手动卸载本项目插件。', mbError, MB_OK);
+      Result := False;
+    end;
+  end;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;

@@ -13,6 +13,13 @@ already be installed. The connection wizard can locate Codex or ask you to choos
 its command-line executable. Restart Codex and open a new chat after connecting.
 You can use the widget normally even before connecting the optional plugin.
 
+To disconnect the local plugin, use "Disconnect Codex plugin" in the Start menu
+and restart Codex. Only this widget's plugin is removed; other plugins and your
+images/settings are retained. Run this before uninstalling the widget so Codex
+does not keep a connection to a deleted runtime. The interactive uninstaller also
+offers disconnection. For silent uninstallation, disconnect explicitly first;
+silent mode never changes Codex configuration.
+
 Use Windows Settings > Apps > Installed apps to uninstall. Your widget settings,
 characters and Codex files are preserved. Upgrades close only the installed
 widget; a portable copy in another folder and Codex itself are left running.

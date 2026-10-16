@@ -7,7 +7,7 @@ const path = require('node:path');
 const { spawnSync, spawn } = require('node:child_process');
 const readline = require('node:readline');
 const { stageIntegration } = require('../prepare-payload.cjs');
-const { preparePlugin, connect, locateCodex, MARKETPLACE } = require('../connect.cjs');
+const { preparePlugin, connect, disconnect, locateCodex, MARKETPLACE } = require('../connect.cjs');
 const projectRoot = path.resolve(__dirname, '../../..');
 
 function fixture(t, platform = 'win32') {
@@ -75,6 +75,83 @@ test('failed marketplace registration prevents a subsequent plugin install and f
     run: (executable) => executable === 'where.exe' ? { status: 1, stdout: '' } : (++mutations, { status: 2, stderr: 'do-not-publish-secret' }) }),
   error => !error.message.includes('do-not-publish-secret') && error.message.includes('退出码 2'));
   assert.equal(mutations, 1);
+});
+
+test('explicit disconnection removes only this installed plugin via the CLI and preserves all user files', t => {
+  for (const platform of ['win32', 'darwin']) {
+    const f = fixture(t, platform);
+    const fakeCli = path.join(f.temporary, 'codex.exe'); fs.writeFileSync(fakeCli, 'fixture');
+    const profile = path.join(f.temporary, 'isolated-codex'); fs.mkdirSync(profile);
+    const config = path.join(profile, 'config.toml');
+    fs.writeFileSync(config, '[plugins."unrelated@other-marketplace"]\nenabled = true\n');
+    const customHome = path.join(f.temporary, 'widget-data'); fs.mkdirSync(customHome);
+    fs.writeFileSync(path.join(customHome, 'settings.json'), '{"character":"keep-me"}');
+    fs.writeFileSync(path.join(customHome, 'portrait.png'), 'user-artwork');
+    const calls = [];
+    const result = disconnect({ payloadRoot: f.destination, homeDir: f.homeDir,
+      env: { CODEX_CLI: fakeCli, ELECTRON_RUN_AS_NODE: '1', CODEX_HOME: profile, CODEX_MAID_HOME: customHome },
+      run: (executable, args, options) => { calls.push({ executable, args, options }); return { status: 0, stdout: '{}' }; } });
+    assert.equal(result.ok, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].executable, fakeCli);
+    assert.deepEqual(calls[0].args, ['plugin', 'remove', 'codex-maid-widget@codex-maid-installed', '--json']);
+    assert.equal(calls[0].options.env.ELECTRON_RUN_AS_NODE, undefined);
+    assert.equal(calls[0].options.env.CODEX_HOME, profile);
+    assert.equal(fs.readFileSync(config, 'utf8'), '[plugins."unrelated@other-marketplace"]\nenabled = true\n');
+    assert.equal(fs.readFileSync(path.join(customHome, 'settings.json'), 'utf8'), '{"character":"keep-me"}');
+    assert.equal(fs.readFileSync(path.join(customHome, 'portrait.png'), 'utf8'), 'user-artwork');
+    assert.equal(fs.existsSync(path.join(customHome, 'integration')), false, 'removal must not install or prepare the plugin');
+    assert.equal(fs.existsSync(f.homeDir), false, 'removal must not create a default profile');
+  }
+});
+
+test('disconnection failures disclose neither CLI diagnostics nor private paths and perform no additional operations', t => {
+  const f = fixture(t);
+  const fakeCli = path.join(f.temporary, 'codex.exe'); fs.writeFileSync(fakeCli, 'fixture');
+  for (const result of [
+    { status: 2, stderr: 'do-not-publish-secret /private/account/config.toml', stdout: 'private' },
+    { status: null, error: { code: 'ETIMEDOUT', message: '/private/account/config.toml' } }
+  ]) {
+    let calls = 0;
+    assert.throws(() => disconnect({ payloadRoot: f.destination, homeDir: f.homeDir, codexCli: fakeCli, env: {},
+      run: () => { calls++; return result; } }),
+    error => !error.message.includes('do-not-publish-secret') && !error.message.includes('/private/') && error.message.includes('未能断开'));
+    assert.equal(calls, 1);
+    assert.equal(fs.existsSync(f.homeDir), false);
+  }
+});
+
+test('a successful official removal is accepted even if the plugin was already absent', t => {
+  const f = fixture(t);
+  const fakeCli = path.join(f.temporary, 'codex.exe'); fs.writeFileSync(fakeCli, 'fixture');
+  // The official CLI returns 0 with this metadata shape for an empty profile.
+  const run = () => ({ status: 0, stdout: JSON.stringify({ pluginId: 'codex-maid-widget@codex-maid-installed', name: 'codex-maid-widget', marketplaceName: MARKETPLACE }) });
+  for (let count = 0; count < 2; count++) {
+    assert.equal(disconnect({ payloadRoot: f.destination, homeDir: f.homeDir, codexCli: fakeCli, env: {}, run }).ok, true);
+    assert.equal(fs.existsSync(f.homeDir), false);
+  }
+});
+
+test('conflicting connection/removal options fail before any side effects, and raw filesystem failures stay private', t => {
+  const f = fixture(t);
+  const env = { ...process.env, CODEX_HOME: path.join(f.temporary, 'no-config'), CODEX_MAID_HOME: path.join(f.temporary, 'no-data') };
+  for (const args of [['--install', '--remove'], ['--prepare-only', '--uninstall']]) {
+    const result = spawnSync(process.execPath, [path.join(f.destination, 'connect.cjs'), ...args], { encoding: 'utf8', cwd: f.temporary, env });
+    assert.equal(result.status, 1);
+    assert.match(JSON.parse(result.stdout).message, /不能同时使用/);
+    assert.equal(fs.existsSync(env.CODEX_HOME), false);
+    assert.equal(fs.existsSync(env.CODEX_MAID_HOME), false);
+  }
+  fs.rmSync(path.join(f.destination, 'runtime.json'));
+  for (const option of ['--remove', '--uninstall']) {
+    const result = spawnSync(process.execPath, [path.join(f.destination, 'connect.cjs'), option], { encoding: 'utf8', cwd: f.temporary, env });
+    assert.equal(result.status, 1);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.ok, false);
+    assert.ok(!output.message.includes(f.temporary));
+    assert.ok(!output.message.includes('runtime.json'));
+    assert.equal(fs.existsSync(env.CODEX_HOME), false);
+  }
 });
 
 test('prepare-only and default command never invoke Codex or modify Codex settings', t => {

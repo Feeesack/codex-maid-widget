@@ -20,6 +20,35 @@ const usage = (total, last = total, timestamp) => event('token_count', {
   info: { total_token_usage: { total_tokens: total }, last_token_usage: { total_tokens: last } },
 }, timestamp);
 
+test('app-server initialization reports package version and preserves read-only transport flags', async t => {
+  const { PassThrough } = require('node:stream');
+  const { EventEmitter } = require('node:events');
+  let initialized = false;
+  let initializeCount = 0;
+  const server = new ReadOnlyAppServer({ codexPath: 'C:\\fixture\\codex.exe', spawn(file, args, options) {
+    assert.equal(file, 'C:\\fixture\\codex.exe');
+    assert.deepEqual(args, ['app-server', '--listen', 'stdio://', '-c', 'analytics.enabled=false']);
+    assert.equal(options.windowsHide, true);
+    assert.deepEqual(options.stdio, ['pipe', 'pipe', 'pipe']);
+    assert.equal(Object.hasOwn(options, 'shell'), false);
+    const child = new EventEmitter();
+    child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.kill = () => {};
+    child.stdin.on('data', data => {
+      const message = JSON.parse(data.toString());
+      if (message.method === 'initialize') {
+        initializeCount++;
+        assert.equal(message.params.clientInfo.version, require('../package.json').version);
+        child.stdout.write(JSON.stringify({ id: message.id, result: {} }) + '\n');
+      } else { assert.equal(message.method, 'initialized'); initialized = true; }
+    });
+    return child;
+  } });
+  t.after(() => server.close());
+  await server.connect();
+  assert.equal(initializeCount, 1);
+  assert.equal(initialized, true);
+});
+
 test('quota windows preserve missing values and use seconds; over-limit remainder clamps', () => {
   assert.equal(normalizeWindow(null), null);
   assert.deepEqual(normalizeWindow({ usedPercent: 25, resetsAt: 1700000000 }), {

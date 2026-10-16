@@ -12,6 +12,7 @@ const { verifyInstaller } = require('./verify-installer.cjs');
 
 const RECEIPT_ID = `${BUNDLE_ID}.installer`;
 const CONNECTOR_NAME = `${APP_NAME}-连接 Codex.command`;
+const DISCONNECTOR_NAME = `${APP_NAME}-断开 Codex.command`;
 function xmlEscape(value) {
   return String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]);
 }
@@ -42,6 +43,19 @@ printf '\\n%s\\n' '连接已完成；请重启 Codex。按回车关闭此窗口�
 read -r maid_close
 `;
 }
+function disconnectorScript() {
+  return `#!/bin/sh
+set -eu
+maid_app='/Applications/${APP_NAME}.app'
+if ! /usr/bin/osascript -e 'display dialog "将从 Codex 移除本地女仆挂件插件。挂件和形象会保留，其他插件不会改变。" with title "断开 Codex 女仆挂件" buttons {"取消", "断开"} default button "断开" cancel button "取消"' >/dev/null; then
+  exit 0
+fi
+export ELECTRON_RUN_AS_NODE=1
+"$maid_app/Contents/MacOS/${APP_NAME}" "$maid_app/Contents/Resources/integration/connect.cjs" --remove
+printf '\\n%s\\n' '插件已断开；请重启 Codex。按回车关闭此窗口。'
+read -r maid_close
+`;
+}
 function html(title, body) { return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>${xmlEscape(title)}</title><body style="font-family:-apple-system,sans-serif;font-size:15px"><h2>${xmlEscape(title)}</h2>${body}</body></html>\n`; }
 async function main() {
   if (process.platform !== 'darwin') throw new Error('生成真正的 Mac 安装包需要 macOS 自带的 pkgbuild、productbuild、codesign 和 lipo。请运行 macOS 安装包工作流。当前主机不能生成或验收 .pkg。');
@@ -64,6 +78,8 @@ async function main() {
     execFileSync('/usr/bin/ditto', [packed.bundle, bundle]);
     const connector = path.join(applications, CONNECTOR_NAME);
     fs.writeFileSync(connector, connectorScript(), { mode: 0o755 }); fs.chmodSync(connector, 0o755);
+    const disconnector = path.join(applications, DISCONNECTOR_NAME);
+    fs.writeFileSync(disconnector, disconnectorScript(), { mode: 0o755 }); fs.chmodSync(disconnector, 0o755);
     const componentPlist = path.join(stage, 'components.plist');
     execFileSync('/usr/bin/pkgbuild', ['--analyze', '--root', payload, componentPlist]);
     const plist = require('plist');
@@ -79,7 +95,7 @@ async function main() {
     execFileSync('/usr/bin/pkgbuild', ['--root', payload, '--component-plist', componentPlist, '--identifier', RECEIPT_ID, '--version', version, '--install-location', '/', '--ownership', 'recommended', path.join(stage, 'component.pkg')], { stdio: 'inherit' });
     const resources = path.join(stage, 'installer-resources'); fs.mkdirSync(resources);
     fs.writeFileSync(path.join(resources, 'welcome.html'), html('安装 Codex 女仆挂件', '<p>一个安装包支持 Apple Silicon 与 Intel，适用于 macOS 13 及以上。</p><p>完整应用、Electron 运行环境、角色素材与本地插件连接器均已包含；使用者无需 Node.js、npm、源码或编译工具。</p><p>安装到“应用程序”，保留原有用户设置和角色。真实额度、账号信息与插件功能需要本机已经安装并登录 Codex。</p>'));
-    fs.writeFileSync(path.join(resources, 'conclusion.html'), html('安装完成', `<p>从“应用程序”打开 <b>${APP_NAME}</b>。</p><p>需要在聊天中操作挂件时，双击“应用程序”中的 <b>${CONNECTOR_NAME}</b>，按提示完成本地连接并重启 Codex；不需要安装 Node.js。</p><p>设置、导入形象与跟随启动状态保存在当前用户的 ~/.codex-maid-widget。安装不会读取或替换 Codex 认证文件。</p>`));
+    fs.writeFileSync(path.join(resources, 'conclusion.html'), html('安装完成', `<p>从“应用程序”打开 <b>${APP_NAME}</b>。</p><p>需要在聊天中操作挂件时，双击“应用程序”中的 <b>${CONNECTOR_NAME}</b>，按提示完成本地连接并重启 Codex；不需要安装 Node.js。</p><p>卸载挂件前，先运行 <b>${DISCONNECTOR_NAME}</b>，避免 Codex 保留已失效的本地插件连接。</p><p>设置、导入形象与跟随启动状态保存在当前用户的 ~/.codex-maid-widget。安装不会读取或替换 Codex 认证文件。</p>`));
     const distribution = path.join(stage, 'Distribution.xml'); fs.writeFileSync(distribution, distributionXml(version));
     const name = `${APP_NAME}-${version}-macOS-universal.pkg`;
     const candidate = path.join(stage, name);
@@ -95,4 +111,4 @@ async function main() {
   } finally { fs.rmSync(stage, { recursive: true, force: true }); }
 }
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
-module.exports = { RECEIPT_ID, CONNECTOR_NAME, xmlEscape, distributionXml, connectorScript, main };
+module.exports = { RECEIPT_ID, CONNECTOR_NAME, DISCONNECTOR_NAME, xmlEscape, distributionXml, connectorScript, disconnectorScript, main };

@@ -9,6 +9,7 @@ const http = require('node:http');
 const { StringDecoder } = require('node:string_decoder');
 
 const ACTIONS = ['show', 'hide', 'refresh', 'bounce', 'settings'];
+const CHARACTER_NAMES = new Map([['mint-maid', '薄荷女仆'], ['lilac-dragon', '紫晶龙女仆']]);
 const MAX_BYTES = 1024 * 1024;
 const TOOLS = [
   {
@@ -89,6 +90,11 @@ function safeValue(value, depth = 0) {
     for (const [key, item] of Object.entries(value)) {
       if (/^(?:token|secret|password|api[_-]?key|authorization|cookie|access_token|refresh_token|controlFile|codexHome|dataHome)$/i.test(key)) continue;
       if (['__proto__', 'constructor', 'prototype'].includes(key)) continue;
+      // Local names can come from imported filenames or user-entered labels.
+      if (key === 'characterName') {
+        result[key] = CHARACTER_NAMES.get(value.activeCharacterId) || '自定义形象';
+        continue;
+      }
       result[key] = safeValue(item, depth + 1);
     }
     return result;

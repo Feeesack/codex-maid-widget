@@ -9,6 +9,7 @@ const { spawn } = require('node:child_process');
 const readline = require('node:readline');
 const { dispatch, TOOLS, safeValue, dataHome } = require('../plugins/codex-maid-widget/mcp.cjs');
 const serverFile = path.resolve(__dirname, '../plugins/codex-maid-widget/mcp.cjs');
+const { CharacterLibrary } = require('../src/character-library.cjs');
 
 test('macOS MCP shares the desktop data home even before the first app launch', () => {
   assert.equal(dataHome({}, 'darwin'), path.join(os.homedir(), '.codex-maid-widget'));
@@ -31,6 +32,33 @@ test('status output removes local credentials defensively', () => {
   assert.deepEqual(safeValue({ token: 'local-secret', quota: { remainingPercent: 80, api_key: 'hidden' } }), { quota: { remainingPercent: 80 } });
 });
 
+test('MCP hides imported filenames while the local character library keeps its names', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maid-mcp-names-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const assetRoot = path.join(root, 'assets');
+  fs.mkdirSync(assetRoot);
+  const filename = 'synthetic-client-private-draft';
+  const source = path.join(root, filename + '.gif');
+  fs.writeFileSync(source, Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
+  const options = { dataDir: path.join(root, 'profile'), assetRoot };
+  const library = new CharacterLibrary(options);
+  const imported = library.importFiles([source]).imported[0];
+  assert.equal(imported.name, filename);
+  const localStatus = { characterName: imported.name, activeCharacterId: imported.id, characterCount: 3 };
+  const result = safeValue(localStatus);
+  assert.deepEqual(result, { characterName: '自定义形象', activeCharacterId: imported.id, characterCount: 3 });
+  assert.equal(JSON.stringify(result).includes(filename), false);
+  assert.equal(localStatus.characterName, filename);
+  assert.equal(new CharacterLibrary(options).get(imported.id).name, filename);
+
+  for (const [id, expected] of [['mint-maid', '薄荷女仆'], ['lilac-dragon', '紫晶龙女仆']]) {
+    library.rename(id, 'synthetic-private-label');
+    assert.equal(library.get(id).name, 'synthetic-private-label');
+    assert.deepEqual(safeValue({ activeCharacterId: id, characterName: library.get(id).name }), { activeCharacterId: id, characterName: expected });
+  }
+  assert.deepEqual(safeValue({ nested: [{ characterName: filename }] }), { nested: [{ characterName: '自定义形象' }] });
+});
+
 test('stdio MCP authenticates loopback requests and reports a stopped desktop', async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'maid-mcp-test-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -41,7 +69,7 @@ test('stdio MCP authenticates loopback requests and reports a stopped desktop', 
     req.on('end', () => {
       requests.push({ method: req.method, url: req.url, auth: req.headers.authorization, body });
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(req.url === '/status' ? { running: true, quota: { remainingPercent: 72 }, token: 'must-not-escape' } : { ok: true, action: JSON.parse(body).action }));
+      res.end(JSON.stringify(req.url === '/status' ? { running: true, quota: { remainingPercent: 72 }, token: 'must-not-escape', activeCharacterId: 'custom-test', characterName: 'synthetic-private-file-name' } : { ok: true, action: JSON.parse(body).action, activeCharacterId: 'mint-maid', characterName: 'synthetic-private-label' }));
     });
   });
   await new Promise(resolve => httpServer.listen(0, '127.0.0.1', resolve));
@@ -71,9 +99,9 @@ test('stdio MCP authenticates loopback requests and reports a stopped desktop', 
   const listed = await call('tools/list');
   assert.equal(listed.result.tools.length, 2);
   const status = await call('tools/call', { name: 'get_widget_status', arguments: {} });
-  assert.deepEqual(JSON.parse(status.result.content[0].text), { running: true, quota: { remainingPercent: 72 } });
+  assert.deepEqual(JSON.parse(status.result.content[0].text), { running: true, quota: { remainingPercent: 72 }, activeCharacterId: 'custom-test', characterName: '自定义形象' });
   const action = await call('tools/call', { name: 'control_widget', arguments: { action: 'show' } });
-  assert.deepEqual(JSON.parse(action.result.content[0].text), { ok: true, action: 'show' });
+  assert.deepEqual(JSON.parse(action.result.content[0].text), { ok: true, action: 'show', activeCharacterId: 'mint-maid', characterName: '薄荷女仆' });
   assert.deepEqual(requests, [
     { method: 'GET', url: '/status', auth: `Bearer ${token}`, body: '' },
     { method: 'POST', url: '/action', auth: `Bearer ${token}`, body: '{"action":"show"}' }

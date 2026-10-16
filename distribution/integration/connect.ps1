@@ -1,10 +1,11 @@
 [CmdletBinding()]
-param([switch]$Quiet, [string]$CodexCli)
+param([switch]$Quiet, [switch]$Remove, [string]$CodexCli)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
-$maidTitle = '连接 Codex 女仆挂件'
+$maidTitle = if ($Remove) { '断开 Codex 女仆挂件' } else { '连接 Codex 女仆挂件' }
 if (!$Quiet) {
-    $maidConsent = [System.Windows.Forms.MessageBox]::Show('将通过 Codex 自带的命令行注册并安装本地挂件插件。无需 Node.js 或项目源码；请先安装并登录 Codex。是否继续？', $maidTitle, 'YesNo', 'Question')
+    $maidPrompt = if ($Remove) { '将通过 Codex 自带的命令行卸载本项目的本地插件。其他插件、挂件设置与导入形象均保留。完成后请重启 Codex。是否继续？' } else { '将通过 Codex 自带的命令行注册并安装本地挂件插件。无需 Node.js 或项目源码；请先安装并登录 Codex。是否继续？' }
+    $maidConsent = [System.Windows.Forms.MessageBox]::Show($maidPrompt, $maidTitle, 'YesNo', 'Question')
     if ($maidConsent -ne 'Yes') { exit 0 }
 }
 $maidResultFile = [IO.Path]::GetTempFileName()
@@ -12,7 +13,8 @@ try {
     $maidRuntime = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'runtime.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json
     $maidExe = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $maidRuntime.executableRelative))
     $maidScript = Join-Path $PSScriptRoot 'connect.cjs'
-    $maidArgs = @(('"' + $maidScript + '"'), '--install', '--result-file', ('"' + $maidResultFile + '"'))
+    $maidAction = if ($Remove) { '--remove' } else { '--install' }
+    $maidArgs = @(('"' + $maidScript + '"'), $maidAction, '--result-file', ('"' + $maidResultFile + '"'))
     if ($CodexCli) { $maidArgs += @('--codex-cli', ('"' + $CodexCli + '"')) }
     function Invoke-MaidConnection {
         param([string[]]$Arguments)
@@ -35,14 +37,14 @@ try {
         }
         $maidPicker.Dispose()
     }
-    if (!$maidResult -or !$maidResult.message) { throw '连接工具未返回结果，请重新安装挂件后重试。' }
+    if (!$maidResult -or !$maidResult.message) { throw '插件工具未返回结果。' }
     if (!$Quiet -or !$maidResult.ok) {
         $maidIcon = if ($maidResult.ok) { 'Information' } else { 'Warning' }
         [void][System.Windows.Forms.MessageBox]::Show([string]$maidResult.message, $maidTitle, 'OK', $maidIcon)
     }
     exit $maidProcess.ExitCode
 } catch {
-    [void][System.Windows.Forms.MessageBox]::Show($_.Exception.Message, $maidTitle, 'OK', 'Warning')
+    [void][System.Windows.Forms.MessageBox]::Show('插件操作未完成。请检查挂件安装文件及 Codex 版本后重试。', $maidTitle, 'OK', 'Warning')
     exit 1
 } finally {
     if (Test-Path -LiteralPath $maidResultFile) { Remove-Item -LiteralPath $maidResultFile -Force }

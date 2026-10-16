@@ -123,6 +123,7 @@ jobs:
           runtime='/Applications/Codex-Maid-Widget.app/Contents/MacOS/Codex-Maid-Widget'
           test "$(ELECTRON_RUN_AS_NODE=1 "$runtime" -p 'process.arch')" = '${{ matrix.arch }}'
           test -x '/Applications/Codex-Maid-Widget-连接 Codex.command'
+          test -x '/Applications/Codex-Maid-Widget-断开 Codex.command'
           ELECTRON_RUN_AS_NODE=1 "$runtime" '/Applications/Codex-Maid-Widget.app/Contents/Resources/integration/connect.cjs'
       - name: Run platform tests and native checks on each real architecture
         run: |

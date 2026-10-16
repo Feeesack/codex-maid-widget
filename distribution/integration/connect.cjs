@@ -7,6 +7,13 @@ const { parseArgs } = require('node:util');
 const MARKETPLACE = 'codex-maid-installed';
 const PLUGIN = 'codex-maid-widget';
 
+function publicError(message, code) {
+  const error = new Error(message);
+  error.publicMessage = message;
+  if (code) error.code = code;
+  return error;
+}
+
 function preparePlugin({ payloadRoot = __dirname, executable = process.execPath, homeDir = os.homedir(), env = process.env } = {}) {
   payloadRoot = path.resolve(payloadRoot); executable = path.resolve(executable);
   const runtime = JSON.parse(fs.readFileSync(path.join(payloadRoot, 'runtime.json'), 'utf8'));
@@ -70,8 +77,7 @@ function locateCodex({ platform = process.platform, homeDir = os.homedir(), env 
   for (const candidate of candidates) {
     if (isFile(candidate)) return path.resolve(candidate);
   }
-  const error = new Error('未找到 Codex 的命令行程序。请先安装或更新 Codex 桌面版，再运行“连接 Codex 插件”。自定义位置可通过 CODEX_CLI 指定，无需安装 Node.js。');
-  error.code = 'CODEX_CLI_MISSING'; throw error;
+  throw publicError('未找到 Codex 的命令行程序。请先安装或更新 Codex 桌面版，再运行插件连接或断开工具。自定义位置可通过 CODEX_CLI 指定，无需安装 Node.js。', 'CODEX_CLI_MISSING');
 }
 
 function connect({ payloadRoot = __dirname, executable = process.execPath, homeDir = os.homedir(), env = process.env, codexCli, run = spawnSync, prepareOnly = false } = {}) {
@@ -86,7 +92,7 @@ function connect({ payloadRoot = __dirname, executable = process.execPath, homeD
   for (const command of commands) {
     const result = run(cli, command.args, { env: cliEnv, encoding: 'utf8', timeout: 120000, maxBuffer: 2 * 1024 * 1024, windowsHide: true });
     if (result.error || result.status !== 0) {
-      throw new Error(command.label + '失败。请更新 Codex 后重新连接；也可在 Codex 的插件目录中安装“Codex 女仆挂件 · 安装版”。' +
+      throw publicError(command.label + '失败。请更新 Codex 后重新连接；也可在 Codex 的插件目录中安装“Codex 女仆挂件 · 安装版”。' +
         (result.error?.code ? '（' + result.error.code + '）' : '（退出码 ' + result.status + '）'));
     }
   }
@@ -94,25 +100,43 @@ function connect({ payloadRoot = __dirname, executable = process.execPath, homeD
     message: 'Codex 女仆挂件插件已连接。请重启 Codex 并新建聊天，使工具生效；桌面挂件须保持运行。真实额度需要 Codex 已登录的账号。无需 Node.js 或项目源码。' };
 }
 
+function disconnect({ payloadRoot = __dirname, homeDir = os.homedir(), env = process.env, codexCli, run = spawnSync } = {}) {
+  // Removal must never prepare/copy a plugin or enumerate the user's config.
+  // The official CLI owns its configuration and removes only this selector.
+  const runtime = JSON.parse(fs.readFileSync(path.join(payloadRoot, 'runtime.json'), 'utf8'));
+  if (!['win32', 'darwin'].includes(runtime.platform)) throw publicError('安装包的系统信息无效，请重新安装挂件。');
+  const cli = locateCodex({ platform: runtime.platform, homeDir, env, explicit: codexCli, run });
+  const cliEnv = { ...env }; delete cliEnv.ELECTRON_RUN_AS_NODE;
+  const result = run(cli, ['plugin', 'remove', PLUGIN + '@' + MARKETPLACE, '--json'],
+    { env: cliEnv, encoding: 'utf8', timeout: 120000, maxBuffer: 2 * 1024 * 1024, windowsHide: true });
+  if (result.error || result.status !== 0) {
+    throw publicError('未能断开本地挂件插件，尚未删除挂件文件。请更新 Codex 后重试；也可在 Codex 中手动卸载 codex-maid-widget@codex-maid-installed。' +
+      (result.error?.code && /^[A-Z0-9_]+$/.test(result.error.code) ? '（' + result.error.code + '）' : '（退出码 ' + result.status + '）'));
+  }
+  return { ok: true, marketplace: MARKETPLACE, message: 'Codex 女仆挂件的本地插件已断开。请重启 Codex 并新建聊天。其他插件、挂件设置和导入形象均保留；现在可以卸载挂件。' };
+}
+
 function main(argv = process.argv.slice(2)) {
   let resultFile;
   try {
-    const { values } = parseArgs({ args: argv, options: { help: { type: 'boolean', short: 'h' }, install: { type: 'boolean' }, 'prepare-only': { type: 'boolean' },
+    const { values } = parseArgs({ args: argv, options: { help: { type: 'boolean', short: 'h' }, install: { type: 'boolean' }, remove: { type: 'boolean' }, uninstall: { type: 'boolean' }, 'prepare-only': { type: 'boolean' },
       'result-file': { type: 'string' }, 'codex-cli': { type: 'string' } } });
     resultFile = values['result-file'];
-    if (values.help || (!values.install && !values['prepare-only'])) {
-      process.stdout.write(JSON.stringify({ ok: true, message: '使用 --install 连接 Codex 插件；此操作会通过官方 Codex CLI 注册并安装本地插件。未执行任何变更。' }) + '\n');
+    const remove = values.remove || values.uninstall;
+    if (remove && (values.install || values['prepare-only'])) throw publicError('连接、准备和断开选项不能同时使用。未执行任何变更。');
+    if (values.help || (!values.install && !values['prepare-only'] && !remove)) {
+      process.stdout.write(JSON.stringify({ ok: true, message: '使用 --install 连接 Codex 本地插件；使用 --remove（或 --uninstall）通过官方 CLI 断开本项目插件。默认不执行任何变更。' }) + '\n');
       return;
     }
-    const result = connect({ codexCli: values['codex-cli'], prepareOnly: values['prepare-only'] });
+    const result = remove ? disconnect({ codexCli: values['codex-cli'] }) : connect({ codexCli: values['codex-cli'], prepareOnly: values['prepare-only'] });
     if (resultFile) fs.writeFileSync(resultFile, JSON.stringify(result) + '\n');
     process.stdout.write(JSON.stringify(result) + '\n');
   } catch (error) {
-    const result = { ok: false, message: error.message, ...(error.code === 'CODEX_CLI_MISSING' ? { code: error.code } : {}) };
+    const result = { ok: false, message: error.publicMessage || '插件操作未完成。请检查安装文件及 Codex 版本后重试。', ...(error.code === 'CODEX_CLI_MISSING' ? { code: error.code } : {}) };
     if (resultFile) { try { fs.writeFileSync(resultFile, JSON.stringify(result) + '\n'); } catch { /* stdout also carries the result. */ } }
     process.stdout.write(JSON.stringify(result) + '\n');
     process.exitCode = 1;
   }
 }
 if (require.main === module) main();
-module.exports = { MARKETPLACE, PLUGIN, preparePlugin, locateCodex, connect, main };
+module.exports = { MARKETPLACE, PLUGIN, preparePlugin, locateCodex, connect, disconnect, main };

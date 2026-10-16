@@ -48,7 +48,7 @@ npm run check:follow
 npm run build:installer
 ```
 
-The installer builder creates one package for Apple Silicon and Intel under `macos/release/0.3.12/installers/`, with a SHA-256 checksum. It checks universal executables, application layout, embedded runtime and connector, resource permissions, and app signatures.
+The installer builder creates one package for Apple Silicon and Intel under `macos/release/0.3.13/installers/`, with a SHA-256 checksum. It checks universal executables, application layout, embedded runtime and connector, resource permissions, and app signatures.
 
 The app uses an ad-hoc signature. Developer ID Application/Installer signing and Apple notarization are not configured. A successful build does not imply notarization.
 

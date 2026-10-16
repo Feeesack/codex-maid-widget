@@ -9,6 +9,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { StringDecoder } = require('node:string_decoder');
 const { createHash } = require('node:crypto');
+const { version: APP_VERSION } = require('../package.json');
 
 const READ_METHODS = new Set(['initialize', 'account/read', 'account/rateLimits/read']);
 const MAX_LINE = 4 * 1024 * 1024;
@@ -200,7 +201,7 @@ class ReadOnlyAppServer {
     const executable = findCodexExecutable(this.options.codexPath);
     const env = { ...process.env };
     if (this.options.codexHome) env.CODEX_HOME = this.options.codexHome;
-    const child = spawnCodex(executable, [
+    const child = (this.options.spawn || spawnCodex)(executable, [
       'app-server', '--listen', 'stdio://',
       // Process-local analytics override; never rewrites the user's config.
       // This client only sends the account-read methods above, never thread/start.
@@ -242,7 +243,7 @@ class ReadOnlyAppServer {
     child.on('error', error => { if (this.child === child) this.disconnect(error); });
     child.on('exit', () => { if (this.child === child) this.disconnect(Object.assign(new Error('App-server exited'), { code: 'EXIT' })); });
     try {
-      await this.request('initialize', { clientInfo: { name: 'codex_maid_widget', title: 'Codex Maid Widget', version: '0.3.3' } });
+      await this.request('initialize', { clientInfo: { name: 'codex_maid_widget', title: 'Codex Maid Widget', version: APP_VERSION } });
       if (this.child !== child) throw Object.assign(new Error('Connection superseded'), { code: 'INVALIDATED' });
       child.stdin.write(`${JSON.stringify({ method: 'initialized', params: {} })}\n`);
     } catch (error) { if (this.child === child) this.disconnect(error); throw error; }
