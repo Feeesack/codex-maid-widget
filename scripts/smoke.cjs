@@ -14,6 +14,7 @@ const root=path.join(__dirname,'..');
 let smokePhase = 'starting Electron';
 const smokeWatchdog = setTimeout(() => { console.error('UI smoke timed out during: ' + smokePhase); app.exit(1); }, 180000);
 const markPhase = value => { smokePhase = value; console.log('CHECK: ' + value); };
+const screenshotDirectory = process.env.CODEX_MAID_SCREENSHOTS || path.join(root, 'docs', 'screenshots');
 const testHome=fs.mkdtempSync(path.join(os.tmpdir(),'maid-gallery-ui-'));
 app.setPath('userData',testHome);
 const library=new CharacterLibrary({dataDir:testHome,assetRoot:path.join(root,'assets')});
@@ -22,15 +23,39 @@ const snapshot=require('../src/demo.cjs')();
 const pause = ms => new Promise(resolve=>setTimeout(resolve,ms));
 function state(){const characters=library.list();const active=library.get(settings.activeCharacterId)||library.get(library.defaultId);return {settings,snapshot,demo:true,version:require('../package.json').version,characters,activeCharacterId:active.id,characterUrl:active.url,characterName:active.name};}
 async function publish(patch={}) { settings=sanitize({...settings,...patch});win.webContents.send('state',state());await pause(100); }
-ipcMain.handle('state',()=>state());
+let firstStateRequest = true;
+ipcMain.handle('state',async()=>{
+  // Exercise a real IPC response that arrives later than the old one-second wait.
+  if (firstStateRequest) { firstStateRequest = false; await pause(1250); }
+  return state();
+});
 ipcMain.handle('settings',(_event,patch)=>{settings=sanitize({...settings,...patch});win.webContents.send('state',state());return state();});
 ipcMain.handle('refresh',()=>{refreshes++;return snapshot;});
 ipcMain.handle('action',()=>{});
 ipcMain.handle('select-character',(_event,id)=>{settings.activeCharacterId=id;win.webContents.send('state',state());return state();});
 ipcMain.handle('rename-character',(_event,id,name)=>{library.rename(id,name);win.webContents.send('state',state());return state();});
 ipcMain.handle('remove-character',(_event,id)=>{library.remove(id);if(settings.activeCharacterId===id)settings.activeCharacterId=library.defaultId;win.webContents.send('state',state());return state();});
-ipcMain.handle('import-characters',()=>{const result=library.importFiles([path.join(root,'docs','screenshots','widget-demo.png')]);win.webContents.send('state',state());return {state:state(),importedCount:result.imported.length,existingCount:result.existing.length,errors:result.errors};});
+ipcMain.handle('import-characters',()=>{const result=library.importFiles([path.join(screenshotDirectory,'widget-demo.png')]);win.webContents.send('state',state());return {state:state(),importedCount:result.imported.length,existingCount:result.existing.length,errors:result.errors};});
 const evaluate = code => win.webContents.executeJavaScript(code).catch(error=>{throw new Error(`${error.message}\nRenderer expression: ${code}`);});
+async function waitForInitialWidget(errors) {
+  let observed, timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Initial widget was not ready within 10s: ${JSON.stringify({observed, errors})}`)), 10000);
+  });
+  try {
+    return await Promise.race([timeout, (async () => {
+      for (;;) {
+        // Hidden offscreen surfaces may defer requestAnimationFrame until a paint
+        // is requested. Observe the real preload/render path; never inject state.
+        win.webContents.invalidate();
+        observed = await evaluate(`({stateApplied:typeof current==='object'&&current!==null,value:document.getElementById('remaining').textContent,artLoaded:document.getElementById('maid-image').naturalWidth>0,demo:!document.getElementById('demo-label').hidden,secure:typeof process==='undefined'&&typeof require==='undefined',width:innerWidth,height:innerHeight,logoLoaded:document.querySelector('.brand-mark img').naturalWidth>0,primaryWidth:document.getElementById('primary-bar').style.width})`);
+        assert.deepEqual(errors, [], 'initial renderer and preload must load without errors');
+        if (observed.stateApplied && observed.value === '82' && observed.artLoaded && observed.logoLoaded && observed.demo) return observed;
+        await pause(50);
+      }
+    })()]);
+  } finally { clearTimeout(timer); }
+}
 async function rects() {
   return evaluate(`Object.fromEntries(['bubble','character','toolbar','dot-one','dot-two','notice','demo-label'].map(id=>{const el=document.getElementById(id)||document.querySelector('.'+id);const r=el.getBoundingClientRect();return [id,{x:r.x,y:r.y,width:r.width,height:r.height}]}))`);
 }
@@ -69,7 +94,8 @@ async function checkNativePhraseSizing(defaultPhrases,longPhrases) {
       native.webContents.setZoomFactor(1);
       await native.webContents.executeJavaScript(`$('widget').classList.remove('is-mirrored');$('phrase').textContent=${JSON.stringify(defaultPhrases[0])};fitPhraseText();reveal()`);
       native.showInactive();await pause(550);
-      fs.writeFileSync(path.join(root,'docs/screenshots/widget-dragon-tibo-native-demo.png'),(await native.webContents.capturePage()).toPNG());
+      fs.mkdirSync(screenshotDirectory, { recursive: true });
+      fs.writeFileSync(path.join(screenshotDirectory,'widget-dragon-tibo-native-demo.png'),(await native.webContents.capturePage()).toPNG());
     }
   } finally { native.webContents.setZoomFactor(1); native.destroy(); }
 }
@@ -187,8 +213,7 @@ app.whenReady().then(async()=>{
   // normal animations, then separately test the reduced-motion branch below.
   win.webContents.debugger.attach('1.3');
   await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
-  await pause(1000);
-  const first=await evaluate(`({value:document.getElementById('remaining').textContent,artLoaded:document.getElementById('maid-image').naturalWidth>0,demo:!document.getElementById('demo-label').hidden,secure:typeof process==='undefined'&&typeof require==='undefined',width:innerWidth,height:innerHeight,logoLoaded:document.querySelector('.brand-mark img').naturalWidth>0})`);
+  const first=await waitForInitialWidget(errors);
   assert.equal(first.value,'82');assert.equal(first.artLoaded,true);assert.equal(first.demo,true);assert.equal(first.secure,true);assert.equal(first.logoLoaded,true);
   assert.equal(first.width,228);assert.equal(first.height,288);
   assert.equal(await evaluate(`document.getElementById('bucket-name')===null && document.getElementById('footnote')===null`),true,'remove verbose metadata from the bubble');
@@ -204,7 +229,7 @@ app.whenReady().then(async()=>{
   assert.deepEqual(await themeColors(),lilacTheme,'switching back should restore the lilac palette');
   await publish({activeCharacterId:'mint-maid'});await waitForTheme('mint-maid','builtin');
   assert.deepEqual(await themeColors(),mintTheme,'switching back should restore the mint palette');
-  const screenshots=path.join(root,'docs','screenshots');fs.mkdirSync(screenshots,{recursive:true});
+  const screenshots=screenshotDirectory;fs.mkdirSync(screenshots,{recursive:true});
   const capture = async name => fs.writeFileSync(path.join(screenshots,name),(await win.webContents.capturePage()).toPNG());
   await publish({autoHideSeconds:0});
   await evaluate(`document.getElementById('notice').hidden=false;document.getElementById('notice').textContent='测试提示';document.querySelector('.toolbar').style.opacity='1';document.querySelector('.toolbar').style.transition='none'`);
