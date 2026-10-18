@@ -1,6 +1,6 @@
 {
   "name": "codex-maid-widget",
-  "version": "0.3.13",
+  "version": "0.3.21",
   "description": "Codex 女仆额度桌面挂件 · 透明悬浮、真实额度与本地用量",
   "main": "src/entry.cjs",
   "private": true,
@@ -12,6 +12,8 @@
     "test": "node --test test/*.test.cjs",
     "smoke": "electron scripts/smoke.cjs",
     "check:native": "node scripts/check-native.cjs",
+    "check:drag-dpi": "node scripts/check-drag-dpi.cjs",
+    "check:window": "node scripts/check-window-mode.cjs",
     "check:follow": "node scripts/check-follow.cjs",
     "check:launch": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/check-launch-job.ps1",
     "profile:background": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/profile-background.ps1",

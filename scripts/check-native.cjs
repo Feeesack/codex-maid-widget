@@ -27,7 +27,9 @@ async function until(callback,ms=10000){const end=Date.now()+ms;while(Date.now()
     assert.equal(bounds.width,228);assert.equal(bounds.height,288);
     const migrated=JSON.parse(fs.readFileSync(path.join(home,'settings.json'),'utf8'));
     assert.equal(migrated.scale,1);assert.equal(migrated.sizeBaseline,2);
-    assert.equal(migrated.mirror,true);assert.equal(migrated.opacity,0.8);
+    // With no saved position startup places her on the right; orientation is
+    // derived from that position rather than retaining the old edge-only bit.
+    assert.equal(migrated.mirror,false);assert.equal(migrated.opacity,0.8);
     assert.equal(migrated.sound,false);
     assert.deepEqual(migrated.phrases,['保留我的台词']);
     const target=JSON.parse(fs.readFileSync(controlPath,'utf8'));

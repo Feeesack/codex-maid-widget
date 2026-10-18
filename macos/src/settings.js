@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const booleans = ['showBubble','alwaysOnTop','clickThrough','sound','followCodex'];
+const booleans = ['showBubble','alwaysOnTop','clickThrough','sound','followCodex','stayInCodexWindow','peekAtCorners'];
 const numbers = ['scale','opacity','refreshSeconds','autoHideSeconds'];
 let current, phrasesEdited = false;
 const characterCards = new Map();
@@ -192,6 +192,13 @@ function render(value) {
   current=value;
   $('version').textContent = 'v'+value.version;
   for(const id of booleans) $(id).checked = value.settings[id];
+  $('alwaysOnTop').disabled = value.settings.stayInCodexWindow === true;
+  const windowMode = value.windowContainment;
+  $('stayInCodexWindow').disabled = windowMode?.supported === false && !value.settings.stayInCodexWindow;
+  $('window-mode-note').textContent = !value.settings.stayInCodexWindow ? '默认关闭；开启后，人物只在 Codex 主窗口范围内显示。'
+    : ({ contained: '已限制在 Codex 窗口内；关闭后恢复独立位置和置顶设置。', 'host-too-small': 'Codex 窗口空间不足，已暂时隐藏；可放大窗口或调小挂件。',
+      'manual-hidden': '已手动隐藏；可从托盘或快捷键恢复。', 'other-foreground': '切换到了其他应用，挂件暂时隐藏。', 'host-hidden': 'Codex 窗口已最小化或隐藏，挂件随之隐藏。' })[windowMode?.reason]
+      || '正在等待可见的 Codex 窗口；窗口内模式不使用全局置顶。';
   for(const id of [...numbers,'mode']) $(id).value = value.settings[id];
   $('scale-value').textContent = Math.round(value.settings.scale*100)+'%';
   $('opacity-value').textContent = Math.round(value.settings.opacity*100)+'%';

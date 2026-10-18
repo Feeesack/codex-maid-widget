@@ -85,9 +85,9 @@ test('weekly content and Codex-follow preferences survive saving and reopening s
   const restored=readSettings(file);
   assert.equal(restored.mode,'week');assert.equal(restored.followCodex,false);
 });
-test('left edge snap mirrors on a negative-coordinate monitor',()=>{
+test('left half mirrors without magnetizing the side of a negative-coordinate monitor',()=>{
   const p=snapBounds({x:-1910,y:102,width:380,height:480},{x:-1920,y:0,width:1920,height:1080});
-  assert.deepEqual(p,{x:-1920,y:102,mirror:true});
+  assert.deepEqual(p,{x:-1910,y:102,mirror:true});
 });
 test('right/bottom snap and disconnected display recovery remain in work area',()=>{
   const area={x:0,y:0,width:1920,height:1040};

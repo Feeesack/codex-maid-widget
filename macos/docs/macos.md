@@ -1,6 +1,6 @@
 # macOS documentation
 
-The Mac app uses the same release version and core features as Windows.
+The Mac app uses the same release version and core features as Windows. Optional display inside Codex uses a separate widget window on macOS, following Codex's bounds and hiding when another app is active or Codex is minimized. Windows native child-window attachment is platform-specific.
 
 - [English project README](../../README.md)
 - [简体中文项目说明](../../README.zh-CN.md)

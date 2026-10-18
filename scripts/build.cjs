@@ -40,7 +40,8 @@ async function build() {
     // Avoid an unnecessary online SHASUMS request when the runtime is already present.
     download: { checksums: require('electron/checksums.json') },
     ignore: file => !isRuntimePath(file),
-    appVersion: version, win32metadata: { ProductName: 'Codex Maid Widget', FileDescription: 'Codex 女仆额度挂件' } });
+    appVersion: version, win32metadata: { ProductName: 'Codex Maid Widget', FileDescription: 'Codex 女仆额度挂件',
+      'application-manifest': path.join(root, 'distribution/windows/application.manifest') } });
   const { extractFile } = await import('@electron/asar');
   const archive = path.join(output[0], 'resources', 'app.asar');
   await verifyRuntimeArchive(archive);

@@ -19,3 +19,6 @@ Desktop.ini
 /userData/
 chat_backup/
 docs/coordination/
+/github-publish/
+# PowerShell cache generated during local validation
+/Microsoft/Windows/PowerShell/ModuleAnalysisCache

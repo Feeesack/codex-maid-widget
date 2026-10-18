@@ -13,4 +13,5 @@ contextBridge.exposeInMainWorld('maid', {
   pointerRegion: inside => ipcRenderer.send('pointer-region', !!inside),
   onState: callback => { const listener = (_event, value) => callback(value); ipcRenderer.on('state', listener); return () => ipcRenderer.removeListener('state', listener); },
   onBounce: callback => { const listener = () => callback(); ipcRenderer.on('bounce', listener); return () => ipcRenderer.removeListener('bounce', listener); },
+  onPresence: callback => { const listener = (_event, value) => callback(value); ipcRenderer.on('presence', listener); return () => ipcRenderer.removeListener('presence', listener); },
 });

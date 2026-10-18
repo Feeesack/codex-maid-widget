@@ -22,6 +22,8 @@ jobs:
       - run: node --test distribution/test/*.test.cjs distribution/integration/test/*.test.cjs
       - run: npm run smoke
       - run: npm run check:native
+      - run: npm run check:drag-dpi
+      - run: npm run check:window
       - run: npm run check:follow
       - run: npm run build
       - run: node distribution/windows/build.cjs

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.21 — 2026-10-18
+
+Shared Windows and macOS release.
+
+- Fix window-size growth during dragging at fractional Windows display scaling.
+- Add optional display inside the Codex main window. Windows uses native child-window attachment to follow movement, minimization and restoration, with normal system occlusion by other windows and dialogs. macOS uses a separate window that follows Codex's bounds and visibility.
+- Mirror the character when it crosses into the left half of the current screen or Codex window.
+- Limit magnetic snapping to the two bottom corners. Add optional side-and-bottom peeking, continuous pointer-following dragging and interruptible settling after release.
+- Add 3-second and 5-second bubble auto-collapse choices, with 5 seconds as the default. Preserve existing saved preferences, images and character libraries during upgrades.
+- Expand isolated native, renderer and regression checks, and handle closed smoke-test output pipes.
+
+Both window display and corner peeking are off by default. Manual Mac desktop acceptance is separate from CI. Installers remain without developer distribution certificates, and the Mac package is not Apple-notarized.
+
 ## 0.3.13 — 2026-10-17
 
 - Keep filenames and edited character labels in the local UI, while returning fixed character labels from MCP tools.

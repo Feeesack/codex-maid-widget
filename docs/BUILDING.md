@@ -22,6 +22,8 @@ npm ci
 npm test
 npm run smoke
 npm run check:native
+npm run check:drag-dpi
+npm run check:window
 npm run check:follow
 npm run build
 node distribution/windows/build.cjs
@@ -48,7 +50,7 @@ npm run check:follow
 npm run build:installer
 ```
 
-The installer builder creates one package for Apple Silicon and Intel under `macos/release/0.3.13/installers/`, with a SHA-256 checksum. It checks universal executables, application layout, embedded runtime and connector, resource permissions, and app signatures.
+The installer builder creates one package for Apple Silicon and Intel under `macos/release/<version>/installers/`, with a SHA-256 checksum. It checks universal executables, application layout, embedded runtime and connector, resource permissions, and app signatures.
 
 The app uses an ad-hoc signature. Developer ID Application/Installer signing and Apple notarization are not configured. A successful build does not imply notarization.
 
@@ -56,9 +58,15 @@ The app uses an ad-hoc signature. Developer ID Application/Installer signing and
 
 The macOS workflow builds one universal installer and installs that same artifact on Apple Silicon and Intel macOS runners. It checks installed-app startup, embedded-runtime MCP, rendering and follow behavior, and the native login helper.
 
+Window display uses different platform mechanisms: Windows attaches a native child window to the Codex main window; macOS uses a separate window constrained to Codex's bounds and visibility. A Windows containment check does not verify Mac Spaces or full-screen behavior. Report native runner results and manual desktop acceptance separately.
+
 `macos/scripts/check-macos-startup.cjs` exercises real launchd registration, removal, and cleanup. It is restricted to an isolated GitHub Actions runner and is not a daily local-development command. Do not change its isolation guard or run startup tests against personal login items.
 
 `check:follow` uses isolated simulated client lifecycles. Real Codex sessions, authentication, and personal startup/plugin settings must remain outside test fixtures.
+
+On Windows, `check:drag-dpi` runs the production drag handlers against native Electron windows at 100%, 125%, 150%, 175%, and 200% device scale. Each isolated profile compares the previous position-only behavior with fixed preferred bounds, including repeated movement, immediate left/right mirroring, bottom-corner snapping and free placement near other edges. It records normal pixel rounding separately and requires the fixed size range to stay within one DIP. It does not move the user's cursor or load personal widget/Codex profiles.
+
+`check:window` creates a separate Electron host and exercises the production native provider and containment adapter with isolated profiles. It checks real child composition, fixed geometry, native modal pickers, minimization and restoration, visibility recovery, style-cache loss and surface recreation, and clean detachment. It does not attach to or control the user's Codex window. Cross-process attachment requires matching HWND DPI-awareness contexts.
 
 ## Optional checks
 

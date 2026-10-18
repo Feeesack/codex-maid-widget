@@ -14,17 +14,19 @@
 <label class="row"><span>默认气泡内容</span><select id="mode"><option value="quota">额度与重置倒计时</option><option value="today">今日 token 用量</option><option value="week">本周 token 用量</option><option value="lastTurn">本机最近一轮</option><option value="phrase">女仆台词</option></select></label>
 <label class="row"><span>自动刷新</span><select id="refreshSeconds"><option value="30">30 秒</option><option value="60">60 秒</option><option value="120">2 分钟</option><option value="300">5 分钟</option><option value="600">10 分钟</option></select></label>
 <label class="row"><span>显示气泡</span><input id="showBubble" type="checkbox" role="switch"></label>
-<label class="row"><span>气泡自动收起</span><select id="autoHideSeconds"><option value="0">始终显示</option><option value="10">10 秒后</option><option value="30">30 秒后</option><option value="60">60 秒后</option></select></label>
+<label class="row"><span>气泡自动收起</span><select id="autoHideSeconds"><option value="0">始终显示</option><option value="3">3 秒后</option><option value="5">5 秒后</option><option value="10">10 秒后</option><option value="30">30 秒后</option><option value="60">60 秒后</option></select></label>
 </section>
 <section><h2>她的样子 <span>APPEARANCE</span></h2>
 <label class="range-row"><span>挂件大小 <output id="scale-value">100%</output></span><input id="scale" type="range" min="0.6" max="1.6" step="0.05"><small>100% = 原版的 60%，默认更小巧</small></label>
 <label class="range-row"><span>不透明度 <output id="opacity-value">100%</output></span><input id="opacity" type="range" min="0.35" max="1" step="0.05"></label>
 <label class="row"><span>始终置顶</span><input id="alwaysOnTop" type="checkbox" role="switch"></label>
+<label class="row"><span>仅在 Codex 窗口内显示<small id="window-mode-note">默认关闭；开启后，人物只在 Codex 主窗口范围内显示。</small></span><input id="stayInCodexWindow" type="checkbox" role="switch"></label>
+<label class="row"><span>底角吸附时只露头部<small>默认关闭；停靠左下或右下时藏住底部和外侧，拖动跟随鼠标，松手再吸附。</small></span><input id="peekAtCorners" type="checkbox" role="switch"></label>
 <label class="row"><span>鼠标穿透<small>可从系统托盘或快捷键解除</small></span><input id="clickThrough" type="checkbox" role="switch"></label>
 <label class="row"><span>弹跳音效<small>默认开启，可随时关闭</small></span><input id="sound" type="checkbox" role="switch"></label>
 <label class="row"><span>跟随 Codex 桌面端<small id="autostart-note">默认开启：打开客户端时启动，退出客户端后自动退出。</small></span><input id="followCodex" type="checkbox" role="switch"></label>
 </section>
 <section><h2>想对你说的话 <span>PERSONALITY</span></h2><p class="hint">每行一句。点击爱心或切换台词气泡时，依次出现。</p><textarea id="phrases" rows="4" maxlength="8000" aria-label="自定义台词"></textarea><button id="save-phrases">保存台词</button><span id="saved" role="status"></span></section>
-<section class="help"><h2>相处小指南</h2><p>拖动角色或气泡移动位置，靠近屏幕四边自动吸附，靠左时角色翻转。点击角色弹跳；点击气泡刷新额度；点击 ··· 切换气泡内容；右键打开设置。</p><dl><dt>显示 / 隐藏</dt><dd>Ctrl + Alt + M</dd><dt>弹跳</dt><dd>Ctrl + Alt + Q</dd><dt>切换鼠标穿透</dt><dd>Ctrl + Alt + Shift + M</dd></dl><p>订阅额度显示剩余百分比。Token 是用量，不是账单金额。本周按本地时间周一至今统计；本机日志汇总包含此设备各账号，不能代表当前账号的跨设备用量。没有数据时显示 --。</p></section>
+<section class="help"><h2>相处小指南</h2><p>拖动角色或气泡移动位置，靠近左下角或右下角自动吸附，移到界面左半侧时镜像，右半侧恢复原朝向。点击角色弹跳；点击气泡刷新额度；点击 ··· 切换气泡内容；右键打开设置。</p><dl><dt>显示 / 隐藏</dt><dd>Ctrl + Alt + M</dd><dt>弹跳</dt><dd>Ctrl + Alt + Q</dd><dt>切换鼠标穿透</dt><dd>Ctrl + Alt + Shift + M</dd></dl><p>订阅额度显示剩余百分比。Token 是用量，不是账单金额。本周按本地时间周一至今统计；本机日志汇总包含此设备各账号，不能代表当前账号的跨设备用量。没有数据时显示 --。</p></section>
 </main><footer>本地运行 · 不上传聊天 · 不发起模型请求 <span id="demo-note"></span></footer>
 <script src="settings.js"></script></body></html>

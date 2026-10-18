@@ -1,6 +1,9 @@
 *{box-sizing:border-box}
 html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;user-select:none;font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:#23433f}
 button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
+/* Window motion belongs to the native parent compositor, as in DSH's page.
+   Never add a second scale/fade to the character during minimize/restore. */
+body.presence-hidden{visibility:hidden;pointer-events:none}
 button:focus-visible,[role=button]:focus-visible{outline:3px solid var(--theme-progress-start);outline-offset:3px}
 .widget{width:380px;height:480px;position:relative;transform-origin:0 0;color:var(--theme-text);
   --theme-outline:#1d7e74;--theme-fill-start:#fff;--theme-fill-end:#f4fffb;
@@ -48,6 +51,12 @@ footer button:hover{background:var(--theme-pill-hover);color:var(--theme-accent)
 .character:active{cursor:grabbing}
 .character img{display:block;width:100%;height:100%;object-fit:contain;object-position:bottom;pointer-events:none;filter:drop-shadow(0 2px 1px color-mix(in srgb,var(--theme-outline) 9%,transparent));animation:breathe 5s ease-in-out infinite;transform-origin:bottom center}
 .character:hover{filter:brightness(1.025)}
+/* The main process projects one continuous pose while dragging and settling.
+   Clip the body at both corner edges; keep bubble text inside the side edge. */
+.character{translate:var(--visual-offset-x,0px) var(--visual-offset-y,0px)}
+.bubble-motion{translate:0 var(--visual-offset-y,0px)}
+.widget.is-moving .character img{animation:none}
+.widget.is-moving .character,.widget.is-moving .bubble-motion{animation:none}
 .widget.is-mirrored .character img{scale:-1 1}
 .character.bounce{animation:squish .65s cubic-bezier(.24,.7,.35,1)}
 .bubble-motion.bounce{animation:bubbleFollow .65s cubic-bezier(.24,.7,.35,1)}

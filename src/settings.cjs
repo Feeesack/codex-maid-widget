@@ -19,7 +19,7 @@ const PREVIOUS_DEFAULT_PHRASES = [
 const DEFAULTS = Object.freeze({
   sizeBaseline: 2,
   scale: 1, opacity: 1, alwaysOnTop: true, clickThrough: false, sound: true,
-  autoStart: false, followCodex: true, showBubble: true, autoHideSeconds: 10, refreshSeconds: 60,
+  autoStart: false, followCodex: true, stayInCodexWindow: false, peekAtCorners: false, showBubble: true, autoHideSeconds: 5, refreshSeconds: 60,
   bucketId: '', mode: 'quota', characterPath: '', activeCharacterId: 'lilac-dragon', position: null, mirror: false,
   phrases: [
     'Tibo 义父，reset please……',
@@ -40,7 +40,7 @@ function clamp(value, min, max, fallback) {
 }
 function sanitize(input = {}) {
   const s = { ...DEFAULTS };
-  for (const key of ['alwaysOnTop','clickThrough','sound','autoStart','followCodex','showBubble','mirror']) {
+  for (const key of ['alwaysOnTop','clickThrough','sound','autoStart','followCodex','stayInCodexWindow','peekAtCorners','showBubble','mirror']) {
     if (typeof input[key] === 'boolean') s[key] = input[key];
   }
   s.scale = clamp(input.scale, 0.6, 1.6, DEFAULTS.scale);
@@ -86,11 +86,31 @@ function constrainPosition(bounds, area) {
 }
 function snapBounds(bounds, area, threshold = 32) {
   const p = constrainPosition(bounds, area);
-  let mirror = false;
-  if (p.x - area.x < threshold) { p.x = area.x; mirror = true; }
-  if (area.x + area.width - (p.x + bounds.width) < threshold) p.x = area.x + area.width - bounds.width;
-  if (p.y - area.y < threshold) p.y = area.y;
-  if (area.y + area.height - (p.y + bounds.height) < threshold) p.y = area.y + area.height - bounds.height;
-  return { ...p, mirror };
+  const left = p.x - area.x, right = area.x + area.width - (p.x + bounds.width);
+  if (area.y + area.height - (p.y + bounds.height) < threshold && Math.min(left, right) < threshold) {
+    p.x = left < right ? area.x : area.x + area.width - bounds.width;
+    p.y = area.y + area.height - bounds.height;
+  }
+  return { ...p, mirror: mirrorForBounds({ ...bounds, ...p }, area) };
 }
-module.exports = { DEFAULTS, sanitize, readSettings, writeSettings, widgetDimensions, constrainPosition, snapBounds };
+function bottomCorner(bounds, area, tolerance = 2) {
+  if (Math.abs(area.y + area.height - bounds.y - bounds.height) > tolerance) return null;
+  const left = Math.abs(bounds.x - area.x), right = Math.abs(area.x + area.width - bounds.x - bounds.width);
+  return left <= tolerance && left < right ? 'left' : right <= tolerance ? 'right' : null;
+}
+function cornerPeekOffset(corner, size) {
+  if (corner !== 'left' && corner !== 'right') return { x: 0, y: 0 };
+  const scale = size.width / 380;
+  return { x: (corner === 'left' ? -48 : 48) * scale, y: 56 * scale };
+}
+function projectVisualBounds(visualBounds, area) {
+  // Keep the native surface within its host and preserve the exact visual origin
+  // with a renderer offset. Its preferred size never comes from rounded HWNDs.
+  const bounds = { ...constrainPosition(visualBounds, area), width: visualBounds.width, height: visualBounds.height };
+  return { bounds, offset: { x: visualBounds.x - bounds.x, y: visualBounds.y - bounds.y } };
+}
+function mirrorForBounds(bounds, area) {
+  // Use the fixed surface centre, independent of mirrored artwork/bubble layout.
+  return bounds.x + bounds.width / 2 < area.x + area.width / 2;
+}
+module.exports = { DEFAULTS, sanitize, readSettings, writeSettings, widgetDimensions, constrainPosition, snapBounds, mirrorForBounds, bottomCorner, cornerPeekOffset, projectVisualBounds };

@@ -6,7 +6,7 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const os = require('node:os');
 const { execFile } = require('node:child_process');
-const { readSettings, writeSettings, sanitize, widgetDimensions, constrainPosition, snapBounds } = require('./settings.cjs');
+const { readSettings, writeSettings, sanitize, widgetDimensions, constrainPosition, snapBounds, mirrorForBounds, bottomCorner, cornerPeekOffset, projectVisualBounds } = require('./settings.cjs');
 const { CharacterLibrary } = require('./character-library.cjs');
 const { CodexDataSource } = require('./codex-data.cjs');
 const { CodexDesktopMonitor, buildLaunchArgs } = require('./codex-desktop.cjs');
@@ -34,26 +34,140 @@ let followError = '';
 let connectingPlugin = false;
 let snapshot = { status: 'connecting', buckets: [], today: null, lastTurn: null };
 let quitting = false, drag = null, refreshing = null, ownsControl = false;
+let windowMode = null;
+let widgetManuallyHidden = false;
+let lastCorner = null;
+let visualMotion = null, poseTimer = null, poseResume = null, poseEpoch = 0;
 function save() { writeSettings(settingsFile, settings); }
 function state() {
   const characters = library.list();
   const active = characters.find(item => item.id === settings.activeCharacterId && item.available) || characters.find(item => item.id === library.defaultId);
-  return { settings, snapshot, demo: demoMode, version: app.getVersion(), platform: process.platform, characters, followSupported, followError,
+  const dock = cornerDockState();
+  return { settings, snapshot, demo: demoMode, version: app.getVersion(), platform: process.platform, characters, followSupported, followError, windowContainment: windowModeState(), cornerDock: dock, visualPose: visualPoseState(dock),
     activeCharacterId: active.id, characterUrl: active.url, characterName: active.name };
 }
 function broadcast() {
   for (const win of [widget, settingsWindow]) if (win && !win.isDestroyed()) win.webContents.send('state', state());
 }
 function dimensions() { return widgetDimensions(settings.scale); }
+function cornerDockState() {
+  if (!widget || widget.isDestroyed()) return { corner: null, peeking: false };
+  const contained = windowMode?.enabled;
+  const bounds = { ...(contained ? windowMode.getBounds() : widget.getBounds()), ...dimensions() };
+  const area = contained ? windowMode.getArea() : screen.getDisplayMatching(bounds).workArea;
+  // Minimize keeps the native child composed; retain its parked appearance.
+  const corner = area ? bottomCorner(bounds, area) : contained ? lastCorner : null;
+  lastCorner = corner;
+  return { corner, peeking: !!corner && settings.peekAtCorners && !drag?.moved && !visualMotion };
+}
+function visualPoseState(dock = cornerDockState()) {
+  return { offset: visualMotion ? { ...visualMotion.offset } : cornerPeekOffset(dock.peeking ? dock.corner : null, dimensions()), moving: !!visualMotion };
+}
+function cancelPose(clear = false) {
+  poseEpoch++; clearTimeout(poseTimer); poseTimer = null; poseResume = null;
+  if (clear) visualMotion = null;
+}
+function poseArea(visual) {
+  return windowMode?.enabled ? windowMode.getArea() : screen.getDisplayMatching({ ...visual, ...dimensions() }).workArea;
+}
+function applyVisualPose(visual, phase, area = poseArea(visual)) {
+  if (!area) return false;
+  const projected = projectVisualBounds({ ...visual, ...dimensions() }, area);
+  // Native position + visual remainder always equals the pointer's world point.
+  visualMotion = { visual: { ...visual }, offset: projected.offset, phase };
+  setWidgetPosition(projected.bounds.x, projected.bounds.y);
+  broadcast();
+  return true;
+}
+function rebasePoseDrag() {
+  if (!drag?.poseMode || !windowMode?.enabled) return;
+  const area = windowMode.getArea();
+  if (!area || drag.area && ['x', 'y', 'width', 'height'].every(key => area[key] === drag.area[key])) return;
+  // Native children move with their host before the next pointer event. Keep
+  // that composed position and apply only the next unprocessed mouse delta.
+  const bounds = windowMode.getBounds(), offset = visualPoseState().offset;
+  const visual = { x: bounds.x + offset.x, y: bounds.y + offset.y };
+  drag.visualOrigin = { x: visual.x - (drag.lastCursor.x - drag.cursor.x), y: visual.y - (drag.lastCursor.y - drag.cursor.y) };
+  drag.visual = visual; drag.area = { ...area };
+  if (visualMotion) visualMotion.visual = { ...visual };
+}
+function settleVisualPose(from, canonical, area) {
+  cancelPose();
+  const epoch = poseEpoch, size = dimensions(), started = Date.now();
+  const anchor = { x: area.width > size.width ? (canonical.x - area.x) / (area.width - size.width) : 1,
+    y: area.height > size.height ? (canonical.y - area.y) / (area.height - size.height) : 1 };
+  const offset = cornerPeekOffset(settings.peekAtCorners ? bottomCorner({ ...canonical, ...size }, area) : null, size);
+  const target = { x: canonical.x + offset.x, y: canonical.y + offset.y };
+  if (Math.hypot(target.x - from.x, target.y - from.y) < 0.01) {
+    visualMotion = null; setWidgetPosition(canonical.x, canonical.y); broadcast(); return;
+  }
+  const frame = () => {
+    if (epoch !== poseEpoch || quitting || !widget || widget.isDestroyed()) return;
+    const liveArea = poseArea(target);
+    // Keep the composed child unchanged while its host minimizes or is unknown.
+    if (!liveArea) { poseTimer = null; poseResume = frame; return; }
+    const position = { x: Math.round(liveArea.x + anchor.x * (liveArea.width - size.width)),
+      y: Math.round(liveArea.y + anchor.y * (liveArea.height - size.height)) };
+    const inset = cornerPeekOffset(settings.peekAtCorners ? bottomCorner({ ...position, ...size }, liveArea) : null, size);
+    const goal = { x: position.x + inset.x, y: position.y + inset.y };
+    const start = { x: from.x + liveArea.x - area.x, y: from.y + liveArea.y - area.y };
+    const progress = Math.min(1, Math.max(0, (Date.now() - started) / 180)), eased = 1 - (1 - progress) ** 3;
+    applyVisualPose({ x: start.x + (goal.x - start.x) * eased, y: start.y + (goal.y - start.y) * eased }, 'settle', liveArea);
+    if (progress < 1) poseTimer = setTimeout(frame, 16);
+    else { poseTimer = null; visualMotion = null; setWidgetPosition(position.x, position.y); broadcast(); }
+  };
+  frame();
+}
+function windowModeChanged() {
+  rebasePoseDrag();
+  if (poseResume && windowMode?.getArea()) {
+    const resume = poseResume; poseResume = null; poseTimer = setTimeout(resume, 0);
+  }
+  syncMirror(); broadcast();
+}
+function syncMirror() {
+  if (!widget || widget.isDestroyed()) return false;
+  const contained = windowMode?.enabled;
+  const bounds = { ...(contained ? windowMode.getBounds() : widget.getBounds()), ...dimensions() };
+  const area = contained ? windowMode.getArea() : screen.getDisplayMatching(bounds).workArea;
+  if (!area) return false;
+  const mirror = mirrorForBounds(bounds, area);
+  if (settings.mirror === mirror) return false;
+  settings.mirror = mirror;
+  return true;
+}
+function windowModeState() {
+  return windowMode?.getState() || { supported: ['win32', 'darwin'].includes(process.platform), enabled: settings.stayInCodexWindow,
+    visible: false, reason: settings.stayInCodexWindow ? 'unknown' : 'disabled' };
+}
+function syncWindowMode() {
+  if (!windowMode && settings.stayInCodexWindow) {
+    const { CodexWindowMode } = require('./window-mode.cjs');
+    windowMode = new CodexWindowMode({ widget, screen, getSize: dimensions, onStatus: windowModeChanged, onRecreate: rebuildWidget });
+    if (widgetManuallyHidden) windowMode.hide();
+  }
+  windowMode?.configure(settings.stayInCodexWindow, { position: settings.position, alwaysOnTop: settings.alwaysOnTop });
+}
+function setWidgetPosition(x, y) {
+  // Position-only native updates can accumulate size rounding at fractional DPI.
+  // Always use the preferred DIP size, never a previously rounded window size.
+  if (!windowMode?.moveTo(x, y)) widget.setBounds({ x, y, ...dimensions() });
+  if (syncMirror()) broadcast();
+}
 function applyWindowSettings() {
-  widget.setAlwaysOnTop(settings.alwaysOnTop, 'floating');
+  widget.setAlwaysOnTop(settings.stayInCodexWindow ? false : settings.alwaysOnTop, 'floating');
   widget.setOpacity(settings.opacity);
   widget.setIgnoreMouseEvents(settings.clickThrough, { forward: true });
-  const old = widget.getBounds();
-  const size = dimensions();
-  const area = screen.getDisplayMatching(old).workArea;
-  const p = constrainPosition({ ...old, ...size }, area);
-  widget.setBounds({ ...p, ...size });
+  syncWindowMode();
+  if (windowMode?.enabled) windowMode.refreshSize();
+  else {
+    const old = widget.getBounds();
+    const size = dimensions();
+    const area = screen.getDisplayMatching(old).workArea;
+    const p = constrainPosition({ ...old, ...size }, area);
+    widget.setBounds({ ...p, ...size });
+  }
+  syncMirror();
   syncDesktopFollow();
   updateTray();
 }
@@ -150,6 +264,8 @@ function syncDesktopFollow() {
   }
 }
 function updateSettings(patch) {
+  cancelPose(true);
+  if (drag?.poseMode) drag = null;
   // File paths and window positions are only set by trusted native actions.
   const { characterPath, activeCharacterId, position, ...safe } = patch || {};
   settings = sanitize({ ...settings, ...safe });
@@ -167,8 +283,9 @@ function updateTray() {
     { type: 'separator' },
     { label: '鼠标穿透 · Ctrl+Alt+Shift+M', type: 'checkbox', checked: settings.clickThrough, click: i => updateSettings({ clickThrough: i.checked }) },
     { label: '始终置顶', type: 'checkbox', checked: settings.alwaysOnTop, click: i => updateSettings({ alwaysOnTop: i.checked }) },
+    { label: '仅在 Codex 窗口内显示', type: 'checkbox', checked: settings.stayInCodexWindow, click: i => updateSettings({ stayInCodexWindow: i.checked }) },
     { label: '重置位置', click: resetPosition },
-    { label: '隐藏挂件', click: () => widget.hide() },
+    { label: '隐藏挂件', click: hide },
     { type: 'separator' },
     { label: '退出', click: () => app.quit() },
   ]));
@@ -247,8 +364,15 @@ async function importCharacterFiles(paths) {
   }
   return result;
 }
-function show() { widget.show(); widget.moveTop(); broadcast(); }
+function show() { widgetManuallyHidden = false; if (windowMode) windowMode.show(); else { widget.show(); widget.moveTop(); } broadcast(); }
+function hide() { widgetManuallyHidden = true; if (windowMode) windowMode.hide(); else widget.hide(); broadcast(); }
 function resetPosition() {
+  cancelPose(true); drag = null;
+  if (windowMode?.enabled) {
+    const area = windowMode.getArea(), size = dimensions();
+    if (area) windowMode.moveTo(area.x + area.width - size.width, area.y + area.height - size.height);
+    settings.mirror = false; save(); show(); return;
+  }
   const area = screen.getPrimaryDisplay().workArea;
   const size = dimensions();
   settings.position = { x: area.x + area.width - size.width, y: area.y + area.height - size.height };
@@ -293,6 +417,37 @@ function openSettings() {
   settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
   settingsWindow.on('closed', () => { settingsWindow = null; });
 }
+function rebuildWidget() {
+  if (quitting) return;
+  cancelPose(true); drag = null;
+  if (widget && !widget.isDestroyed()) widget.destroy();
+}
+async function createWidget() {
+  const created = new BrowserWindow({ ...dimensions(), frame: false, transparent: true, resizable: false,
+    icon: windowIcon, hasShadow: false, skipTaskbar: true, show: false, backgroundColor: '#00000000',
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false } });
+  widget = created;
+  secureWindow(created); configureWidgetWorkspace(created);
+  created.on('close', event => { if (!quitting) { event.preventDefault(); hide(); } });
+  created.on('closed', () => {
+    if (quitting || widget !== created) return;
+    cancelPose(true);
+    // Windows destroys a native child when its host closes. Recreate only our
+    // surface; quota source, tray, helper, settings and MCP endpoint stay alive.
+    windowMode?.close(); windowMode = null; drag = null;
+    void createWidget().catch(() => { if (!quitting) app.quit(); });
+  });
+  const area = screen.getPrimaryDisplay().workArea;
+  const position = settings.position || { x: area.x + area.width - dimensions().width, y: area.y + area.height - dimensions().height };
+  setWidgetPosition(position.x, position.y); applyWindowSettings(); save();
+  try { await created.loadFile(path.join(__dirname, 'index.html')); }
+  catch (error) { if (!created.isDestroyed() || quitting) throw error; }
+  if (widget === created && !created.isDestroyed()) {
+    if (widgetManuallyHidden) hide(); else show();
+    broadcast();
+  }
+  return created;
+}
 function secureWindow(win) {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', event => event.preventDefault());
@@ -301,7 +456,7 @@ function secureWindow(win) {
 function action(name) {
   switch (name) {
     case 'show': show(); break;
-    case 'hide': widget.hide(); break;
+    case 'hide': hide(); break;
     case 'refresh': return refresh();
     case 'bounce': widget.webContents.send('bounce'); break;
     case 'settings': openSettings(); break;
@@ -337,21 +492,52 @@ function setupIpc() {
   });
   ipcMain.on('drag-start', event => {
     if (event.sender !== widget.webContents || settings.clickThrough) return;
-    drag = { cursor: screen.getCursorScreenPoint(), origin: widget.getPosition() };
+    if (settings.stayInCodexWindow && !windowMode?.getArea()) return;
+    const bounds = windowMode?.enabled ? windowMode.getBounds() : widget.getBounds();
+    cancelPose();
+    const offset = visualPoseState().offset;
+    const visual = { x: bounds.x + offset.x, y: bounds.y + offset.y };
+    if (visualMotion) visualMotion.phase = 'hold';
+    const cursor = screen.getCursorScreenPoint();
+    drag = { cursor, lastCursor: { ...cursor }, area: poseArea(visual), origin: [bounds.x, bounds.y], visualOrigin: visual, visual,
+      poseMode: settings.peekAtCorners || !!visualMotion, moved: false };
     widget.setIgnoreMouseEvents(false);
   });
   ipcMain.on('drag-move', event => {
     if (event.sender !== widget.webContents || !drag) return;
+    const firstMove = !drag.moved; drag.moved = true;
     const cursor = screen.getCursorScreenPoint();
-    widget.setPosition(drag.origin[0] + cursor.x - drag.cursor.x, drag.origin[1] + cursor.y - drag.cursor.y);
+    if (drag.poseMode) {
+      rebasePoseDrag();
+      drag.visual = { x: drag.visualOrigin.x + cursor.x - drag.cursor.x, y: drag.visualOrigin.y + cursor.y - drag.cursor.y };
+      applyVisualPose(drag.visual, 'drag');
+      drag.lastCursor = { ...cursor };
+      return;
+    }
+    setWidgetPosition(drag.origin[0] + cursor.x - drag.cursor.x, drag.origin[1] + cursor.y - drag.cursor.y);
+    if (firstMove) broadcast();
   });
   ipcMain.on('drag-end', event => {
     if (event.sender !== widget.webContents || !drag) return;
+    rebasePoseDrag();
+    const ended = drag;
     drag = null;
-    const bounds = widget.getBounds();
-    const p = snapBounds(bounds, screen.getDisplayMatching(bounds).workArea);
-    settings.position = { x: p.x, y: p.y }; settings.mirror = p.mirror;
-    widget.setPosition(p.x, p.y); save(); broadcast();
+    if (ended.poseMode) {
+      const area = poseArea(ended.visual);
+      if (!area) { cancelPose(true); broadcast(); return; }
+      const p = snapBounds({ ...ended.visual, ...dimensions() }, area);
+      if (!windowMode?.enabled) settings.position = { x: p.x, y: p.y };
+      settings.mirror = p.mirror; save();
+      settleVisualPose(ended.visual, p, area);
+      return;
+    }
+    const bounds = { ...(windowMode?.enabled ? windowMode.getBounds() : widget.getBounds()), ...dimensions() };
+    const area = windowMode?.enabled ? windowMode.getArea() : screen.getDisplayMatching(bounds).workArea;
+    if (!area) return;
+    const p = snapBounds(bounds, area);
+    if (!windowMode?.enabled) settings.position = { x: p.x, y: p.y };
+    settings.mirror = p.mirror;
+    setWidgetPosition(p.x, p.y); save(); broadcast();
   });
   ipcMain.on('pointer-region', (event, inside) => {
     if (event.sender === widget.webContents && !settings.clickThrough && !drag) widget.setIgnoreMouseEvents(!inside, { forward: true });
@@ -364,7 +550,7 @@ async function startControl() {
     if (req.headers.origin || req.headers.authorization !== `Bearer ${token}`) { res.writeHead(403); res.end('{"error":"Forbidden"}'); return; }
     if (req.method === 'GET' && req.url === '/status') {
       const character = state();
-      res.end(JSON.stringify({ ...snapshot, visible: widget.isVisible(), demo: demoMode, version: app.getVersion(), activeCharacterId: character.activeCharacterId, characterName: character.characterName, characterCount: character.characters.length, followCodex:settings.followCodex, followSupported, followError })); return;
+      res.end(JSON.stringify({ ...snapshot, visible: widget.isVisible(), demo: demoMode, version: app.getVersion(), activeCharacterId: character.activeCharacterId, characterName: character.characterName, characterCount: character.characters.length, followCodex:settings.followCodex, followSupported, followError, stayInCodexWindow:settings.stayInCodexWindow, windowContainment:windowModeState() })); return;
     }
     if (req.method !== 'POST' || req.url !== '/action') { res.writeHead(404); res.end('{}'); return; }
     let body = '';
@@ -392,17 +578,7 @@ else {
     if (!library.get(settings.activeCharacterId)?.available) settings.activeCharacterId = library.defaultId;
     source = new CodexDataSource();
     if (!demoMode) stopAuthWatch = watchAuthChanges(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), authChanged);
-    widget = new BrowserWindow({ ...dimensions(), frame: false, transparent: true, resizable: false,
-      icon: windowIcon,
-      hasShadow: false, skipTaskbar: true, show: false, backgroundColor: '#00000000',
-      webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
-    configureWidgetWorkspace(widget);
-    secureWindow(widget); setupIpc();
-    const area = screen.getPrimaryDisplay().workArea;
-    const p = settings.position || { x: area.x + area.width - dimensions().width, y: area.y + area.height - dimensions().height };
-    widget.setPosition(p.x, p.y); applyWindowSettings();
-    save();
-    await widget.loadFile(path.join(__dirname, 'index.html'));
+    setupIpc(); await createWidget();
     if (settings.characterPath && fs.existsSync(settings.characterPath)) {
       try {
         await validateBrowserImage(settings.characterPath);
@@ -417,9 +593,8 @@ else {
     // which Windows then enlarges and blurs on high-DPI displays.
     tray = new Tray(trayImage({ root, nativeImage }));
     tray.setToolTip('Codex 女仆 · 额度与陪伴'); tray.on('click', show); updateTray();
-    widget.on('close', event => { if (!quitting) { event.preventDefault(); widget.hide(); } });
     screen.on('display-removed', () => resetPosition());
-    globalShortcut.register('Control+Alt+M', () => widget.isVisible() ? widget.hide() : show());
+    globalShortcut.register('Control+Alt+M', () => widget.isVisible() ? hide() : show());
     globalShortcut.register('Control+Alt+Q', () => action('bounce'));
     globalShortcut.register('Control+Alt+Shift+M', () => updateSettings({ clickThrough: !settings.clickThrough }));
     await startControl(); show(); schedule(); refresh();
@@ -428,6 +603,7 @@ else {
 app.on('window-all-closed', () => {});
 app.on('activate', () => { if (widget && !widget.isDestroyed()) show(); });
 app.on('before-quit', () => {
-  quitting = true; clearInterval(timer); clearTimeout(authRefreshTimer); stopAuthWatch?.(); desktopMonitor?.stop(); globalShortcut.unregisterAll(); source?.close(); controlServer?.close();
+  cancelPose(true);
+  quitting = true; clearInterval(timer); clearTimeout(authRefreshTimer); windowMode?.close(); stopAuthWatch?.(); desktopMonitor?.stop(); globalShortcut.unregisterAll(); source?.close(); controlServer?.close();
   if (ownsControl) try { fs.unlinkSync(path.join(dataDir, 'control.json')); } catch {}
 });

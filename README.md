@@ -10,12 +10,12 @@ A small desktop companion for Codex. It shows your remaining quota and local tok
 
 ## Download and install
 
-Both platforms are on **v0.3.13**.
+Windows and macOS share release version **v0.3.21**.
 
 | Platform | Installer |
 | --- | --- |
-| Windows x64 | [Download Windows installer (.exe)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.13/Codex-Maid-Widget-0.3.13-windows-x64-setup.exe) |
-| macOS 13+, Apple Silicon and Intel | [Download universal Mac installer (.pkg)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.13/Codex-Maid-Widget-0.3.13-macOS-universal.pkg) |
+| Windows x64 | [Download Windows installer (.exe)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.21/Codex-Maid-Widget-0.3.21-windows-x64-setup.exe) |
+| macOS 13+, Apple Silicon and Intel | [Download universal Mac installer (.pkg)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.21/Codex-Maid-Widget-0.3.21-macOS-universal.pkg) |
 
 Release notes and SHA-256 checksums are on the [Releases](https://github.com/Feeesack/codex-maid-widget/releases) page. The installers include the runtime and optional local Codex plugin, so you don't need to install Node.js or npm, or download the source.
 
@@ -34,7 +34,10 @@ The installers don't yet have developer distribution certificates. The Mac app i
 - A bounce and optional short sound when the widget sees a newly completed turn: “duang.” You can also click the character or use a shortcut to trigger it yourself. It reacts to these events; it isn't a timed reminder.
 - Automatic startup alongside Codex. A login helper waits in the background, opens the widget when Codex starts, and closes it after Codex fully quits. You can turn this off in settings.
 - Two built-in characters, a local image library, custom phrases, and bubble colors that match the character.
-- Dragging, edge snapping, mirrored layouts, size and opacity settings, always-on-top, click-through, and remembered window placement.
+- Dragging with a fixed character size, bottom-corner snapping, mirrored layouts, size and opacity settings, always-on-top, click-through, and remembered window placement. The character turns as you drag it across the screen's midpoint.
+- Optional display inside the Codex window. On Windows, the character is attached to the main window and moves, minimizes and restores with it. On macOS, a separate widget window follows Codex's bounds and visibility.
+- Optional head peeking at the two bottom corners. Drag inward to reveal the whole character; release near a bottom corner to let it settle back.
+- Bubble auto-collapse after 3, 5, 10, 30 or 60 seconds, or keep it visible. The default is 5 seconds; saved choices are retained on upgrade.
 - Breathing, bouncing, rolling numbers, and a shimmer on quota values. Sound is optional, and animations respect the system's reduced-motion setting.
 - An optional local MCP plugin so Codex can read widget status, refresh quota, show or hide the widget, trigger a bounce, or open settings.
 
@@ -55,6 +58,14 @@ Quota percentages come from the account currently signed in to Codex. Token tota
 | Restore position / quit | Tray/menu bar menu |
 
 If another app uses the same shortcut, you can use the tray/menu bar instead. Hover over the character to show a bubble that has been automatically hidden.
+
+### Window display and corner peeking
+
+Both options are off by default. On Windows, enable **固定在 Codex 窗口内** in settings to keep the character inside Codex. It follows the main window's movement and system minimize/restore animation. Other apps and dialogs cover it according to normal window ordering, and it does not float above them. Turning the option off restores the saved desktop position and always-on-top preference.
+
+On macOS, the equivalent option is labelled **仅在 Codex 窗口内显示**. It uses a separate window, hides when another app is active or Codex is minimized, and does not use Windows native child-window attachment. Mac Spaces and full-screen behavior still need hands-on validation.
+
+Enable **底角吸附时只露头部** to tuck the character behind the side and bottom edges at either bottom corner. Dragging inward gradually brings the full character into view; dragging outward keeps it following the pointer. Releasing near a bottom corner snaps it back with a short settling animation. Other edges do not attract the widget. This works in desktop mode and inside Codex.
 
 ### Automatic startup
 
@@ -107,7 +118,7 @@ Windows and macOS use the same release version. The build stops if their manifes
 
 ## Testing
 
-The Windows installer has been checked for installation, launch, local controls and MCP, upgrade, and uninstall. The universal Mac package has been installed and checked on Apple Silicon and Intel macOS runners, including launch, MCP, and the launchd helper. Source tests cover rendering, settings, data parsing, and following Codex as it starts and quits.
+Windows has been checked locally for installation, launch, local controls and MCP, upgrade, uninstall, dragging at fractional display scaling, and native containment. Source tests cover rendering, settings, data parsing, corner peeking, and following Codex as it starts and quits. The Mac workflow builds a universal package and checks installation, launch, MCP, and the launchd helper on Apple Silicon and Intel runners.
 
 Those automated checks can't cover every account or desktop setup. Real signed-in accounts and Mac use with multiple monitors, Spaces, Retina displays, audio, and login sessions still need broader hands-on testing.
 
@@ -115,7 +126,7 @@ Those automated checks can't cover every account or desktop setup. Real signed-i
 
 - All character illustrations and app icon artwork were generated with **GPTimage2.5**. The different icon sizes and platform formats come from that artwork. Bundled project artwork is licensed under [CC BY 4.0](licenses/CC-BY-4.0.txt). If you reuse it, credit **Codex Maid Widget contributors** and link to this repository. See [asset provenance](docs/asset-provenance.md).
 - Thanks to the maintainers and contributors of [MeteorNOX/DeepSeek-Balance-Whale-Widget](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget), the DeepSeek/DSH whale widget. Its companion, speech bubble, drag-and-snap behavior, and interactions inspired this project.
-- [Yang-huai406/Codex-Whale-Public](https://github.com/Yang-huai406/Codex-Whale-Public) was another reference for a Codex desktop companion. The code and interface here are independently implemented. Neither reference project's code, whale artwork, animations, nor audio is redistributed here.
+- [Yang-huai406/Codex-Whale-Public](https://github.com/Yang-huai406/Codex-Whale-Public) was another reference for a Codex desktop companion. The visibility recovery module adapts its MIT-licensed implementation and retains the license notice. The interface, artwork and quota reader are separate; neither reference project's whale artwork, animations nor audio is redistributed here.
 - This app uses [Electron](https://www.electronjs.org/), [Node.js](https://nodejs.org/), [Inno Setup](https://jrsoftware.org/isinfo.php), and the Codex app-server and plugin interfaces. Their licenses remain with their respective authors.
 - The bundled OpenAI mark comes from the [official OpenAI Agents repository](https://github.com/openai/openai-agents-python/blob/main/docs/assets/logo.svg). It is not covered by this project's artwork license, and its inclusion grants no trademark rights or endorsement.
 

@@ -1,4 +1,5 @@
 'use strict';
+require('./stdio-errors.cjs').installOutputErrorHandlers();
 // Exercise the real sandboxed renderer/preload at the shipped size and both orientations.
 const { app, BrowserWindow, ipcMain, nativeImage } = require('electron');
 const fs = require('node:fs');
@@ -16,9 +17,10 @@ const testHome=fs.mkdtempSync(path.join(os.tmpdir(),'maid-gallery-ui-'));
 app.setPath('userData',testHome);
 const library=new CharacterLibrary({dataDir:testHome,assetRoot:path.join(root,'assets')});
 let settings=sanitize({sound:false}), win, refreshes=0;
+let cornerDock={corner:null,peeking:false},visualPose;
 const snapshot=require('../src/demo.cjs')();
 const pause = ms => new Promise(resolve=>setTimeout(resolve,ms));
-function state(){const characters=library.list();const active=library.get(settings.activeCharacterId)||library.get(library.defaultId);return {settings,snapshot,demo:true,version:require('../package.json').version,characters,activeCharacterId:active.id,characterUrl:active.url,characterName:active.name};}
+function state(){const characters=library.list();const active=library.get(settings.activeCharacterId)||library.get(library.defaultId);return {settings,snapshot,cornerDock,visualPose,demo:true,version:require('../package.json').version,characters,activeCharacterId:active.id,characterUrl:active.url,characterName:active.name};}
 async function publish(patch={}) { settings=sanitize({...settings,...patch});win.webContents.send('state',state());await pause(100); }
 let firstStateRequest = true;
 ipcMain.handle('state',async()=>{
@@ -199,6 +201,99 @@ async function checkBubbleMotion(capture) {
   await publish({autoHideSeconds:10,mirror:true});await pause(600);
   assertVisible(await visualState(),true,'settings restore a fully shown bubble');
 }
+async function checkCornerPeeking(capture) {
+  const initialSettings={...settings},initialSize=win.getSize(),evidence=[];
+  const viewport = () => evaluate(`({width:innerWidth,height:innerHeight,htmlOverflow:getComputedStyle(document.documentElement).overflow,bodyOverflow:getComputedStyle(document.body).overflow,peeking:document.getElementById('widget').classList.contains('is-corner-peeking'),moving:document.getElementById('widget').classList.contains('is-moving'),imageScale:getComputedStyle(document.getElementById('maid-image')).scale,translateAnimations:['character','bubble-motion'].reduce((count,id)=>count+document.getElementById(id).getAnimations().filter(animation=>animation instanceof CSSTransition&&animation.transitionProperty==='translate').length,0),bodyAnimations:document.getElementById('maid-image').getAnimations().length,characterTransition:getComputedStyle(document.getElementById('character')).transitionProperty,bubbleTransitionDuration:getComputedStyle(document.getElementById('bubble-motion')).transitionDuration})`);
+  const pose = async (offset,moving=false,corner=null,peeking=false) => {cornerDock={corner,peeking};visualPose={offset,moving};await publish();};
+  const assertPosition = (actual,full,offset,label) => {
+    for(const id of ['character','bubble','dot-one','dot-two']) {
+      assert.ok(Math.abs(actual[id].y-full[id].y-offset.y)<.2,`${label}: ${id} tracks the supplied vertical pose without a CSS lag`);
+      const x=id==='character'?offset.x:0;
+      assert.ok(Math.abs(actual[id].x-full[id].x-x)<.2,`${label}: ${id} uses the correct side offset`);
+    }
+    for(const id of ['toolbar','notice','demo-label'])assert.deepEqual(actual[id],full[id],`${label}: ${id} stays in place`);
+  };
+  await publish({peekAtCorners:true,autoHideSeconds:0,mode:'quota'});
+  await evaluate(`document.getElementById('notice').hidden=false;document.getElementById('notice').style.visibility='visible'`);
+  for(const character of ['mint-maid','lilac-dragon']) {
+    for(const scale of [.8,1.4]) {
+      const size=widgetDimensions(scale);win.setSize(size.width,size.height);await pause(60);
+      for(const mirror of [false,true]) {
+        await publish({activeCharacterId:character,mirror});await waitForTheme(character,'builtin');
+        await pose({x:0,y:0});await finishBubbleTransitions();
+        const full=await rects(),before=await viewport(),nativeSize=win.getSize(),unit=before.width/380;
+        const corner=mirror?'left':'right',target={x:(mirror?-48:48)*unit,y:56*unit};
+        await pose(target,false,corner,true);
+        const peek=await rects(),after=await viewport();
+        assertPosition(peek,full,target,`${character}/${scale}/${corner} dock`);
+        assert.equal(after.peeking,true,'bottom-corner state enables the peeking renderer');
+        assert.deepEqual(win.getSize(),nativeSize,'peeking never resizes the native window');
+        assert.equal(after.width,before.width);assert.equal(after.height,before.height);
+        assert.equal(after.htmlOverflow,'hidden');assert.equal(after.bodyOverflow,'hidden');
+        assert.ok(peek.character.y+peek.character.height>after.height+target.y-4,'the lower body extends beyond the clipped viewport');
+        assert.ok(mirror?peek.character.x<-45*unit:peek.character.x+peek.character.width>after.width+45*unit,'the side of the character is clipped at the docked corner');
+        assert.ok(peek.character.y<after.height-80*unit,'the head remains visible and draggable');
+        assert.ok(peek.toolbar.y>=0&&peek.toolbar.y+peek.toolbar.height<=after.height,'toolbar remains inside the viewport');
+        assert.equal(await readable(),true,'peeking keeps bubble text and controls readable in both orientations');
+        assert.equal(after.imageScale,mirror?'-1 1':'none','peeking preserves the character orientation');
+        assert.ok(!after.characterTransition.includes('translate'),'character translation has no second interpolation');
+        assert.equal(after.bubbleTransitionDuration,'0s','bubble motion has no second interpolation');
+        if(scale===1.4&&((character==='mint-maid'&&mirror)||(character==='lilac-dragon'&&!mirror))) {
+          await evaluate(`document.getElementById('notice').hidden=true`);
+          await pause(80);await win.webContents.capturePage();await pause(50);
+          await capture(`widget-corner-peek-${character}-${corner}.png`);
+          await evaluate(`document.getElementById('notice').hidden=false`);
+        }
+        // Clearing the dock state on pointer-down must not reset the pose. The
+        // main process supplies each following drag/settle frame, even when a
+        // downward drag is clamped at the bottom of the native viewport.
+        await evaluate(`bounce()`);
+        await pose(target,true,corner,false);
+        assertPosition(await rects(),full,target,'drag begins at the exact dock pose');
+        assert.equal((await viewport()).moving,true);
+        assert.equal((await viewport()).bodyAnimations,0,'pointer motion suspends breathing');
+        assert.equal(await evaluate(`['character','bubble-motion'].every(id=>!document.getElementById(id).classList.contains('bounce')&&document.getElementById(id).getAnimations().length===0)`),true,'pointer motion clears bounce without changing the supplied pose');
+        let lastY=(await rects()).character.y;
+        for(const delta of [12,24]) {
+          const down={x:target.x,y:target.y+delta*unit};
+          await pose(down,true,corner,false);
+          const frame=await rects();assertPosition(frame,full,down,'downward pointer movement');
+          assert.ok(frame.character.y>lastY,'dragging downward never makes the character spring upward');
+          assert.equal((await viewport()).translateAnimations,0,'drag frames never start a translate transition');lastY=frame.character.y;
+        }
+        for(const fraction of [.75,.5,.25,0]) {
+          const offset={x:target.x*fraction,y:target.y*fraction};
+          await pose(offset,true,corner,false);assertPosition(await rects(),full,offset,'dragging naturally reveals the whole body');
+        }
+        // An off-corner release stays fully expanded; a near-corner release
+        // receives continuous main-process interpolation before its final dock.
+        await pose({x:0,y:0});assertPosition(await rects(),full,{x:0,y:0},'release away from a corner');
+        for(const fraction of [.2,.4,.6,.8,1]) {
+          const offset={x:target.x*fraction,y:target.y*fraction};
+          await pose(offset,fraction<1,corner,fraction===1);assertPosition(await rects(),full,offset,'release settling frame');
+        }
+        evidence.push({character,scale,corner,unit,target,full:full.character,peek:peek.character,viewport:before,nativeSize});
+        await pose({x:0,y:0});assert.equal((await viewport()).peeking,false);
+      }
+    }
+  }
+  // Older state providers can omit visualPose; only idle fallback derives the
+  // same design offsets. New drag frames always take precedence over cornerDock.
+  visualPose=undefined;cornerDock={corner:'left',peeking:true};await publish();
+  assert.equal((await viewport()).peeking,true);
+  assert.ok(await evaluate(`Math.abs(parseFloat(document.getElementById('widget').style.getPropertyValue('--visual-offset-x'))+48)<.01`),'idle fallback hides the left side as well');
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+  await pose({x:0,y:0});const reducedFull=await rects(),unit=(await viewport()).width/380;
+  await pose({x:48*unit,y:56*unit},true,'right',true);
+  assertPosition(await rects(),reducedFull,{x:48*unit,y:56*unit},'reduced motion follows the supplied pose immediately');
+  assert.equal(await evaluate(`['character','bubble-motion','maid-image'].every(id=>document.getElementById(id).getAnimations().length===0)`),true,'reduced motion disables independent pose/breathing animations');
+  await pose({x:0,y:0});
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
+  win.setSize(...initialSize);await pause(60);await publish(initialSettings);
+  await evaluate(`document.getElementById('notice').hidden=true;document.getElementById('notice').style.visibility='hidden'`);
+  fs.writeFileSync(path.join(screenshotDirectory,'continuous-pose-evidence.json'),JSON.stringify(evidence,null,2));
+}
+
 app.whenReady().then(async()=>{
   markPhase('initial widget');
   const errors=[];
@@ -240,6 +335,8 @@ app.whenReady().then(async()=>{
   }
   assert.equal(await readable(),true,'mirroring must keep labels and controls readable');await capture('widget-left-demo.png');
   await evaluate(`document.getElementById('notice').hidden=true`);
+  markPhase('bottom-corner peeking and drag restoration');
+  await checkCornerPeeking(capture);
   markPhase('bubble animation and visibility');
   await checkBubbleMotion(capture);
   markPhase('quota highlight and reduced motion');
@@ -381,6 +478,18 @@ app.whenReady().then(async()=>{
   win.setSize(380,480);await publish();await evaluate(`document.getElementById('notice').hidden=true`);await pause(750);await capture('widget-demo.png');
   markPhase('settings and gallery');
   win.setSize(550,760);await win.loadFile(path.join(root,'src','settings.html'));await pause(300);
+  assert.equal(await evaluate(`document.getElementById('peekAtCorners').checked`),false,'bottom-corner peeking should be opt-in');
+  await evaluate(`document.getElementById('peekAtCorners').click()`);await pause(80);assert.equal(settings.peekAtCorners,true);
+  await publish();assert.equal(await evaluate(`document.getElementById('peekAtCorners').checked`),true,'settings refresh preserves corner-peeking opt-in');
+  await evaluate(`document.getElementById('peekAtCorners').click()`);await pause(80);assert.equal(settings.peekAtCorners,false);
+  assert.equal(await evaluate(`document.getElementById('stayInCodexWindow').checked`),false,'window-only mode should be opt-in');
+  await evaluate(`document.getElementById('stayInCodexWindow').click()`);await pause(80);
+  assert.equal(settings.stayInCodexWindow,true);
+  assert.equal(await evaluate(`document.getElementById('alwaysOnTop').disabled`),true);
+  await publish();assert.equal(await evaluate(`document.getElementById('stayInCodexWindow').checked`),true);
+  await evaluate(`document.getElementById('stayInCodexWindow').click()`);await pause(80);
+  assert.equal(settings.stayInCodexWindow,false);
+  assert.equal(await evaluate(`document.getElementById('alwaysOnTop').disabled`),false);
   assert.equal(await evaluate(`document.getElementById('followCodex').checked`),true,'following Codex should be enabled by default');
   assert.equal(await evaluate(`document.getElementById('autoStart')===null`),true,'the settings page should present following Codex rather than standalone login startup');
   await evaluate(`document.getElementById('followCodex').click()`);await pause(80);assert.equal(settings.followCodex,false);
@@ -435,6 +544,6 @@ app.whenReady().then(async()=>{
   assert.deepEqual(await themeColors(),mintTheme,'an older image decode must not overwrite a newer character theme');
   assert.equal(await evaluate(`document.getElementById('widget').dataset.themeCharacter`),'mint-maid');
   assert.deepEqual(errors,[]);
-  console.log('PASS: synchronized character/bubble bounce in both orientations, ordered bubble/dot show and collapse, rapid reversal and automatic hide, reduced motion, device-wide weekly tokens and mode cycle, compact weekly layout, weekly default and Codex-follow settings, builtin/imported character themes and async switch guard, full dialogue auto-fit across long CJK/mixed/unbroken text, both orientations and scale range, short-line font reset and immediate dialogue updates, four-button toolbar, gallery preview/import/select/rename/delete, edit focus across refresh, plain-text names, compact/mirrored layouts, live gradient and warning/offline colors, sandbox, IPC, settings, screenshots.');
+  console.log('PASS: continuous bottom-corner side/bottom clipping and pointer-following drag/settle pose for both builtin characters, orientations and scales, fixed native bounds and toolbar, opt-in settings, synchronized character/bubble bounce in both orientations, ordered bubble/dot show and collapse, rapid reversal and automatic hide, reduced motion, device-wide weekly tokens and mode cycle, compact weekly layout, weekly default and Codex-follow settings, builtin/imported character themes and async switch guard, full dialogue auto-fit across long CJK/mixed/unbroken text, both orientations and scale range, short-line font reset and immediate dialogue updates, four-button toolbar, gallery preview/import/select/rename/delete, edit focus across refresh, plain-text names, compact/mirrored layouts, live gradient and warning/offline colors, sandbox, IPC, settings, screenshots.');
   clearTimeout(smokeWatchdog);app.exit(0);
 }).catch(error=>{console.error(error);app.exit(1);});

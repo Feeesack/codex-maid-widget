@@ -85,14 +85,24 @@ test('weekly content and Codex-follow preferences survive saving and reopening s
   const restored=readSettings(file);
   assert.equal(restored.mode,'week');assert.equal(restored.followCodex,false);
 });
-test('left edge snap mirrors on a negative-coordinate monitor',()=>{
+test('left half mirrors without magnetizing the side of a negative-coordinate monitor',()=>{
   const p=snapBounds({x:-1910,y:102,width:380,height:480},{x:-1920,y:0,width:1920,height:1080});
-  assert.deepEqual(p,{x:-1920,y:102,mirror:true});
+  assert.deepEqual(p,{x:-1910,y:102,mirror:true});
 });
 test('right/bottom snap and disconnected display recovery remain in work area',()=>{
   const area={x:0,y:0,width:1920,height:1040};
   assert.deepEqual(snapBounds({x:1530,y:550,width:380,height:480},area),{x:1540,y:560,mirror:false});
   assert.deepEqual(constrainPosition({x:8000,y:-200,width:380,height:480},area),{x:1540,y:0});
+});
+test('mirroring follows the left half independently of the snap threshold and container offset',()=>{
+  for (const area of [{x:0,y:0,width:1920,height:1080},{x:100,y:200,width:800,height:600},{x:-1920,y:0,width:1920,height:1080}]) {
+    for (const width of [137,228,319]) {
+      const centre=area.x+(area.width-width)/2;
+      assert.equal(snapBounds({x:centre-90,y:area.y+100,width,height:288},area).mirror,true);
+      assert.equal(snapBounds({x:centre+90,y:area.y+100,width,height:288},area).mirror,false);
+      assert.equal(snapBounds({x:centre,y:area.y+100,width,height:288},area).mirror,false);
+    }
+  }
 });
 test('new 100% equals former 60%, and migrating a saved size happens only once', t=>{
   assert.deepEqual(widgetDimensions(),{width:228,height:288});

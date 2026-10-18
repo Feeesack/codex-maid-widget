@@ -4,14 +4,14 @@
 
 ## Current installers
 
-Both platforms use **v0.3.13**.
+Both platforms use **v0.3.21**.
 
 | Platform | Download |
 | --- | --- |
-| Windows x64 | [Windows setup.exe](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.13/Codex-Maid-Widget-0.3.13-windows-x64-setup.exe) |
-| macOS 13+, Apple Silicon and Intel | [Mac universal.pkg](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.13/Codex-Maid-Widget-0.3.13-macOS-universal.pkg) |
+| Windows x64 | [Windows setup.exe](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.21/Codex-Maid-Widget-0.3.21-windows-x64-setup.exe) |
+| macOS 13+, Apple Silicon and Intel | [Mac universal.pkg](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.21/Codex-Maid-Widget-0.3.21-macOS-universal.pkg) |
 
-The [Release page](https://github.com/Feeesack/codex-maid-widget/releases/tag/v0.3.13) provides SHA-256 checksums. Installers include Electron and the optional local Codex-plugin connector; you do not need Node.js, npm, a source checkout, or an API key.
+The [Release page](https://github.com/Feeesack/codex-maid-widget/releases/tag/v0.3.21) provides SHA-256 checksums. Installers include Electron and the optional local Codex-plugin connector; you do not need Node.js, npm, a source checkout, or an API key.
 
 Real quota requires the official Codex desktop app to be installed and signed in. The widget does not sign you in or include account credentials.
 
@@ -38,6 +38,10 @@ Before removing a connected Mac app, run **Codex-Maid-Widget-断开 Codex.comman
 Open the installed widget once to register its current-user helper. The default **跟随 Codex 桌面端** setting enables a helper at login; it waits for Codex and opens the widget when Codex starts. Fully quitting Codex closes the widget. Closing only the Codex window while the client remains in the background does not end its session.
 
 Use the gear, right-click, or tray/menu bar for settings. Turn off the follow setting to remove its login registration. If system policy blocks startup, the settings page shows the issue; review Windows Startup Apps or macOS Login Items & Extensions.
+
+The separate window display option is off by default. On Windows, **固定在 Codex 窗口内** attaches the character to the Codex main window so it moves and minimizes/restores with it; other windows cover the character normally. On Mac, **仅在 Codex 窗口内显示** keeps a separate widget window inside Codex's bounds and hides it when another app is active or Codex is minimized. Turning the option off restores the saved desktop position and always-on-top preference.
+
+**底角吸附时只露头部** is also off by default. It tucks the character behind the side and bottom edges when it snaps to either bottom corner. Drag inward to reveal the whole character; release near a bottom corner to settle back. Bubble auto-collapse supports 3, 5, 10, 30 and 60 seconds, or always visible. The default is 5 seconds, and upgrades retain any saved timeout.
 
 ## Optional Codex tools
 

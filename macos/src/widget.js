@@ -67,7 +67,20 @@ function fitPhraseText() {
   }
   label.style.fontSize = `${Math.floor(low * 10) / 10}px`;
 }
-function fit() { $('widget').style.transform = `scale(${innerWidth / 380})`; fitTokenLabels(); fitPhraseText(); }
+function applyVisualPose(value = current) {
+  const scale = innerWidth / 380 || 1;
+  const fallback = value?.cornerDock?.peeking === true
+    ? { x: value.cornerDock.corner === 'left' ? -48 : 48, y: 56 } : { x: 0, y: 0 };
+  const pose = value?.visualPose;
+  const offset = pose?.offset;
+  const x = offset && Number.isFinite(offset.x) ? offset.x / scale : fallback.x;
+  const y = offset && Number.isFinite(offset.y) ? offset.y / scale : fallback.y;
+  $('widget').style.setProperty('--visual-offset-x', `${x}px`);
+  $('widget').style.setProperty('--visual-offset-y', `${y}px`);
+  $('widget').classList.toggle('is-moving', pose?.moving === true);
+  if (pose?.moving === true) clearBounce();
+}
+function fit() { $('widget').style.transform = `scale(${innerWidth / 380})`; applyVisualPose(); fitTokenLabels(); fitPhraseText(); }
 fit(); window.addEventListener('resize', fit);
 const phraseResizeObserver = new ResizeObserver(fitPhraseText);
 for (const element of [$('phrase-view'), ...$('phrase-view').children].filter(element => element.id !== 'phrase')) phraseResizeObserver.observe(element);
@@ -123,7 +136,7 @@ function notice(message) { clearTimeout(noticeTimer); $('notice').textContent = 
 let audio;
 function bounce() {
   clearBounce();
-  if (!motionPreference.matches) {
+  if (!motionPreference.matches && current?.visualPose?.moving !== true) {
     void $('character').offsetWidth;
     $('character').classList.add('bounce'); $('bubble-motion').classList.add('bounce');
   }
@@ -156,6 +169,8 @@ function render(value) {
   if ($('maid-image').src !== value.characterUrl) $('maid-image').src = value.characterUrl;
   $('maid-image').alt = value.characterName || '桌面女仆形象';
   $('widget').classList.toggle('is-mirrored', value.settings.mirror);
+  $('widget').classList.toggle('is-corner-peeking', value.cornerDock?.peeking === true);
+  applyVisualPose(value);
   $('demo-label').hidden = !value.demo;
   const data = value.snapshot, bucket = selectedBucket(), p = bucket?.primary, s = bucket?.secondary;
   roll(p?.remainingPercent);
@@ -200,7 +215,7 @@ $('character').addEventListener('animationend', event => {
 });
 for (const target of [$('character'), $('bubble')]) {
   let start, moved = false;
-  target.addEventListener('pointerdown', e => { if(e.button !== 0 || e.target.closest('button')) return; start = {x:e.screenX,y:e.screenY}; moved = false; target.setPointerCapture(e.pointerId); window.maid.drag('start'); });
+  target.addEventListener('pointerdown', e => { if(e.button !== 0 || e.target.closest('button')) return; clearBounce(); start = {x:e.screenX,y:e.screenY}; moved = false; target.setPointerCapture(e.pointerId); window.maid.drag('start'); });
   target.addEventListener('pointermove', e => { if(!start) return; if(Math.hypot(e.screenX-start.x,e.screenY-start.y)>4) moved=true; if(moved) window.maid.drag('move'); });
   const finish = e => { if(!start) return; window.maid.drag('end'); start=null; if(target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId); if(!moved) { if(target.id === 'bubble') doRefresh(); else { bounce(); if(mode==='phrase') nextPhrase(); } } };
   target.addEventListener('pointerup', finish);
@@ -209,5 +224,6 @@ for (const target of [$('character'), $('bubble')]) {
 document.addEventListener('pointermove', e => { const el = document.elementFromPoint(e.clientX,e.clientY); const inside = !!el?.closest('.interactive'); window.maid.pointerRegion(inside); });
 document.documentElement.addEventListener('pointerleave', () => window.maid.pointerRegion(false));
 $('character').addEventListener('pointerenter', reveal);
-window.maid.onState(render); window.maid.onBounce(bounce); window.maid.getState().then(render);
+const initialState = window.MaidPresence.connect(window.maid);
+window.maid.onState(render); window.maid.onBounce(bounce); initialState.then(render);
 setInterval(countdown,1000);

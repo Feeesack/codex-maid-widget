@@ -16,11 +16,13 @@ drag-and-snap, and interaction ideas.
 
 Yang-huai406/Codex-Whale-Public
 https://github.com/Yang-huai406/Codex-Whale-Public
-Studied as a reference for a Codex desktop companion.
+The visibility recovery module in src/window-visibility.cjs and its macOS
+copy adapt desktop/visibility.cjs (MIT, Copyright (c) 2026 MeteorNOX).
+The complete upstream license is retained in those source files.
 
-The project independently implements its code and interface. It does not
-redistribute those reference projects' code, whale artwork, animations,
-or audio. Their respective authors retain their rights.
+The interface, character artwork and quota reader are separate. Neither
+reference project's whale artwork, animations nor audio is redistributed.
+Their respective authors retain their rights.
 
 OpenAI mark
 -----------
