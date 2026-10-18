@@ -34,27 +34,36 @@ public static class CodexMaidCiDisplay {
         mode.dmSize = (ushort)Marshal.SizeOf(typeof(Mode));
         return mode;
     }
+    // PowerShell binds $null to an empty string for a string parameter.
+    // Keep the native null device name inside C# for every display call.
+    public static Mode ReadCurrent() {
+        var mode = EmptyMode();
+        if (!EnumDisplaySettings(null, -1, ref mode)) throw new InvalidOperationException("Could not read the current display mode.");
+        return mode;
+    }
+    public static bool EnumMode(int number, ref Mode mode) {
+        return EnumDisplaySettings(null, number, ref mode);
+    }
+    public static int TestMode(ref Mode mode) {
+        return ChangeDisplaySettingsEx(null, ref mode, IntPtr.Zero, 2, IntPtr.Zero); // CDS_TEST
+    }
+    public static int ApplyMode(ref Mode mode) {
+        return ChangeDisplaySettingsEx(null, ref mode, IntPtr.Zero, 0, IntPtr.Zero); // No registry persistence
+    }
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "EnumDisplaySettingsW", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool EnumDisplaySettings(string deviceName, int modeNumber, ref Mode mode);
+    private static extern bool EnumDisplaySettings(string deviceName, int modeNumber, ref Mode mode);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "ChangeDisplaySettingsExW", ExactSpelling = true)]
-    public static extern int ChangeDisplaySettingsEx(string deviceName, ref Mode mode, IntPtr window, uint flags, IntPtr parameter);
+    private static extern int ChangeDisplaySettingsEx(string deviceName, ref Mode mode, IntPtr window, uint flags, IntPtr parameter);
 }
 '@
 
-function Read-CurrentMode {
-    $mode = [CodexMaidCiDisplay]::EmptyMode()
-    if (-not [CodexMaidCiDisplay]::EnumDisplaySettings($null, -1, [ref]$mode)) {
-        throw 'Could not read the current display mode.'
-    }
-    return $mode
-}
 function Mode-Geometry($mode) {
     return [ordered]@{ width = $mode.dmPelsWidth; height = $mode.dmPelsHeight;
         bitsPerPixel = $mode.dmBitsPerPel; frequency = $mode.dmDisplayFrequency }
 }
 
-$current = Read-CurrentMode
+$current = [CodexMaidCiDisplay]::ReadCurrent()
 Write-Output ('Current CI display: ' + ((Mode-Geometry $current) | ConvertTo-Json -Compress))
 if ($current.dmPelsWidth -ge 1920 -and $current.dmPelsHeight -ge 1080) {
     Write-Output 'CI display already meets the 1920x1080 minimum; no change needed.'
@@ -64,7 +73,7 @@ if ($current.dmPelsWidth -ge 1920 -and $current.dmPelsHeight -ge 1080) {
 $modes = @()
 for ($index = 0; ; $index++) {
     $mode = [CodexMaidCiDisplay]::EmptyMode()
-    if (-not [CodexMaidCiDisplay]::EnumDisplaySettings($null, $index, [ref]$mode)) { break }
+    if (-not [CodexMaidCiDisplay]::EnumMode($index, [ref]$mode)) { break }
     $modes += $mode
 }
 Write-Output ('Supported CI display modes: ' + (@($modes | ForEach-Object { Mode-Geometry $_ }) | ConvertTo-Json -Compress))
@@ -77,15 +86,15 @@ if (-not $candidates.Count) { throw 'The CI display has no supported mode at lea
 $selected = $null
 foreach ($candidate in $candidates) {
     $mode = $candidate
-    $testResult = [CodexMaidCiDisplay]::ChangeDisplaySettingsEx($null, [ref]$mode, [IntPtr]::Zero, 2, [IntPtr]::Zero) # CDS_TEST
+    $testResult = [CodexMaidCiDisplay]::TestMode([ref]$mode)
     Write-Output ('CI display mode test: ' + (([ordered]@{ mode = (Mode-Geometry $mode); result = $testResult }) | ConvertTo-Json -Compress))
     if ($testResult -eq 0) { $selected = $mode; break }
 }
 if ($null -eq $selected) { throw 'No sufficiently large supported CI display mode passed CDS_TEST.' }
 $mode = $selected
-$applyResult = [CodexMaidCiDisplay]::ChangeDisplaySettingsEx($null, [ref]$mode, [IntPtr]::Zero, 0, [IntPtr]::Zero)
+$applyResult = [CodexMaidCiDisplay]::ApplyMode([ref]$mode)
 if ($applyResult -ne 0) { throw "Could not apply the tested CI display mode (result $applyResult)." }
-$actual = Read-CurrentMode
+$actual = [CodexMaidCiDisplay]::ReadCurrent()
 foreach ($field in @('dmPelsWidth', 'dmPelsHeight', 'dmBitsPerPel', 'dmDisplayFrequency')) {
     if ($actual.$field -ne $selected.$field) { throw "CI display readback differs from the selected mode: $field." }
 }
