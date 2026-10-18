@@ -76,6 +76,8 @@ node --test distribution/integration/test/*.test.cjs
 
 Rendering and native tests require a working desktop environment. Demo mode (`npm run demo`) uses visibly labelled sample data. Real-account probing is optional and should never be used to populate public screenshots or CI logs with personal account data.
 
+The hosted Windows workflow selects a supported display mode of at least 1920×1080 before the complete DPI matrix, so its largest widget still fits at 200% scaling. `scripts/configure-ci-display.ps1` refuses to change a developer desktop or a self-hosted runner; failed geometry checks retain only isolated reports as CI artifacts.
+
 ## Release outputs
 
 Upload current installers and their SHA-256 checksums as GitHub Release assets. Source control should contain current source, necessary runtime assets, tests, build configuration, licenses, and public documentation. Exclude dependency trees, generated installers, temporary builds, logs, credentials, personal profiles, chat backups, and development-history archives.

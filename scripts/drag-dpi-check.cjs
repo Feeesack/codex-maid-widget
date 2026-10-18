@@ -279,10 +279,16 @@ app.whenReady().then(async () => {
     report.display = { scaleFactor: display.scaleFactor, bounds: display.bounds, workArea: display.workArea };
     assert.ok(Math.abs(display.scaleFactor - config.factor) < 0.01, 'Requested DPI factor is not active');
     for (const scale of config.scales) {
+      report.activeCase = { variant: 'baseline', scale, preferred: settingsModule.widgetDimensions(scale) };
       report.cases.push(await checkCase('baseline', baseline, config.baselineMain || config.main, scale, display));
+      report.activeCase = { variant: 'fixed', scale, preferred: settingsModule.widgetDimensions(scale) };
       report.cases.push(await checkCase('fixed', source, config.main, scale, display));
-      for (const corner of ['left', 'right']) report.corners.push(await checkCornerCase(source, config.main, scale, display, corner));
+      for (const corner of ['left', 'right']) {
+        report.activeCase = { variant: 'corner', corner, scale, preferred: settingsModule.widgetDimensions(scale) };
+        report.corners.push(await checkCornerCase(source, config.main, scale, display, corner));
+      }
     }
+    delete report.activeCase;
     report.ok = true;
   } catch (error) { report.error = error.message; if (error.caseReport) report.partialCase = error.caseReport; }
   fs.writeFileSync(config.reportFile, JSON.stringify(report, null, 2));

@@ -20,6 +20,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: node --test distribution/test/*.test.cjs distribution/integration/test/*.test.cjs
+      - name: Prepare hosted Windows display for the full DPI matrix
+        run: ./scripts/configure-ci-display.ps1
       - run: npm run smoke
       - run: npm run check:native
       - run: npm run check:drag-dpi
@@ -28,6 +30,18 @@ jobs:
       - run: npm run build
       - run: node distribution/windows/build.cjs
       - run: node distribution/windows/test-install.cjs
+      - name: Preserve isolated native geometry reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-native-geometry-reports
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            tmp/drag-dpi-check/run-*/summary.json
+            tmp/drag-dpi-check/run-*/dpi-*/report.json
+            tmp/window-mode-check/run-*/summary.json
+            tmp/window-mode-check/run-*/dpi-*/report.json
       - uses: actions/upload-artifact@v4
         with:
           name: Windows-x64-installer

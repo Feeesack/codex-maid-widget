@@ -52,6 +52,8 @@ async function run() {
     assert.ok(report, 'Electron exited without a report at DPI ' + factor);
     reports.push(report);
     fs.writeFileSync(path.join(runDir, 'summary.json'), JSON.stringify({ ok: reports.every(item => item.ok), reports }, null, 2));
+    if (exit !== 0 || !report.ok) console.error(JSON.stringify({ dpi: factor, display: report.display, activeCase: report.activeCase,
+      lastSample: report.partialCase?.samples?.at(-1), error: report.error, report: path.relative(root, reportFile) }));
     assert.equal(exit, 0, report.error || 'Electron failed');
     assert.equal(report.ok, true, report.error);
     const legacy = report.cases.filter(item => item.variant === 'baseline');
