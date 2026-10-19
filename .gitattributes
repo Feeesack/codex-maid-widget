@@ -1,8 +1,21 @@
-* text=auto
+* text=auto eol=lf
 *.sh text eol=lf
 *.command text eol=lf
 *.yml text eol=lf
 *.cjs text eol=lf
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.vbs text eol=crlf
 *.png binary
 *.ico binary
 *.icns binary
+*.wav binary
+*.mp3 binary
+
+# Preserve upstream distribution and license bytes used by integrity checks.
+src/vendor/** -text
+macos/src/vendor/** -text
+licenses/** -text
+macos/licenses/** -text
+assets/audio/*License.txt -text
+macos/assets/audio/*License.txt -text

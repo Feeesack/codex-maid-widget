@@ -102,9 +102,9 @@ async function main() {
   const base = path.join(root, 'tmp');
   fs.mkdirSync(base, { recursive: true });
   const fixture = fs.mkdtempSync(path.join(base, 'codex-maid-installer-test-'));
-  const target = path.join(fixture, 'app with spaces');
-  const profile = path.join(fixture, 'widget-profile');
-  const codex = path.join(fixture, 'codex-profile');
+  const target = path.join(fixture, '应用 with 空格');
+  const profile = path.join(fixture, '挂件 profile');
+  const codex = path.join(fixture, 'Codex 数据');
   fs.mkdirSync(profile); fs.mkdirSync(codex);
   const marker = path.join(profile, 'preserve-after-uninstall.txt');
   fs.writeFileSync(marker, 'This user data must survive upgrade and uninstall.\n');
