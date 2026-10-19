@@ -125,6 +125,21 @@ async function finishBubbleTransitions() {
   // defer their first transition frame until capturePage requests a paint.
   await evaluate(`(()=>{for(const id of ['bubble','bubble-content','dot-one','dot-two','toolbar']){const el=document.getElementById(id)||document.querySelector('.'+id);void el.offsetWidth;for(const animation of el.getAnimations())if(animation instanceof CSSTransition)animation.finish();}return document.getElementById('bubble').getBoundingClientRect().width;})()`);
 }
+async function waitForPressedTransform() {
+  // A compositor's first painted frame can start a transition after a wall-clock
+  // sleep has already elapsed. Observe natural completion; never finish/seek it.
+  const deadline = Date.now() + 2500;
+  let observed;
+  do {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await captureOffscreenFrame(win, { timeoutMs: Math.min(remaining, 1000) });
+    observed = await evaluate(`(()=>{const el=document.getElementById('character');return {scaleY:new DOMMatrix(getComputedStyle(el).transform).d,activeTransforms:el.getAnimations().filter(animation=>animation.playState!=='finished'&&animation.playState!=='idle'&&(animation instanceof CSSTransition?animation.transitionProperty==='transform':animation.effect.getKeyframes().some(frame=>'transform' in frame))).length};})()`);
+    if (observed.activeTransforms === 0) return observed;
+    await pause(16);
+  } while (Date.now() < deadline);
+  assert.fail('pressed transform must settle naturally within the bounded paint wait: ' + JSON.stringify(observed));
+}
 async function phraseLayout() {
   return evaluate(`(()=>{const el=document.getElementById('phrase'),r=el.getBoundingClientRect(),box=document.getElementById('phrase-view').getBoundingClientRect(),title=document.querySelector('#phrase-view .eyebrow').getBoundingClientRect(),heart=document.querySelector('.phrase-heart').getBoundingClientRect(),footer=document.querySelector('.bubble footer').getBoundingClientRect(),style=getComputedStyle(el),range=document.createRange();range.selectNodeContents(el);const text=range.getBoundingClientRect();return {text:el.textContent,fontSize:parseFloat(style.fontSize),overflow:style.overflow,scrollTop:el.scrollTop,fits:el.scrollHeight<=el.clientHeight+1&&el.scrollWidth<=el.clientWidth&&r.left>=box.left-1&&r.right<=box.right+1&&r.top>=title.bottom-1&&r.bottom<=heart.top+1&&heart.bottom<=box.bottom+1&&box.bottom<=footer.top+1&&text.left>=r.left-1&&text.right<=r.right+1&&text.top>=r.top-1&&text.bottom<=r.bottom+1};})()`);
 }
@@ -825,10 +840,10 @@ app.whenReady().then(async()=>{
     assert.equal(await evaluate(`matchMedia('(prefers-reduced-motion: reduce)').matches`),systemReduced);
     const before=await shine(),after=await waitForShineFrame(before);assert.ok(after.animations>0);assert.notEqual(after.position,before.position);
     assert.equal(await evaluate(`document.getElementById('maid-image').getAnimations().some(animation=>animation.animationName==='breathe')`),true);
-    await evaluate('pressInteraction(false)');await captureOffscreenFrame(win);await pause(280);
-    win.webContents.invalidate();await captureOffscreenFrame(win);
+    await evaluate('pressInteraction(false)');
     assert.equal(await evaluate(`['character','bubble-motion'].every(id=>document.getElementById(id).classList.contains('interaction-pressed'))`),true,'press animation remains enabled for either OS motion preference');
-    assert.ok(Math.abs(await evaluate(`new DOMMatrix(getComputedStyle(document.getElementById('character')).transform).d`)-.88)<.002);
+    const pressedPose=await waitForPressedTransform();
+    assert.ok(Math.abs(pressedPose.scaleY-.88)<.002,'settled press keeps the exact shipped compression: '+JSON.stringify(pressedPose));
     await evaluate('releaseInteraction(false)');await pause(320);
     await evaluate('setBubbleVisible(false)');
     assert.ok(await evaluate(`['bubble','bubble-content','dot-one','dot-two'].reduce((count,id)=>count+(document.getElementById(id)||document.querySelector('.'+id)).getAnimations().length,0)`)>0,'bubble hide transitions remain enabled');
