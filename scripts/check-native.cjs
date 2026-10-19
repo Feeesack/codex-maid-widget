@@ -14,6 +14,13 @@ fs.copyFileSync(path.join(root,'docs','screenshots','widget-demo.png'),importFil
 fs.writeFileSync(invalidFile,'not an image');
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
 async function until(callback,ms=10000){const end=Date.now()+ms;while(Date.now()<end){if(await callback())return;await sleep(100);}throw new Error('Native app did not reach expected state');}
+function readyJson(file) {
+  try { return JSON.parse(fs.readFileSync(file,'utf8')); }
+  catch (error) {
+    if (error.code === 'ENOENT' || error instanceof SyntaxError) return null;
+    throw error;
+  }
+}
 (async()=>{
   const exe = require('electron');
   let errors='';
@@ -22,17 +29,21 @@ async function until(callback,ms=10000){const end=Date.now()+ms;while(Date.now()
   const child=spawn(exe,args,opts); child.stderr.on('data',x=>errors+=x);
   let second;
   try{
-    await until(()=>fs.existsSync(controlPath));
-    const bounds=JSON.parse(fs.readFileSync(path.join(home,'native-window.json'),'utf8'));
+    let target,bounds,migrated;
+    await until(()=>{
+      target=readyJson(controlPath);
+      return target && Number.isInteger(target.port) && target.port > 0 && target.port <= 65535
+        && typeof target.token === 'string' && target.token.length > 0 && target.pid === child.pid;
+    });
+    await until(()=>{bounds=readyJson(path.join(home,'native-window.json'));return bounds && Number.isFinite(bounds.width) && Number.isFinite(bounds.height);});
     assert.equal(bounds.width,228);assert.equal(bounds.height,288);
-    const migrated=JSON.parse(fs.readFileSync(path.join(home,'settings.json'),'utf8'));
+    await until(()=>{migrated=readyJson(path.join(home,'settings.json'));return migrated && Number.isFinite(migrated.scale);});
     assert.equal(migrated.scale,1);assert.equal(migrated.sizeBaseline,2);
     // With no saved position startup places her on the right; orientation is
     // derived from that position rather than retaining the old edge-only bit.
     assert.equal(migrated.mirror,false);assert.equal(migrated.opacity,0.8);
     assert.equal(migrated.sound,false);
     assert.deepEqual(migrated.phrases,['保留我的台词']);
-    const target=JSON.parse(fs.readFileSync(controlPath,'utf8'));
     const url=`http://127.0.0.1:${target.port}`;
     const headers={Authorization:'Bearer '+target.token,'Content-Type':'application/json'};
     assert.equal((await fetch(url+'/status')).status,403);
@@ -43,8 +54,8 @@ async function until(callback,ms=10000){const end=Date.now()+ms;while(Date.now()
     assert.equal(Object.hasOwn(status,'token'),false);
     for(const action of ['bounce','hide','show','refresh'])assert.equal((await fetch(url+'/action',{method:'POST',headers,body:JSON.stringify({action})})).status,200);
     assert.equal((await fetch(url+'/action',{method:'POST',headers,body:'{"action":"unknown"}'})).status,400);
-    await until(()=>fs.existsSync(path.join(home,'gallery-check.json')));
-    const gallery=JSON.parse(fs.readFileSync(path.join(home,'gallery-check.json'),'utf8'));
+    let gallery;
+    await until(()=>{gallery=readyJson(path.join(home,'gallery-check.json'));return gallery && typeof gallery.ok === 'boolean';});
     assert.equal(gallery.ok,true,gallery.error);
     const galleryStatus=await(await fetch(url+'/status',{headers})).json();
     assert.equal(galleryStatus.activeCharacterId,'lilac-dragon');assert.equal(galleryStatus.characterCount,4);

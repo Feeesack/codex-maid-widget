@@ -30,11 +30,15 @@ function legacyVersion(source) {
     ['setWidgetPosition(drag.origin[0] + cursor.x - drag.cursor.x, drag.origin[1] + cursor.y - drag.cursor.y);',
       'widget.setPosition(drag.origin[0] + cursor.x - drag.cursor.x, drag.origin[1] + cursor.y - drag.cursor.y);'],
     ['const bounds = { ...(windowMode?.enabled ? windowMode.getBounds() : widget.getBounds()), ...dimensions() };', 'const bounds = widget.getBounds();'],
-    ['setWidgetPosition(p.x, p.y); save(); broadcast();', 'widget.setPosition(p.x, p.y); save(); broadcast();'],
+    [['setWidgetPosition(p.x, p.y); save(); broadcast();', 'setWidgetPosition(p.x, p.y); broadcast();'],
+      matched => matched.replace('setWidgetPosition(', 'widget.setPosition(')],
   ];
-  for (const [before, after] of changes) {
-    assert.ok(source.includes(before), 'Cannot derive the previous drag handler; pass --baseline-main.');
-    source = source.replace(before, after);
+  for (const [forms, replacement] of changes) {
+    const candidates = Array.isArray(forms) ? forms : [forms];
+    const matches = candidates.flatMap(before => Array(source.split(before).length - 1).fill(before));
+    assert.equal(matches.length, 1, 'Cannot uniquely derive the previous drag handler; pass --baseline-main.');
+    const before = matches[0];
+    source = source.replace(before, typeof replacement === 'function' ? replacement(before) : replacement);
   }
   return source;
 }
@@ -45,7 +49,11 @@ function harness(source, file, win, scale, dataDir, display, position, peekAtCor
   // Dependency isolation is explicit: data-home never executes the real host
   // module, os.homedir cannot reach the host, and no other project dependency
   // is imported. Only pure settings helpers and this profile's save are used.
-  const isolatedSettings = { ...settingsModule, readSettings: () => settingsModule.sanitize({ sizeBaseline: 2, scale, followCodex: false, peekAtCorners }) };
+  const settingsFile = path.join(dataDir, 'settings.json');
+  const isolatedSettings = { ...settingsModule,
+    readSettings(file) { assert.equal(path.resolve(file), settingsFile); return settingsModule.sanitize({ sizeBaseline: 2, scale, followCodex: false, peekAtCorners }); },
+    writeSettings(file, value) { assert.equal(path.resolve(file), settingsFile); settingsModule.writeSettings(file, value); },
+  };
   const isolatedApp = { isPackaged: false, setName() {}, setPath() {}, getPath: () => dataDir };
   const imports = {
     electron: { app: isolatedApp, ipcMain: events, screen: { getCursorScreenPoint: () => cursor, getDisplayMatching: () => display } },
@@ -54,6 +62,14 @@ function harness(source, file, win, scale, dataDir, display, position, peekAtCor
     './settings.cjs': isolatedSettings, './data-home.cjs': { prepareDataHome: () => dataDir },
     './character-library.cjs': {}, './codex-data.cjs': {}, './codex-desktop.cjs': {}, './auth-change-watch.cjs': {},
     './windows-launch.cjs': {}, './desktop-observation.cjs': {},
+    // This matrix exercises standalone native geometry. The disabled production
+    // controller's moveTo returns false; never construct its OS/Codex providers.
+    './window-mode.cjs': { CodexWindowMode: class {
+      constructor() { this.enabled = false; }
+      configure(enabled) { assert.equal(enabled, false, 'Native DPI fixtures must not enable Codex window containment'); }
+      moveTo() { return false; }
+      getState() { return { enabled: false }; }
+    } },
   };
   const context = vm.createContext({
     require(name) { assert.ok(Object.hasOwn(imports, name), 'Unreviewed production dependency: ' + name); return imports[name]; },
