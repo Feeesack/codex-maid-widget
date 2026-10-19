@@ -22,12 +22,14 @@ const usage = (total, last = total, timestamp) => event('token_count', {
 
 test('Mac Finder minimal PATH discovers executable bundled CLI, user installs and standard CLI directories', () => {
   function fixture(files, denied = []) {
+    files = files.flatMap(file => file.includes('.app/Contents/Resources/')
+      ? [file, file.split('/Contents/Resources/')[0] + '/Contents/MacOS/Codex'] : [file]);
     return { platform: 'darwin', env: { PATH: '/usr/bin:/bin' }, homedir: '/Users/test', readBundle: () => ({ identifier: 'com.openai.codex', executable: 'Codex' }), fileSystem: {
       statSync(file) { if (!files.includes(file)) throw new Error('absent'); return { isFile: () => true }; },
       accessSync(file) { if (denied.includes(file)) throw new Error('not executable'); },
     } };
   }
-  for (const file of ['/Applications/Codex.app/Contents/Resources/codex', '/Users/test/Applications/Codex.app/Contents/Resources/codex', '/Applications/ChatGPT.app/Contents/Resources/codex', '/Users/test/Applications/ChatGPT.app/Contents/Resources/codex',
+  for (const file of ['/Applications/Codex.app/Contents/Resources/codex', '/Applications/Codex.app/Contents/Resources/bin/codex', '/Users/test/Applications/Codex.app/Contents/Resources/codex', '/Applications/ChatGPT.app/Contents/Resources/codex', '/Users/test/Applications/ChatGPT.app/Contents/Resources/codex',
     '/opt/homebrew/bin/codex', '/usr/local/bin/codex', '/Users/test/.local/bin/codex']) {
     assert.equal(findCodexExecutable(null, fixture([file])), file);
   }
@@ -38,6 +40,9 @@ test('Mac Finder minimal PATH discovers executable bundled CLI, user installs an
   assert.equal(findCodexExecutable('/custom path/codex', fixture([])), '/custom path/codex');
   assert.throws(() => findCodexExecutable('/bad\npath', fixture([])), { code: 'CLI_MISSING' });
   assert.throws(() => findCodexExecutable(null, { ...fixture(['/Applications/ChatGPT.app/Contents/Resources/codex']), readBundle: () => ({ identifier: 'com.openai.chat', executable: 'ChatGPT' }) }), { code: 'CLI_MISSING' });
+  for (const executable of ['../Codex', '', 'missing-main'])
+    assert.throws(() => findCodexExecutable(null, { ...fixture(['/Applications/ChatGPT.app/Contents/Resources/codex']),
+      readBundle: () => ({ identifier: 'com.openai.codex', executable }) }), { code: 'CLI_MISSING' });
 });
 
 test('Windows CLI discovery preserves PATH shims and the desktop install fallback on every host', () => {

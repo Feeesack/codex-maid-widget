@@ -1,11 +1,16 @@
 'use strict';
 const $ = id => document.getElementById(id);
+const mirrorFlip = window.MaidMirrorFlip?.create({ image: $('maid-image') });
 let current, mode = 'quota', hideTimer, noticeTimer, phraseIndex = -1, lastTurnTimestamp, initializedTurn = false;
 let displayed = null, animationId;
-const modes = ['quota','today','week','lastTurn','phrase'];
-const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
-function clearBounce() { $('character').classList.remove('bounce'); $('bubble-motion').classList.remove('bounce'); }
-motionPreference.addEventListener('change', event => { if (event.matches) clearBounce(); });
+const modes = ['quota','conversation','accounts','today','week','lastTurn','phrase'];
+let conversationVisible = false, conversationRequest = 0, conversationPending = false;
+let conversationSelectionMode = 'auto';
+let modeWriteGeneration = 0, modeWritePending = 0, lastSettingsRevision = -1;
+const accountCards = new Map(), accountResetEvents = new Map();
+let accountRequest = 0, accountFeedbackTimer;
+function clearBounceMotion(keepPressed = false) { for (const id of ['character', 'bubble-motion']) { $(id).classList.remove('bounce', 'account-alarm-bounce'); if (!keepPressed) $(id).classList.remove('interaction-pressed'); } if (!keepPressed) $('widget').classList.remove('drag-interaction'); }
+function clearBounce() { interactionHeld = false; interactionSound?.stop(); clearBounceMotion(); }
 const themeCache = new Map();
 let themeRequest = 0;
 function applyTheme(palette, source, characterId) {
@@ -18,7 +23,7 @@ async function matchCharacterTheme(value) {
   const preset = CharacterTheme.builtinTheme(id);
   if (preset) { applyTheme(preset, 'builtin', id); return; }
   if (themeCache.has(url)) { applyTheme(themeCache.get(url), 'image', id); return; }
-  applyTheme(CharacterTheme.builtinTheme('mint-maid'), 'fallback', id);
+  applyTheme(CharacterTheme.builtinTheme('frost-glass-cheek'), 'fallback', id);
   try {
     const image = new Image(); image.decoding = 'async'; image.src = url;
     await image.decode();
@@ -69,8 +74,14 @@ function fitPhraseText() {
 }
 function applyVisualPose(value = current) {
   const scale = innerWidth / 380 || 1;
-  const fallback = value?.cornerDock?.peeking === true
-    ? { x: value.cornerDock.corner === 'left' ? -48 : 48, y: 56 } : { x: 0, y: 0 };
+  const percentage = (key, fallback) => {
+    const amount = value?.settings?.[key];
+    return typeof amount === 'number' && Number.isFinite(amount) ? Math.round(Math.max(0, Math.min(200, amount))) / 100 : fallback / 100;
+  };
+  const side = percentage('peekSidePercent', 100), bottom = percentage('peekBottomPercent', 50);
+  const corner = value?.cornerDock?.peeking === true ? value.cornerDock.corner : null;
+  const fallback = corner === 'left' || corner === 'right'
+    ? { x: side === 0 ? 0 : (corner === 'left' ? -48 : 48) * side, y: 56 * bottom } : { x: 0, y: 0 };
   const pose = value?.visualPose;
   const offset = pose?.offset;
   const x = offset && Number.isFinite(offset.x) ? offset.x / scale : fallback.x;
@@ -78,7 +89,7 @@ function applyVisualPose(value = current) {
   $('widget').style.setProperty('--visual-offset-x', `${x}px`);
   $('widget').style.setProperty('--visual-offset-y', `${y}px`);
   $('widget').classList.toggle('is-moving', pose?.moving === true);
-  if (pose?.moving === true) clearBounce();
+  if (pose?.moving === true) clearBounceMotion(true);
 }
 function fit() { $('widget').style.transform = `scale(${innerWidth / 380})`; applyVisualPose(); fitTokenLabels(); fitPhraseText(); }
 fit(); window.addEventListener('resize', fit);
@@ -111,14 +122,330 @@ function countdown() {
   $('reset-tag').textContent = secs ? '重置' : '待刷新';
 }
 function nextPhrase() { const list = current?.settings?.phrases || ['Tibo 义父，reset please……']; phraseIndex = (phraseIndex + 1) % list.length; $('phrase').textContent = list[phraseIndex]; fitPhraseText(); }
+function visibleBubblePages(settings = current?.settings || {}) {
+  const order = [...new Set([...(Array.isArray(settings.bubblePageOrder) ? settings.bubblePageOrder : []),...modes])].filter(id => modes.includes(id));
+  const visible = order.filter(id => !settings.bubbleHiddenPages?.includes(id));
+  return visible.length ? visible : ['quota'];
+}
+function defaultBubblePage(settings = current?.settings || {}) {
+  const visible = visibleBubblePages(settings), selected = settings.defaultBubblePage || settings.mode;
+  return visible.includes(selected) ? selected : visible[0];
+}
+function bubblePageName(id) {
+  return ({quota:'额度',conversation:'对话状态',accounts:'账号管理',today:'今日',week:'本周',lastTurn:'用量',phrase:'女仆'})[id] || '内容';
+}
+function updatePageNavigation() {
+  const visible = visibleBubblePages(), index = visible.indexOf(mode), disabled = visible.length < 2;
+  for (const [id, direction, label] of [['previous-page', -1, '上一页'], ['next-page', 1, '下一页']]) {
+    const button = $(id), target = visible[((index < 0 ? 0 : index) + direction + visible.length) % visible.length];
+    button.disabled = disabled;
+    button.setAttribute('aria-disabled', String(disabled));
+    button.title = disabled ? label + '（仅一页）' : label + '：' + bubblePageName(target);
+    button.setAttribute('aria-label', button.title);
+  }
+}
+function navigateBubblePage(direction) {
+  const visible = visibleBubblePages();
+  if (visible.length < 2) return;
+  const index = visible.indexOf(mode);
+  setMode(index < 0 ? defaultBubblePage() : visible[(index + direction + visible.length) % visible.length]);
+}
 function setMode(value, persist = true) {
-  mode = modes.includes(value) ? value : 'quota';
+  conversationRequest++; conversationPending = false;
+  mode = visibleBubblePages().includes(value) ? value : defaultBubblePage();
+  conversationVisible = mode === 'conversation';
+  $('conversation-view').setAttribute('aria-busy', 'false');
   for (const item of modes) $(item+'-view').hidden = mode !== item;
   fitTokenLabels();
-  $('bubble-label').textContent = ({quota:'额度',today:'今日',week:'本周',lastTurn:'用量',phrase:'女仆'})[mode];
+  $('bubble-label').textContent = bubblePageName(mode);
+  $('bubble').setAttribute('aria-label', `Codex ${$('bubble-label').textContent}气泡`);
+  updatePageNavigation();
   if (mode === 'phrase') nextPhrase();
-  if (persist) window.maid.setSettings({mode});
+  if (conversationVisible) {
+    renderConversation(null);
+    $('conversation-feedback').textContent = '点击气泡读取或刷新';
+    $('bubble').title = '点击气泡刷新对话状态；使用左右箭头翻页';
+  }
+  if (persist) {
+    const generation = ++modeWriteGeneration;
+    modeWritePending = generation;
+    Promise.resolve(window.maid.setSettings({mode})).then(value => {
+      if (generation !== modeWriteGeneration) return;
+      if (Number.isSafeInteger(value?.settingsRevision)) lastSettingsRevision = Math.max(lastSettingsRevision, value.settingsRevision);
+      modeWritePending = 0;
+    }).catch(() => { if (generation === modeWriteGeneration) { modeWritePending = 0; notice('页面偏好暂未保存，请重试'); } });
+  }
   reveal();
+  // Reading is an explicit page-entry action. Restoring a default page or
+  // applying an ordinary state update must never start a background query.
+  if (conversationVisible && persist) void inspectConversation();
+  if (mode === 'accounts') {
+    $('bubble').title = '本机历史账号 · 五小时周期推算；点击刷新，使用左右箭头翻页';
+    updateAccountTimers();
+    if (persist) void refreshAccounts();
+  }
+}
+function renderConversation(result, loading = false) {
+  if (result?.selectionMode === 'auto' || result?.selectionMode === 'manual') conversationSelectionMode = result.selectionMode;
+  const automatic = conversationSelectionMode === 'auto', unknown = automatic && result?.status !== 'ready';
+  const heading = automatic ? unknown ? '对话状态' : '当前对话' : '所选对话';
+  $('bubble-label').textContent = heading;
+  $('bubble').setAttribute('aria-label', `Codex ${heading}气泡`);
+  $('context-track').setAttribute('aria-label', `${heading}上下文使用进度`);
+  const targetReady = !loading && !unknown && result?.status === 'ready';
+  const targetTitle = targetReady && typeof result.targetTitle === 'string' ? result.targetTitle.trim() : '';
+  const targetProject = targetReady && typeof result.targetProject === 'string' ? result.targetProject.trim() : '';
+  const targetProjectDetail = targetReady && typeof result.targetProjectDetail === 'string' ? result.targetProjectDetail.trim() : '';
+  const select = $('conversation-select'), automaticOption = select.querySelector('option[value="@auto"]');
+  if (automaticOption) automaticOption.textContent = automatic && targetReady && targetTitle ? `自动识别当前对话（${targetTitle}）` : '自动识别当前对话';
+  const project = $('conversation-project');
+  project.textContent = loading ? '项目：读取中…' : targetReady ? `项目：${targetProject || '暂无本地项目'}` : '项目：未识别';
+  project.title = targetReady ? [targetProject, targetProjectDetail].filter(Boolean).join('\n') : '';
+  select.title = targetReady ? [targetTitle, targetProject ? `项目：${targetProject}` : '暂无本地项目', targetProjectDetail].filter(Boolean).join('\n') : '选择要查看的对话';
+  const context = result?.context, git = result?.git, compaction = result?.compaction;
+  const contextReady = !unknown && context?.status === 'ready' && Number.isFinite(context.percent) && context.percent >= 0 && Number.isFinite(context.usedTokens) && context.usedTokens >= 0 && Number.isFinite(context.windowTokens) && context.windowTokens > 0;
+  const gitReady = !unknown && git?.status === 'ready' && Number.isSafeInteger(git.count) && git.count >= 0;
+  const contextLabel = $('context-progress'), gitLabel = $('git-count'), track = $('context-track');
+  contextLabel.textContent = loading ? '--' : contextReady ? `${Number(context.percent.toFixed(1))}%` : '暂无数据';
+  contextLabel.classList.toggle('unavailable', !contextReady);
+  contextLabel.title = !loading && contextReady ? `${tokenInteger.format(context.usedTokens)} / ${tokenInteger.format(context.windowTokens)} tokens` : '';
+  const percent = !loading && contextReady ? Math.min(100, context.percent) : 0;
+  $('context-bar').style.width = `${percent}%`;
+  if (!loading && contextReady) track.setAttribute('aria-valuenow', String(percent)); else track.removeAttribute('aria-valuenow');
+  track.setAttribute('aria-valuetext', loading ? '读取中' : contextReady ? `${contextLabel.textContent}，${contextLabel.title}` : '暂无上下文数据');
+  gitLabel.textContent = loading ? '--' : gitReady ? compact(git.count) : !unknown && git?.status === 'not-repository' ? '非 Git 工作区' : !unknown && git?.status === 'timeout' ? '读取超时' : '暂无数据';
+  gitLabel.classList.toggle('unavailable', !gitReady);
+  gitLabel.title = !loading && gitReady ? `${tokenInteger.format(git.count)} 个未提交文件` : '';
+  const compactionReady = !unknown && compaction?.status === 'ready' && Number.isSafeInteger(compaction.count) && compaction.count >= 0 && typeof compaction.complete === 'boolean';
+  const compactionLabel = $('compaction-count');
+  compactionLabel.textContent = loading ? '--' : compactionReady ? `${compaction.complete ? '' : '≥'}${tokenInteger.format(compaction.count)} 次` : '暂无数据';
+  compactionLabel.classList.toggle('unavailable', !compactionReady);
+  compactionLabel.title = '当前对话本地记录；自动与手动压缩合计' + (!loading && compactionReady && !compaction.complete
+    ? compaction.incompleteReason === 'legacy-records' ? '\n部分旧记录无法确认，仅显示已确认次数'
+      : `\n已发现至少${tokenInteger.format(compaction.count)}次，历史记录尚未统计完，点击继续读取` : '');
+  $('conversation-feedback').textContent = loading ? '读取中…' : unknown ? '未识别当前对话，可手动选择' : contextReady && (gitReady || git?.status === 'not-repository') ? '点击气泡刷新' : '暂无数据，可点击气泡重试';
+  // Backend reasons are deliberately not rendered: they may contain local paths.
+}
+function populateConversationChoices(list) {
+  const select = $('conversation-select');
+  const threads = Array.isArray(list?.threads) ? list.threads.filter(thread => typeof thread?.id === 'string' && thread.id).slice(0, 30) : [];
+  const titles = threads.map(thread => typeof thread.title === 'string' && thread.title.trim() ? thread.title.trim() : '未命名对话');
+  select.replaceChildren();
+  const automatic = document.createElement('option'); automatic.value = '@auto'; automatic.textContent = '自动识别当前对话'; select.append(automatic);
+  const prompt = document.createElement('option'); prompt.value = ''; prompt.disabled = true; prompt.textContent = threads.length ? '请选择对话' : '暂无本地对话'; select.append(prompt);
+  for (const [index, thread] of threads.entries()) {
+    const option = document.createElement('option'); option.value = thread.id;
+    const title = titles[index];
+    const project = typeof thread.workspaceLabel === 'string' && thread.workspaceLabel.trim() ? thread.workspaceLabel.trim() : '暂无本地项目';
+    option.textContent = `${title} · ${project}`;
+    option.title = option.textContent;
+    select.append(option);
+  }
+  conversationSelectionMode = list?.selectionMode === 'manual' ? 'manual' : 'auto';
+  select.value = conversationSelectionMode === 'auto' ? '@auto' : threads.some(thread => thread.id === list?.selectedId) ? list.selectedId : '';
+  return select.value;
+}
+async function inspectConversation(selectedId) {
+  if (!conversationVisible || conversationPending) return;
+  reveal();
+  const request = ++conversationRequest;
+  conversationPending = true;
+  if (selectedId === null) conversationSelectionMode = 'auto';
+  else if (typeof selectedId === 'string' && selectedId) conversationSelectionMode = 'manual';
+  $('bubble').title = '点击气泡刷新对话状态；使用左右箭头翻页';
+  const view = $('conversation-view');
+  const select = $('conversation-select');
+  view.setAttribute('aria-busy', 'true');
+  select.disabled = true;
+  renderConversation(null, true);
+  try {
+    if (selectedId === null || typeof selectedId === 'string' && selectedId) {
+      await window.maid.selectConversation(selectedId);
+    } else {
+      const list = await window.maid.listConversations();
+      if (request !== conversationRequest || !conversationVisible) return;
+      selectedId = populateConversationChoices(list);
+      renderConversation(null, true);
+    }
+    if (request !== conversationRequest || !conversationVisible) return;
+    if (conversationSelectionMode === 'manual' && !selectedId) {
+      renderConversation(null);
+      $('conversation-feedback').textContent = select.options.length > 2 ? '请选择要查看的对话' : '暂无本地对话';
+      return;
+    }
+    const result = await window.maid.inspectConversation();
+    if (request === conversationRequest && conversationVisible) renderConversation(result);
+  } catch {
+    if (request === conversationRequest && conversationVisible) renderConversation(null);
+  } finally {
+    if (request === conversationRequest) {
+      conversationPending = false; view.setAttribute('aria-busy', 'false'); select.disabled = false;
+      if (conversationVisible) reveal();
+    }
+  }
+}
+function accountElement(tag, className, text) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  if (text !== undefined) element.textContent = text;
+  return element;
+}
+function accountDisplayLabel(account, automatic = false) {
+  const supplied = automatic ? account.autoLabel : account.label;
+  const text = typeof supplied === 'string' ? supplied.trim() : '';
+  if (!automatic && (account.userEdited === true || account.labelSource === 'manual') && text) return text;
+  const nickname = typeof account.profileNickname === 'string' ? account.profileNickname.trim() : '';
+  const workspace = typeof account.workspaceName === 'string' ? account.workspaceName.trim() : '';
+  const scope = ['个人','工作空间'].includes(account.scopeLabel) ? account.scopeLabel : '';
+  if (nickname) return text === nickname || text.startsWith(nickname + ' · ') ? text : [nickname, workspace || scope].filter(Boolean).join(' · ');
+  if (text.startsWith('昵称未读取') && (account.labelSource === 'fallback' || automatic)) return text;
+  return ['昵称未读取', workspace || scope].filter(Boolean).join(' · ');
+}
+function accountFeedback(message) {
+  clearTimeout(accountFeedbackTimer);
+  $('accounts-feedback').textContent = message;
+  accountFeedbackTimer = setTimeout(() => { $('accounts-feedback').textContent = '本机记录推算 · 历史账号需登录确认'; }, 6000);
+}
+function closeAccountEditor(entry) {
+  entry.editor.hidden = true; entry.confirm.hidden = true; entry.actions.hidden = false;
+}
+async function accountAction(entry, action) {
+  if (entry.busy) return false;
+  entry.busy = true;
+  for (const button of entry.card.querySelectorAll('button')) button.disabled = true;
+  const request = ++accountRequest;
+  try {
+    const result = await action();
+    if (request === accountRequest) renderAccounts(result?.accountManagement || result);
+    return true;
+  } catch {
+    accountFeedback('操作未完成，请重试。');
+    return false;
+  } finally {
+    entry.busy = false;
+    for (const button of entry.card.querySelectorAll('button')) button.disabled = false;
+  }
+}
+function createAccountCard(account) {
+  const card = accountElement('article', 'account-card');
+  const heading = accountElement('div', 'account-heading');
+  const name = accountElement('strong', 'account-name');
+  const badge = accountElement('span', 'account-badge');
+  const actions = accountElement('span', 'account-actions');
+  const rename = accountElement('button', '', '改名'), remove = accountElement('button', '', '移除');
+  rename.type = remove.type = 'button'; actions.append(rename, remove); heading.append(name, badge, actions);
+  const plan = accountElement('div', 'account-plan');
+  const track = accountElement('div', 'account-track'), bar = accountElement('span');
+  track.setAttribute('role', 'progressbar'); track.setAttribute('aria-valuemin', '0'); track.setAttribute('aria-valuemax', '100'); track.append(bar);
+  const countdown = accountElement('div', 'account-countdown');
+  const reset = accountElement('div', 'account-detail'), remaining = accountElement('div', 'account-detail');
+  const editor = accountElement('form', 'account-editor'); editor.hidden = true;
+  const input = accountElement('input'); input.type = 'text'; input.maxLength = 64; input.setAttribute('aria-label', '本机账号别名'); input.title = '本机别名最多 32 字；清空后保存可恢复自动名称。';
+  const save = accountElement('button', '', '保存'), cancel = accountElement('button', '', '取消'); save.type = 'submit'; cancel.type = 'button';
+  editor.append(input, save, cancel, accountElement('small', 'account-editor-hint', '清空后保存，恢复自动名称'));
+  const confirm = accountElement('div', 'account-confirm'); confirm.hidden = true;
+  const confirmRemove = accountElement('button', '', '确认移除'), cancelRemove = accountElement('button', '', '取消');
+  confirmRemove.type = cancelRemove.type = 'button';
+  confirm.append(accountElement('span', '', '下次登录会再次记录'), confirmRemove, cancelRemove);
+  card.append(heading, plan, editor, confirm, track, countdown, reset, remaining);
+  const entry = {card, name, badge, plan, actions, track, bar, countdown, reset, remaining, editor, input, confirm, account, busy: false};
+  rename.addEventListener('click', () => {
+    closeAccountEditor(entry); actions.hidden = true; editor.hidden = false;
+    input.value = entry.account.userEdited === true || entry.account.labelSource === 'manual' ? entry.account.label : '';
+    input.placeholder = accountDisplayLabel(entry.account, true);
+    input.focus(); input.select(); clearTimeout(hideTimer);
+  });
+  cancel.addEventListener('click', () => { closeAccountEditor(entry); rename.focus(); reveal(); });
+  editor.addEventListener('submit', async event => {
+    event.preventDefault();
+    const label = input.value.trim();
+    if (await accountAction(entry, () => window.maid.renameAccount(entry.account.id, label))) {
+      closeAccountEditor(entry); rename.focus(); accountFeedback(label ? '本机账号别名已保存。' : '已恢复自动名称。'); reveal();
+    }
+  });
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !entry.busy) { closeAccountEditor(entry); rename.focus(); reveal(); }
+  });
+  remove.addEventListener('click', () => {
+    closeAccountEditor(entry); actions.hidden = true; confirm.hidden = false; cancelRemove.focus(); clearTimeout(hideTimer);
+  });
+  cancelRemove.addEventListener('click', () => { closeAccountEditor(entry); remove.focus(); reveal(); });
+  confirmRemove.addEventListener('click', async () => {
+    if (await accountAction(entry, () => window.maid.removeAccount(entry.account.id))) {
+      accountFeedback('已移除本机记录，下次登录会再次记录。'); $('account-list').focus(); reveal();
+    }
+  });
+  return entry;
+}
+function renderAccounts(value) {
+  if (!Array.isArray(value?.accounts)) return;
+  ++accountRequest;
+  const accounts = value.accounts.filter(account => typeof account?.id === 'string' && account.id).slice(0, 100);
+  const ids = new Set(accounts.map(account => account.id));
+  for (const [id, entry] of accountCards) {
+    if (!ids.has(id)) { entry.card.remove(); accountCards.delete(id); }
+  }
+  for (const [index, account] of accounts.entries()) {
+    let entry = accountCards.get(account.id);
+    if (!entry) { entry = createAccountCard(account); accountCards.set(account.id, entry); }
+    entry.account = account;
+    entry.name.textContent = accountDisplayLabel(account);
+    entry.badge.textContent = account.current ? '当前' : '历史';
+    const planLabel = account.planLabel || ({free:'Free',go:'Go',plus:'Plus',pro:'Pro',team:'Team',business:'Business',enterprise:'Enterprise',edu:'Education',education:'Education'})[account.planType] || '未知套餐';
+    const scopeLabel = account.scopeLabel || '未知范围';
+    const displayName = typeof account.displayName === 'string' ? account.displayName.trim() : '';
+    const profileNickname = typeof account.profileNickname === 'string' ? account.profileNickname.trim() : '';
+    const email = typeof account.email === 'string' ? account.email.trim() : '';
+    const workspaceName = typeof account.workspaceName === 'string' ? account.workspaceName.trim() : '';
+    entry.plan.textContent = `${planLabel} · ${scopeLabel}${workspaceName ? ` · ${workspaceName}` : ''}`;
+    const workspaceDetail = workspaceName ? `工作空间名称：${workspaceName}` : scopeLabel === '工作空间' ? '工作空间名称：未读取' : '';
+    entry.name.title = [entry.name.textContent, `资料昵称：${profileNickname || '未读取'}`, displayName ? `账户资料名称：${displayName}` : '', email ? `邮箱：${email}` : '', `${planLabel} · ${scopeLabel}`, workspaceDetail].filter(Boolean).join('\n');
+    entry.plan.title = entry.name.title;
+    entry.card.classList.toggle('current-account', account.current === true);
+    entry.track.setAttribute('aria-label', `${entry.name.textContent}五小时周期进度`);
+    const node = $('account-list').children[index];
+    if (node !== entry.card) $('account-list').insertBefore(entry.card, node || null);
+  }
+  $('accounts-empty').hidden = accounts.length > 0;
+  $('accounts-empty').textContent = value.storageError ? '本机账号记录暂不可用，原文件已保留。' : '登录账号并读取额度后，自动记录在这里。';
+  $('account-list').hidden = !accounts.length;
+  updateAccountTimers();
+}
+function updateAccountTimers() {
+  const now = Date.now() / 1000;
+  for (const entry of accountCards.values()) {
+    const account = entry.account, known = Number.isFinite(account.resetsAt) && account.resetsAt > 0;
+    const seconds = known ? Math.max(0, Math.ceil(account.resetsAt - now)) : null;
+    const progress = known ? Math.max(0, Math.min(100, (now - (account.resetsAt - 18000)) / 180)) : 0;
+    entry.bar.style.width = `${progress}%`;
+    if (known) entry.track.setAttribute('aria-valuenow', String(Math.round(progress))); else entry.track.removeAttribute('aria-valuenow');
+    entry.track.setAttribute('aria-valuetext', known ? `五小时周期已过 ${Math.round(progress)}%` : '重置时间未知');
+    entry.countdown.textContent = !known ? '五小时重置时间未知' : seconds === 0 ? '预计已重置，待登录确认'
+      : `距重置 ${Math.floor(seconds / 3600).toString().padStart(2, '0')}:${Math.floor(seconds % 3600 / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
+    entry.reset.textContent = known ? `预计 ${new Date(account.resetsAt * 1000).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})} 重置` : '读取此账号额度后才能推算';
+    const remaining = Number.isFinite(account.remainingPercent) ? `${Number(account.remainingPercent.toFixed(1))}%` : '--';
+    entry.remaining.textContent = `上次剩余 ${remaining} · ${known ? '五小时周期' : '暂无五小时记录'}`;
+    entry.remaining.title = Number.isFinite(account.observedAt) ? `最近观察：${new Date(account.observedAt * 1000).toLocaleString('zh-CN')}` : '尚无额度观察记录';
+  }
+}
+async function refreshAccounts() {
+  const request = ++accountRequest;
+  try {
+    const result = await window.maid.listAccounts();
+    if (request === accountRequest) renderAccounts(result?.accountManagement || result);
+  } catch { if (request === accountRequest) accountFeedback('本机账号记录读取失败，请刷新重试。'); }
+}
+function handleAccountReset(value) {
+  if (!value || typeof value.id !== 'string' || current?.settings.accountResetAlerts === false) return;
+  const key = `${value.id}:${Number.isFinite(value.resetsAt) ? value.resetsAt : Math.floor(Date.now() / 60000)}`;
+  if (accountResetEvents.has(key)) return;
+  accountResetEvents.set(key, true);
+  if (accountResetEvents.size > 200) accountResetEvents.delete(accountResetEvents.keys().next().value);
+  const name = Array.from(typeof value.label === 'string' && value.label.trim() ? value.label.trim() : '账号');
+  const shortName = name.length > 48 ? name.slice(0, 47).join('') + '…' : name.join('');
+  notice(`${shortName}的五小时额度预计已重置，请登录确认。`);
+  accountAlarmBounce();
+  updateAccountTimers();
 }
 function reveal() {
   clearTimeout(hideTimer);
@@ -134,13 +461,49 @@ function setBubbleVisible(visible) {
 }
 function notice(message) { clearTimeout(noticeTimer); $('notice').textContent = message; $('notice').hidden = false; noticeTimer = setTimeout(() => $('notice').hidden = true, 5000); }
 let audio;
-function bounce() {
+let interactionHeld = false, interactionPressedAt = 0, interactionWasMoving = false;
+const interactionSound = window.MaidInteractionAudio.create({ samples: window.MaidInteractionAudio.withLocalSamples(window.MaidInteractionSamples, window.MaidLocalInteractionSamples), enabled: () => current?.settings.sound === true, preset: () => current?.settings.interactionSound || window.MaidInteractionSamples.defaultId });
+function pressInteraction(withSound = true) {
+  if (interactionHeld) return false;
+  interactionHeld = true; interactionPressedAt = performance.now();
+  interactionWasMoving = [$('character'), $('bubble-motion')].some(element => element.getAnimations().some(animation => animation.transitionProperty === 'transform'));
+  // Transitions retarget the currently displayed pose. Never clear to the rest
+  // pose on pointerdown; that used to cut every rapid click short.
+  for (const id of ['character', 'bubble-motion']) $(id).classList.remove('account-alarm-bounce');
+  if (current?.visualPose?.moving !== true) {
+    for (const id of ['character', 'bubble-motion']) $(id).classList.add('interaction-pressed');
+    void $('character').offsetWidth; void $('bubble-motion').offsetWidth;
+  }
+  if (withSound) interactionSound.press();
+  reveal();
+  return true;
+}
+function releaseInteraction(withSound = true) {
+  if (!interactionHeld) return;
+  interactionHeld = false;
+  const elements = [$('character'), $('bubble-motion')];
+  // Like DSH, commit a same-frame tap before returning to rest. During an
+  // existing rebound retain its displayed pose instead of snapping to squish.
+  if (!interactionWasMoving && performance.now() - interactionPressedAt < 32 && current?.visualPose?.moving !== true) {
+    for (const element of elements) element.style.transition = 'none';
+    for (const element of elements) void element.offsetWidth;
+    for (const element of elements) element.style.transition = '';
+    for (const element of elements) void element.offsetWidth;
+  }
+  for (const element of elements) element.classList.remove('interaction-pressed');
+  if (withSound) interactionSound.release();
+}
+function startBounce(className) {
   clearBounce();
-  if (!motionPreference.matches && current?.visualPose?.moving !== true) {
+  if (current?.visualPose?.moving !== true) {
     void $('character').offsetWidth;
-    $('character').classList.add('bounce'); $('bubble-motion').classList.add('bounce');
+    $('character').classList.add(className); $('bubble-motion').classList.add(className);
   }
   reveal();
+}
+function bounce(withSound = true) { if (interactionHeld) { reveal(); return; } pressInteraction(withSound); releaseInteraction(withSound); }
+function accountAlarmBounce() { startBounce('account-alarm-bounce'); playBounceSound(); }
+function playBounceSound() {
   if (current?.settings.sound) {
     try {
       audio ||= new AudioContext(); audio.resume();
@@ -157,18 +520,29 @@ function bounce() {
 }
 function render(value) {
   const initial = !current;
+  const revision = Number.isSafeInteger(value.settingsRevision) ? value.settingsRevision : null;
+  const olderSettings = revision !== null && revision < lastSettingsRevision;
+  if (olderSettings && current) value = { ...value, settings: current.settings };
+  if (revision !== null) lastSettingsRevision = Math.max(lastSettingsRevision, revision);
   const characterChanged = initial || value.characterUrl !== current.characterUrl;
   const bubbleChanged = initial || value.settings.showBubble !== current.settings.showBubble || value.settings.autoHideSeconds !== current.settings.autoHideSeconds;
   const phrasesChanged = initial || value.settings.phrases.length !== current.settings.phrases.length || value.settings.phrases.some((phrase, index) => phrase !== current.settings.phrases[index]);
-  const modeChanged = initial || mode !== value.settings.mode;
+  const modeChanged = initial || (!modeWritePending && !olderSettings && current.settings.mode !== value.settings.mode);
+  const soundChanged = initial || value.settings.interactionSound !== current.settings.interactionSound;
   current = value;
+  if (soundChanged) interactionSound.stop();
+  if (!value.settings.sound) interactionSound.stop();
+  else if (soundChanged) interactionSound.prepare();
   if (characterChanged) void matchCharacterTheme(value);
   if (phrasesChanged) phraseIndex = -1;
-  if (modeChanged) setMode(value.settings.mode, false);
+  if (modeChanged) setMode(initial ? defaultBubblePage(value.settings) : value.settings.mode, false);
+  else if (!visibleBubblePages().includes(mode)) setMode(defaultBubblePage(), false);
   else if (phrasesChanged && mode === 'phrase') nextPhrase();
+  updatePageNavigation();
   if ($('maid-image').src !== value.characterUrl) $('maid-image').src = value.characterUrl;
   $('maid-image').alt = value.characterName || '桌面女仆形象';
   $('widget').classList.toggle('is-mirrored', value.settings.mirror);
+  mirrorFlip?.setMirrored(value.settings.mirror, { initial });
   $('widget').classList.toggle('is-corner-peeking', value.cornerDock?.peeking === true);
   applyVisualPose(value);
   $('demo-label').hidden = !value.demo;
@@ -186,7 +560,8 @@ function render(value) {
   const statusText = value.demo ? '演示数据 · 不代表真实账户' : data.stale ? `连接异常 · 显示 ${time} 的上次额度` : data.error || (data.status === 'connecting' ? '正在连接本机 Codex…' : `每 ${value.settings.refreshSeconds} 秒自动刷新 · ${time} 更新`);
   $('connection').title = statusText;
   $('connection').setAttribute('aria-label',statusText);
-  $('bubble').title = statusText + '\n点击刷新，按住拖动；··· 切换内容';
+  if (!conversationVisible && mode !== 'accounts') $('bubble').title = statusText + '\n点击刷新，按住拖动；使用左右箭头切换内容';
+  renderAccounts(value.accountManagement);
   renderTokens('today-tokens', data.today?.tokens);
   $('today-detail').textContent = data.today ? `本机${data.today.complete === false ? '部分记录' : '日志'} · 含本机各账号` : '暂未取得用量数据';
   renderTokens('week-tokens', data.weekly?.tokens);
@@ -203,27 +578,69 @@ function render(value) {
 }
 async function doRefresh() { $('refresh').animate([{rotate:'0deg'},{rotate:'360deg'}], {duration:650}); await window.maid.refresh(); if (current?.snapshot.error) notice(current.snapshot.error); else reveal(); }
 $('refresh').addEventListener('click', doRefresh);
-$('cycle').addEventListener('click', e => { e.stopPropagation(); setMode(modes[(modes.indexOf(mode)+1)%modes.length]); });
-$('talk').addEventListener('click', () => { if(mode === 'phrase') nextPhrase(); else setMode('phrase'); bounce(); });
+$('conversation-select').addEventListener('change', () => inspectConversation($('conversation-select').value === '@auto' ? null : $('conversation-select').value));
+$('conversation-select').addEventListener('focus', () => clearTimeout(hideTimer));
+$('conversation-select').addEventListener('blur', reveal);
+$('account-list').addEventListener('focusin', () => clearTimeout(hideTimer));
+$('account-list').addEventListener('focusout', event => { if (!$('account-list').contains(event.relatedTarget)) reveal(); });
+$('account-list').addEventListener('pointerenter', () => clearTimeout(hideTimer));
+$('account-list').addEventListener('pointerleave', () => { if (!$('account-list').contains(document.activeElement)) reveal(); });
+for (const [id, direction] of [['previous-page', -1], ['next-page', 1]]) {
+  $(id).addEventListener('click', event => { event.stopPropagation(); navigateBubblePage(direction); });
+}
+let talkPointer = null;
+$('talk').addEventListener('pointerdown', event => { if (event.button === 0 && talkPointer === null && pressInteraction()) { talkPointer = event.pointerId; $('talk').setPointerCapture(event.pointerId); } });
+$('talk').addEventListener('pointerup', event => { if (event.button === 0 && talkPointer === event.pointerId) { talkPointer = null; releaseInteraction(); } });
+function cancelTalkPointer() { if (talkPointer !== null) { talkPointer = null; releaseInteraction(); clearBounceMotion(); } }
+$('talk').addEventListener('pointercancel', cancelTalkPointer);
+$('talk').addEventListener('lostpointercapture', cancelTalkPointer);
+window.addEventListener('blur', cancelTalkPointer);
+$('talk').addEventListener('click', event => { if(!visibleBubblePages().includes('phrase')) notice('台词页已隐藏，可在设置中开启'); else if(mode === 'phrase' && !conversationVisible) nextPhrase(); else setMode('phrase'); if (event.detail === 0) bounce(); });
 $('settings').addEventListener('click', () => window.maid.action('settings'));
 $('hide').addEventListener('click', () => window.maid.action('hide'));
 document.addEventListener('contextmenu', e => { e.preventDefault(); window.maid.action('settings'); });
-document.addEventListener('keydown', e => { if(e.key.toLowerCase() === 'q' || e.key === ' ') { e.preventDefault(); bounce(); } });
+let interactionKey = null;
+document.addEventListener('keydown', e => { if(e.target.closest('select,input,textarea,button')) return; if(e.key.toLowerCase() === 'q' || e.key === ' ' || (e.key === 'Enter' && e.target === $('character'))) { e.preventDefault(); if (!e.repeat && interactionKey === null && pressInteraction()) interactionKey = e.key.toLowerCase(); } });
+document.addEventListener('keyup', e => { if (interactionKey !== null && e.key.toLowerCase() === interactionKey) { e.preventDefault(); interactionKey = null; releaseInteraction(); } });
+window.addEventListener('blur', () => { interactionKey = null; releaseInteraction(); clearBounceMotion(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { interactionKey = null; clearBounce(); } });
 $('character').addEventListener('animationend', event => {
-  if (event.target !== $('character') || event.animationName !== 'squish') return;
+  if (event.target !== $('character') || event.animationName !== 'accountAlarmCharacter') return;
   clearBounce();
+});
+$('character').addEventListener('transitionend', event => {
+  if (event.target === $('character') && event.propertyName === 'transform' && !interactionHeld) $('widget').classList.remove('drag-interaction');
 });
 for (const target of [$('character'), $('bubble')]) {
   let start, moved = false;
-  target.addEventListener('pointerdown', e => { if(e.button !== 0 || e.target.closest('button')) return; clearBounce(); start = {x:e.screenX,y:e.screenY}; moved = false; target.setPointerCapture(e.pointerId); window.maid.drag('start'); });
-  target.addEventListener('pointermove', e => { if(!start) return; if(Math.hypot(e.screenX-start.x,e.screenY-start.y)>4) moved=true; if(moved) window.maid.drag('move'); });
-  const finish = e => { if(!start) return; window.maid.drag('end'); start=null; if(target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId); if(!moved) { if(target.id === 'bubble') doRefresh(); else { bounce(); if(mode==='phrase') nextPhrase(); } } };
+  target.addEventListener('pointerdown', e => { if(e.button !== 0 || start || e.target.closest('button,select,option,input,form,.account-list')) return; start = {x:e.screenX,y:e.screenY,pointerId:e.pointerId,interaction:target.id === 'character' && pressInteraction()}; moved = false; target.setPointerCapture(e.pointerId); window.maid.drag('start'); });
+  target.addEventListener('pointermove', e => { if(!start || start.pointerId !== e.pointerId) return; if(e.buttons === 0) { cancel(e); return; } if(Math.hypot(e.screenX-start.x,e.screenY-start.y)>4) { if(!moved) { if(start.interaction && interactionHeld) { $('widget').classList.add('drag-interaction'); for(const id of ['character','bubble-motion']) $(id).classList.add('interaction-pressed'); } clearBounceMotion(true); } moved=true; } if(moved) window.maid.drag('move'); });
+  const finish = e => { if(!start || start.pointerId !== e.pointerId || e.button !== 0) return; const active=start; window.maid.drag('end'); start=null; if(active.interaction) releaseInteraction(); if(target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId); if(!moved) { if(target.id === 'bubble') { if(conversationVisible) void inspectConversation(); else void doRefresh(); } else if(mode==='phrase') nextPhrase(); } };
+  const cancel = e => { if(start && start.pointerId === e.pointerId) { const active=start; window.maid.drag('end'); start=null; if(active.interaction) releaseInteraction(); clearBounceMotion(); if(target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId); } };
   target.addEventListener('pointerup', finish);
-  target.addEventListener('pointercancel', e => { if(start) { window.maid.drag('end'); start=null; if(target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId); } });
+  target.addEventListener('pointercancel', cancel);
+  target.addEventListener('lostpointercapture', cancel);
+  window.addEventListener('blur', () => { if (start) cancel({pointerId:start.pointerId}); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && start) cancel({pointerId:start.pointerId}); });
 }
-document.addEventListener('pointermove', e => { const el = document.elementFromPoint(e.clientX,e.clientY); const inside = !!el?.closest('.interactive'); window.maid.pointerRegion(inside); });
-document.documentElement.addEventListener('pointerleave', () => window.maid.pointerRegion(false));
+let toolbarHideTimer;
+function updateToolbarPointer(inside) {
+  if (inside) {
+    clearTimeout(toolbarHideTimer); toolbarHideTimer = null;
+    $('widget').classList.add('toolbar-open');
+  } else if (!toolbarHideTimer && $('widget').classList.contains('toolbar-open')) {
+    // Repeated movement outside must not postpone dismissal indefinitely.
+    toolbarHideTimer = setTimeout(() => {
+      toolbarHideTimer = null; $('widget').classList.remove('toolbar-open');
+    }, 600);
+  }
+}
+document.addEventListener('pointermove', e => {
+  const el = document.elementFromPoint(e.clientX,e.clientY), inside = !!el?.closest('.interactive');
+  updateToolbarPointer(inside); window.maid.pointerRegion(inside);
+});
+document.documentElement.addEventListener('pointerleave', () => { updateToolbarPointer(false); window.maid.pointerRegion(false); });
 $('character').addEventListener('pointerenter', reveal);
 const initialState = window.MaidPresence.connect(window.maid);
-window.maid.onState(render); window.maid.onBounce(bounce); initialState.then(render);
-setInterval(countdown,1000);
+window.maid.onState(render); window.maid.onBounce(bounce); window.maid.onAccountReset?.(handleAccountReset); initialState.then(render);
+setInterval(() => { countdown(); if (mode === 'accounts') updateAccountTimers(); },1000);

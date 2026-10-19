@@ -2,6 +2,7 @@
 const { WindowContainmentController } = require('./window-containment.cjs');
 const { CodexWindowProvider, nativeHandleId } = require('./codex-window.cjs');
 const { createVisibilityController } = require('./window-visibility.cjs');
+const { WindowTopmostController } = require('./window-topmost.cjs');
 
 function normalizedSnapshot(value, { screen, previousHost, widgetPid = process.pid } = {}) {
   if (value?.known !== true || !Array.isArray(value.windows)) return { known: false, supported: value?.supported !== false };
@@ -41,6 +42,7 @@ function normalizedSnapshot(value, { screen, previousHost, widgetPid = process.p
 class CodexWindowMode {
   constructor({ widget, screen, getSize, onStatus = () => {}, onRecreate = () => {}, platform = process.platform,
     providerFactory = () => new CodexWindowProvider({ widgetHandle: widget.getNativeWindowHandle() }),
+    topmostProviderFactory = () => new CodexWindowProvider({ widgetHandle: widget.getNativeWindowHandle() }),
     intervalMs = platform === 'darwin' ? 500 : 100, staleAfterMs = platform === 'darwin' ? 2500 : 1800 } = {}) {
     Object.assign(this, { widget, screen, getSize, platform, providerFactory, intervalMs, staleAfterMs, onStatus, onRecreate });
     this.provider = null; this.timer = null; this.staleTimers = new Set(); this.epoch = 0;
@@ -48,6 +50,8 @@ class CodexWindowMode {
     this.geometryReady = true; this.rendererLoaded = !widget.webContents?.on;
     this.nativeShown = false; this.lastProjected = null; this.raw = null; this.host = null;
     this.binding = Promise.resolve(); this.bindingRevision = 0; this.recreating = false;
+    this.preferences = {};
+    this.topmost = new WindowTopmostController({ widget, platform, providerFactory: topmostProviderFactory, onStatus: () => this.publish() });
     this.surface = {
       isDestroyed: () => widget.isDestroyed?.() === true,
       isVisible: () => this.embedded ? this.nativeShown : widget.isVisible(),
@@ -82,7 +86,9 @@ class CodexWindowMode {
         else { this.presence(false); widget.hide(); this.nativeShown = false; }
       },
       onVisibilityChanged: () => this.publish(),
-      setAlwaysOnTop: value => widget.setAlwaysOnTop(value, 'floating'),
+      // The mode owns the native barrier. The containment state only describes
+      // geometry/visibility and cannot issue independent topmost writes.
+      setAlwaysOnTop: () => {},
       onHostChanged: host => this.changeHost(host),
     });
     this.loaded = () => {
@@ -111,9 +117,11 @@ class CodexWindowMode {
   getState() {
     const { enabled, manualHidden, visible, reason, supported } = this.controller.getState();
     const failed = enabled && this.visibility.snapshot().lastFailure === 'show';
+    const topmost = this.topmost.getState();
     return { supported: ['win32', 'darwin'].includes(this.platform) && supported, enabled, manualHidden,
       visible: visible && reason !== 'host-hidden' && this.geometryReady && !failed,
-      reason: failed ? 'placement-unavailable' : reason, embedded: enabled && this.embedded };
+      reason: failed ? 'placement-unavailable' : !enabled && topmost.reason === 'topmost-unavailable' ? topmost.reason : reason,
+      embedded: enabled && this.embedded, topmost };
   }
   presence(visible) { this.widget.webContents?.send?.('presence', { visible, animate: false }); }
   publish() {
@@ -152,12 +160,26 @@ class CodexWindowMode {
     this.geometryReady = false;
     if (this.widget.isDestroyed?.()) return false;
     const handle = this.widget.getNativeWindowHandle();
-    const task = this.binding.then(() => id ? provider.attachChild(handle, id) : provider.detachChild(handle));
+    const task = this.binding.then(async () => {
+      if (id) {
+        await this.topmost.settled();
+        if (this.closed || revision !== this.bindingRevision || !this.topmost.getState().verified) return { known: true, ok: false };
+      }
+      return id ? provider.attachChild(handle, id) : provider.detachChild(handle);
+    });
     this.binding = task.catch(() => {});
     return task.then(result => {
       const ok = result?.known === true && result.ok === true;
       if (revision === this.bindingRevision && !this.closed) {
-        if (!id && ok) { this.embedded = false; this.geometryReady = true; this.lastProjected = null; }
+        if (!id && ok) {
+          // Losing a host while the option stays enabled is a temporary
+          // detach, not a transition to a globally topmost desktop surface.
+          this.embedded = this.enabled;
+          this.geometryReady = true; this.lastProjected = null;
+          // The cached native ExStyle has now been restored. Reassert both
+          // Electron intent and native topmost only after its detach ACK.
+          if (!this.enabled) this.topmost.configure({ contained: false, ...this.preferences });
+        }
         if (!ok && (!id || result?.reason === 'child-style-unavailable')) this.recreate();
       }
       return ok;
@@ -165,13 +187,18 @@ class CodexWindowMode {
   }
   configure(enabled, preferences) {
     enabled = enabled === true && !this.closed;
-    if (enabled === this.enabled) { this.controller.setEnabled(enabled, preferences); this.controller.refreshSize(); this.publish(); return; }
+    this.preferences = { ...this.preferences, ...preferences };
+    if (enabled === this.enabled) {
+      this.topmost.configure({ contained: enabled || this.embedded, ...this.preferences });
+      this.controller.setEnabled(enabled, preferences); this.controller.refreshSize(); this.publish(); return;
+    }
     const epoch = ++this.epoch;
     // An older detach still completes, but cannot change a newly enabled mode.
     this.bindingRevision++;
     clearTimeout(this.timer); this.timer = null;
     for (const timer of this.staleTimers) clearTimeout(timer); this.staleTimers.clear();
     if (enabled) {
+      this.topmost.configure({ contained: true, ...this.preferences });
       this.visibility.dispose(); this.visibility = this.createVisibility();
       try { this.provider = this.providerFactory(); }
       catch { this.controller.setEnabled(true, preferences); this.controller.update({ known: false }); this.publish(); return; }
@@ -183,6 +210,7 @@ class CodexWindowMode {
       this.visibility.dispose();
       const provider = this.provider;
       this.controller.setEnabled(false, preferences);
+      if (!this.embedded) this.topmost.configure({ contained: false, ...this.preferences });
       if (this.embedded) this.binding.finally(() => { provider?.close(); if (this.provider === provider) this.provider = null; });
       else { provider?.close(); if (this.provider === provider) this.provider = null; }
     }
@@ -223,11 +251,13 @@ class CodexWindowMode {
   getBounds() { return this.embedded && this.lastProjected ? { ...this.lastProjected } : this.widget.getBounds(); }
   moveTo(x, y) { return this.controller.moveTo(x, y); }
   refreshSize() { this.controller.refreshSize(); this.publish(); }
-  show() { this.controller.setManualHidden(false); if (this.enabled) this.visibility.requestRecovery(); this.publish(); }
+  show() { this.controller.setManualHidden(false); this.topmost.recover(); if (this.enabled) this.visibility.requestRecovery(); this.publish(); }
   hide() { this.controller.setManualHidden(true); this.publish(); }
   close() {
     if (this.closed) return;
     this.closed = true; this.epoch++; this.bindingRevision++;
+    this.controller.close();
+    this.topmost.close();
     this.visibility.dispose();
     try { this.widget.webContents?.removeListener?.('did-finish-load', this.loaded); } catch {}
     clearTimeout(this.timer); for (const timer of this.staleTimers) clearTimeout(timer); this.staleTimers.clear();

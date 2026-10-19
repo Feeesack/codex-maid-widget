@@ -12,7 +12,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 public static class MaidCodexWindow {
     static HashSet<uint> cachedRoots;
     static readonly List<IntPtr> cachedProcesses = new List<IntPtr>();
@@ -69,16 +68,6 @@ public static class MaidCodexWindow {
         InvalidateRoots();
         return new Dictionary<string, object> { { "known", false }, { "supported", true } };
     }
-    static bool OfficialPath(string path) {
-        if (string.IsNullOrEmpty(path)) return false;
-        var file = System.IO.Path.GetFullPath(path);
-        var packageRoot = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "WindowsApps") + "\\";
-        if (file.StartsWith(packageRoot, StringComparison.OrdinalIgnoreCase))
-            return Regex.IsMatch(file.Substring(packageRoot.Length), @"^openai\.codex_[a-z0-9._-]+__2p2nqsd0c76g0\\app\\(?:chatgpt|codex)\.exe$", RegexOptions.IgnoreCase);
-        var programs = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs") + "\\";
-        return file.StartsWith(programs, StringComparison.OrdinalIgnoreCase) &&
-            Regex.IsMatch(file.Substring(programs.Length), @"^(?:openai\\codex|openai codex|codex)\\(?:app\\)?(?:chatgpt|codex)\.exe$", RegexOptions.IgnoreCase);
-    }
     static void InvalidateRoots() {
         cachedRoots = null;
         foreach (var process in cachedProcesses) CloseHandle(process);
@@ -96,7 +85,7 @@ public static class MaidCodexWindow {
         if (!(bool)inventory["known"]) throw new InvalidOperationException();
         var processes = (List<Dictionary<string, object>>)inventory["processes"];
         var candidates = new HashSet<uint>();
-        foreach (var item in processes) if (OfficialPath((string)item["path"])) candidates.Add((uint)(int)item["pid"]);
+        foreach (var item in processes) if (item.ContainsKey("officialDesktop") && item["officialDesktop"] is bool && (bool)item["officialDesktop"]) candidates.Add((uint)(int)item["pid"]);
         var roots = new HashSet<uint>();
         foreach (var item in processes) {
             var pid = (uint)(int)item["pid"];
@@ -167,6 +156,7 @@ public static class MaidCodexWindow {
             };
             if (widgetValue != 0) {
                 answer["widgetVisible"] = ownWidget && IsWindowVisible(widget);
+                answer["widgetTopmost"] = ownWidget && (GetLong(widget, -20).ToInt64() & 0x00000008L) != 0;
                 answer["widgetParented"] = trustedParent;
                 answer["widgetParentId"] = Id(parent);
                 answer["widgetDpi"] = ownWidget ? (int)GetDpiForWindow(widget) : 0;
@@ -205,6 +195,19 @@ public static class MaidCodexWindow {
     }
     static bool OwnWidget(IntPtr widget, uint widgetPid) {
         return widget != IntPtr.Zero && IsWindow(widget) && Pid(widget) == widgetPid;
+    }
+    public static object SetTopmost(long widgetValue, long expectedWidgetValue, uint widgetPid, bool enabled) {
+        var widget = new IntPtr(widgetValue);
+        try {
+            // Bind every write to this worker's current surface, never another
+            // window of the same process, and never globally promote a child.
+            if (widgetValue != expectedWidgetValue || !OwnWidget(widget, widgetPid) ||
+                (GetLong(widget, -16).ToInt64() & 0x40000000L) != 0 || GetAncestor(widget, 2) != widget) return Unknown();
+            bool moved = SetWindowPos(widget, new IntPtr(enabled ? -1 : -2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+            bool topmost = (GetLong(widget, -20).ToInt64() & 0x00000008L) != 0;
+            bool ok = moved && OwnWidget(widget, widgetPid) && topmost == enabled;
+            return new Dictionary<string, object> { { "known", true }, { "supported", true }, { "ok", ok }, { "topmost", topmost } };
+        } catch { return Unknown(); }
     }
     static bool TrustedHost(IntPtr host, HashSet<uint> roots) {
         return host != IntPtr.Zero && IsWindow(host) && roots.Contains(Pid(host)) && MainWindow(host);
@@ -262,7 +265,9 @@ public static class MaidCodexWindow {
             // Child HWND_TOP is confined to the host's own child stack. Preserve
             // visibility; renderer/manual hiding remains under the app's control.
             bool stacked = SetWindowPos(widget, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0020 | 0x4000);
-            if (!stacked) { DetachSaved(widget, binding, widgetPid); return ChildAnswer(false, false, "child-attach-failed"); }
+            bool parented = OwnWidget(widget, widgetPid) && GetParent(widget) == host &&
+                (GetLong(widget, -16).ToInt64() & 0xC0000000L) == 0x40000000L;
+            if (!stacked || !parented) { DetachSaved(widget, binding, widgetPid); return ChildAnswer(false, false, "child-attach-failed"); }
             return ChildAnswer(true, true);
         } catch {
             ChildBinding binding;
@@ -294,8 +299,13 @@ public static class MaidCodexWindow {
             if (availableWidth < width || availableHeight < height) return ChildAnswer(false, true, "child-too-large");
             int relativeX = (int)Math.Max(0L, Math.Min((long)availableWidth - width, (long)x - origin.X));
             int relativeY = (int)Math.Max(0L, Math.Min((long)availableHeight - height, (long)y - origin.Y));
-            bool ok = SetWindowPos(widget, IntPtr.Zero, relativeX, relativeY, width, height, 0x0010 | 0x4000);
-            return ChildAnswer(ok, true, ok ? null : "child-position-failed");
+            bool moved = SetWindowPos(widget, IntPtr.Zero, relativeX, relativeY, width, height, 0x0010 | 0x4000);
+            // A parent can close while SetWindowPos is crossing processes. Its
+            // return value alone cannot certify the old child's HWND/PID.
+            bool parented = OwnWidget(widget, widgetPid) && GetParent(widget) == host &&
+                (GetLong(widget, -16).ToInt64() & 0xC0000000L) == 0x40000000L;
+            bool ok = moved && parented;
+            return ChildAnswer(ok, parented, ok ? null : "child-position-failed");
         } catch { return Unknown(); }
         finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
     }
@@ -321,6 +331,9 @@ public static class MaidCodexWindow {
 '@
 while ($null -ne ($request = [Console]::In.ReadLine())) {
     if ($request -eq 'query') { $answer = [MaidWindowNative.MaidCodexWindow]::Query(__WIDGET_HWND__, __WIDGET_PID__) }
+    elseif ($request -match '^topmost ([1-9][0-9]*) ([01])$') {
+        $answer = [MaidWindowNative.MaidCodexWindow]::SetTopmost([long]$Matches[1], __WIDGET_HWND__, __WIDGET_PID__, $Matches[2] -eq '1')
+    }
     elseif ($request -match '^owner ([1-9][0-9]*) (0|[1-9][0-9]*)$') {
         $answer = [MaidWindowNative.MaidCodexWindow]::SetOwner([long]$Matches[1], [long]$Matches[2], __WIDGET_PID__)
     } elseif ($request -match '^attach ([1-9][0-9]*) ([1-9][0-9]*)$') {
@@ -362,7 +375,7 @@ function validWindow(item) {
 }
 
 class CodexWindowProvider extends WindowsInventoryWorker {
-  constructor({ spawn = nativeSpawn, platform = process.platform, timeout = 7000, widgetPid = process.pid, widgetHandle } = {}) {
+  constructor({ spawn = nativeSpawn, platform = process.platform, timeout = 7000, widgetPid = process.pid, widgetHandle, env = process.env } = {}) {
     if (!Number.isInteger(widgetPid) || widgetPid <= 0) throw new TypeError('Invalid widget process');
     const widgetId = widgetHandle === undefined ? '0' : nativeHandleId(widgetHandle);
     if (!widgetId) throw new TypeError('Invalid widget handle');
@@ -374,7 +387,7 @@ class CodexWindowProvider extends WindowsInventoryWorker {
       '$memory=New-Object IO.MemoryStream(,$bytes); ' +
       '$gzip=New-Object IO.Compression.GzipStream($memory,[IO.Compression.CompressionMode]::Decompress); ' +
       '$reader=New-Object IO.StreamReader($gzip); Invoke-Expression ($reader.ReadToEnd())';
-    super({ platform, timeout, spawn: (file, args, options) => {
+    super({ platform, timeout, env, spawn: (file, args, options) => {
       const next = [...args];
       next[next.indexOf('-EncodedCommand') + 1] = Buffer.from(bootstrap, 'utf16le').toString('base64');
       return spawn(file, next, options);
@@ -382,17 +395,18 @@ class CodexWindowProvider extends WindowsInventoryWorker {
     this.tail = Promise.resolve();
     this.queryPending = null;
     this.queuedPosition = null;
+    this.widgetId = widgetId;
   }
   unavailable(reason = 'window-unavailable') {
     return { known: false, supported: this.platform === 'win32', coordinateSpace: 'physical-pixels', windows: [], reason };
   }
-  request(command, kind) {
+  request(command, kind, expectedParented) {
     const task = this.tail.then(() => {
       if (this.closed) return this.unavailable();
       if (this.platform !== 'win32') return this.unavailable('unsupported-platform');
       let resolve;
       const promise = new Promise(done => { resolve = done; });
-      this.pending = { promise, resolve, kind, timer: setTimeout(() => this.fail(), this.timeout) };
+      this.pending = { promise, resolve, kind, expectedParented, timer: setTimeout(() => this.fail(), this.timeout) };
       try {
         if (!this.worker) this.start();
         const worker = this.worker;
@@ -408,6 +422,11 @@ class CodexWindowProvider extends WindowsInventoryWorker {
     this.queuedPosition = null;
     if (!this.queryPending) this.queryPending = this.request('query', 'query').finally(() => { this.queryPending = null; });
     return this.queryPending;
+  }
+  setTopmost(widgetHandle, enabled) {
+    const widget = nativeHandleId(widgetHandle);
+    if (!widget || widget !== this.widgetId || typeof enabled !== 'boolean') return Promise.resolve(this.unavailable('invalid-window-handle'));
+    return this.request(`topmost ${widget} ${enabled ? 1 : 0}`, 'topmost');
   }
   setOwner(widgetHandle, hostId) {
     this.queuedPosition = null;
@@ -425,7 +444,7 @@ class CodexWindowProvider extends WindowsInventoryWorker {
     this.queuedPosition = null;
     const widget = nativeHandleId(widgetHandle), host = nativeHandleId(hostId);
     if (!widget || !host || widget === host) return Promise.resolve(this.unavailable('invalid-window-handle'));
-    return this.request(`attach ${widget} ${host}`, 'child');
+    return this.request(`attach ${widget} ${host}`, 'child', true);
   }
   positionChild(widgetHandle, hostId, bounds) {
     const widget = nativeHandleId(widgetHandle), host = nativeHandleId(hostId);
@@ -444,7 +463,7 @@ class CodexWindowProvider extends WindowsInventoryWorker {
     slot.promise = this.request(() => {
       if (this.queuedPosition === slot) this.queuedPosition = null;
       return slot.command;
-    }, 'child').finally(() => { if (this.queuedPosition === slot) this.queuedPosition = null; });
+    }, 'child', true).finally(() => { if (this.queuedPosition === slot) this.queuedPosition = null; });
     this.queuedPosition = slot;
     return slot.promise;
   }
@@ -452,7 +471,7 @@ class CodexWindowProvider extends WindowsInventoryWorker {
     this.queuedPosition = null;
     const widget = nativeHandleId(widgetHandle);
     if (!widget) return Promise.resolve(this.unavailable('invalid-window-handle'));
-    return this.request(`detach ${widget}`, 'child');
+    return this.request(`detach ${widget}`, 'child', false);
   }
   receive(worker, chunk) {
     if (this.worker !== worker) return;
@@ -469,9 +488,13 @@ class CodexWindowProvider extends WindowsInventoryWorker {
       try { answer = JSON.parse(line); } catch { this.fail(); return; }
       if (!answer || typeof answer.known !== 'boolean' || answer.supported !== true) { this.fail(); return; }
       if (!answer.known) { this.settle(this.unavailable()); continue; }
-      if (this.pending.kind === 'owner' || this.pending.kind === 'child') {
+      if (this.pending.kind === 'topmost') {
+        if (typeof answer.ok !== 'boolean' || typeof answer.topmost !== 'boolean') { this.fail(); return; }
+        this.settle({ known: true, supported: true, ok: answer.ok, topmost: answer.topmost });
+      } else if (this.pending.kind === 'owner' || this.pending.kind === 'child') {
         if (typeof answer.ok !== 'boolean') { this.fail(); return; }
         if (this.pending.kind === 'child' && typeof answer.parented !== 'boolean') { this.fail(); return; }
+        if (this.pending.kind === 'child' && answer.ok && answer.parented !== this.pending.expectedParented) { this.fail(); return; }
         if (this.pending.kind === 'child' && answer.reason !== undefined && !CHILD_FAILURE_REASONS.has(answer.reason)) { this.fail(); return; }
         this.settle({ known: true, supported: true, ok: answer.ok,
           ...(this.pending.kind === 'child' ? { parented: answer.parented,
@@ -480,7 +503,7 @@ class CodexWindowProvider extends WindowsInventoryWorker {
         if (answer.coordinateSpace !== 'physical-pixels' || !Array.isArray(answer.windows) || answer.windows.length > 512 ||
             !answer.windows.every(validWindow) || !validId(answer.foregroundWindow, true) || !validId(answer.foregroundRoot, true) ||
             !Number.isInteger(answer.foregroundPid) || answer.foregroundPid < 0 ||
-            ['widgetVisible', 'widgetParented', 'widgetStyleCached'].some(key => answer[key] !== undefined && typeof answer[key] !== 'boolean') ||
+            ['widgetVisible', 'widgetParented', 'widgetStyleCached', 'widgetTopmost'].some(key => answer[key] !== undefined && typeof answer[key] !== 'boolean') ||
             answer.widgetParentId !== undefined && !validId(answer.widgetParentId, true) ||
             answer.widgetDpi !== undefined && !(Number.isInteger(answer.widgetDpi) && answer.widgetDpi >= 0 && answer.widgetDpi <= 10000)) { this.fail(); return; }
         const windows = answer.windows.map(({ id, pid, bounds, visible, minimized, cloaked, foreground, modal, mainWindow, dpi, widgetParented, widgetAboveHost }) => ({
@@ -492,7 +515,7 @@ class CodexWindowProvider extends WindowsInventoryWorker {
         }));
         this.settle({ known: true, supported: true, coordinateSpace: 'physical-pixels', windows,
           foregroundWindow: answer.foregroundWindow, foregroundRoot: answer.foregroundRoot, foregroundPid: answer.foregroundPid,
-          ...Object.fromEntries(['widgetVisible', 'widgetParented', 'widgetParentId', 'widgetDpi', 'widgetStyleCached']
+          ...Object.fromEntries(['widgetVisible', 'widgetParented', 'widgetParentId', 'widgetDpi', 'widgetStyleCached', 'widgetTopmost']
             .filter(key => answer[key] !== undefined).map(key => [key, answer[key]])) });
       }
     }

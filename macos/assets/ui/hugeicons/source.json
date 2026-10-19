@@ -1,0 +1,594 @@
+{
+  "package": "@hugeicons/core-free-icons",
+  "version": "4.3.5",
+  "style": "Stroke Rounded",
+  "license": "MIT",
+  "packageUrl": "https://www.npmjs.com/package/@hugeicons/core-free-icons/v/4.3.5",
+  "repository": "https://github.com/hugeicons/hugeicons",
+  "archiveUrl": "https://registry.npmjs.org/@hugeicons/core-free-icons/-/core-free-icons-4.3.5.tgz",
+  "archiveIntegrity": "sha512-Sv+NjHRPnQk+yZsGCMcGznCHdTfJR9PMMOEKcJYAQU4gy90dmlc9PwdtvYOImBZIjiheMsTLL5eMn2DmHxUiUg==",
+  "archiveSha256": "c95cc346815518a2a9f91edf8c194d497ba6e4e3ecb3f20a38e034f72d756b5f",
+  "licenseSha256": "1658d8213209df7b9b86dfc05d724ede48d00dbc27abc15976ec7adec9601cde",
+  "preparation": "Mechanical SVG serialization of the pinned official icon node arrays: React key omitted; SVG attribute names serialized in kebab-case. Original geometry and stroke attributes unchanged. 24x24 viewBox displayed at 18px; currentColor inherited from the application theme.",
+  "icons": [
+    {
+      "id": "refresh",
+      "exportName": "RefreshIcon",
+      "modulePath": "dist/cjs/RefreshIcon.js",
+      "moduleSha256": "b25e525fc72d09c786cfd3a150806acdf2f61e43e93e7d472b8906ccf6a60558",
+      "file": "refresh.svg",
+      "svgSha256": "315ce659fbb9349ee4fc086cb8f7715db5a21eb9c5b5e574826d9b4cee7001ac",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M20.0092 2V5.13219C20.0092 5.42605 19.6418 5.55908 19.4537 5.33333C17.6226 3.2875 14.9617 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "heart",
+      "exportName": "HeartIcon",
+      "modulePath": "dist/cjs/HeartIcon.js",
+      "moduleSha256": "b32b80a2dea6c81277d9d880b5965b9d2de6df91e81c866d90f5787e11cb4186",
+      "file": "heart.svg",
+      "svgSha256": "c05116e56978c8afd93e53d007e51c275ab55b9b7e10c3fc566bb70d90dce001",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M10.4107 19.9677C7.58942 17.858 2 13.0348 2 8.69444C2 5.82563 4.10526 3.5 7 3.5C8.5 3.5 10 4 12 6C14 4 15.5 3.5 17 3.5C19.8947 3.5 22 5.82563 22 8.69444C22 13.0348 16.4106 17.858 13.5893 19.9677C12.6399 20.6776 11.3601 20.6776 10.4107 19.9677Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "settings",
+      "exportName": "Settings01Icon",
+      "modulePath": "dist/cjs/Settings01Icon.js",
+      "moduleSha256": "e248eb175f378ca234e41f8eb064daa88d4fb6b46d078e0dbab327b2fcccfb9f",
+      "file": "settings.svg",
+      "svgSha256": "cb2cc4db76aa9b915030461c4fe5e0751402141a8332b10cfd9a7daf29643cb6",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M21.3175 7.14139L20.8239 6.28479C20.4506 5.63696 20.264 5.31305 19.9464 5.18388C19.6288 5.05472 19.2696 5.15664 18.5513 5.36048L17.3311 5.70418C16.8725 5.80994 16.3913 5.74994 15.9726 5.53479L15.6357 5.34042C15.2766 5.11043 15.0004 4.77133 14.8475 4.37274L14.5136 3.37536C14.294 2.71534 14.1842 2.38533 13.9228 2.19657C13.6615 2.00781 13.3143 2.00781 12.6199 2.00781H11.5051C10.8108 2.00781 10.4636 2.00781 10.2022 2.19657C9.94085 2.38533 9.83106 2.71534 9.61149 3.37536L9.27753 4.37274C9.12465 4.77133 8.84845 5.11043 8.48937 5.34042L8.15249 5.53479C7.73374 5.74994 7.25259 5.80994 6.79398 5.70418L5.57375 5.36048C4.85541 5.15664 4.49625 5.05472 4.17867 5.18388C3.86109 5.31305 3.67445 5.63696 3.30115 6.28479L2.80757 7.14139C2.45766 7.74864 2.2827 8.05227 2.31666 8.37549C2.35061 8.69871 2.58483 8.95918 3.05326 9.48012L4.0843 10.6328C4.3363 10.9518 4.51521 11.5078 4.51521 12.0077C4.51521 12.5078 4.33636 13.0636 4.08433 13.3827L3.05326 14.5354C2.58483 15.0564 2.35062 15.3168 2.31666 15.6401C2.2827 15.9633 2.45766 16.2669 2.80757 16.8741L3.30114 17.7307C3.67443 18.3785 3.86109 18.7025 4.17867 18.8316C4.49625 18.9608 4.85542 18.8589 5.57377 18.655L6.79394 18.3113C7.25263 18.2055 7.73387 18.2656 8.15267 18.4808L8.4895 18.6752C8.84851 18.9052 9.12464 19.2442 9.2775 19.6428L9.61149 20.6403C9.83106 21.3003 9.94085 21.6303 10.2022 21.8191C10.4636 22.0078 10.8108 22.0078 11.5051 22.0078H12.6199C13.3143 22.0078 13.6615 22.0078 13.9228 21.8191C14.1842 21.6303 14.294 21.3003 14.5136 20.6403L14.8476 19.6428C15.0004 19.2442 15.2765 18.9052 15.6356 18.6752L15.9724 18.4808C16.3912 18.2656 16.8724 18.2055 17.3311 18.3113L18.5513 18.655C19.2696 18.8589 19.6288 18.9608 19.9464 18.8316C20.264 18.7025 20.4506 18.3785 20.8239 17.7307L21.3175 16.8741C21.6674 16.2669 21.8423 15.9633 21.8084 15.6401C21.7744 15.3168 21.5402 15.0564 21.0718 14.5354L20.0407 13.3827C19.7887 13.0636 19.6098 12.5078 19.6098 12.0077C19.6098 11.5078 19.7888 10.9518 20.0407 10.6328L21.0718 9.48012C21.5402 8.95918 21.7744 8.69871 21.8084 8.37549C21.8423 8.05227 21.6674 7.74864 21.3175 7.14139Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M15.5195 12C15.5195 13.933 13.9525 15.5 12.0195 15.5C10.0865 15.5 8.51953 13.933 8.51953 12C8.51953 10.067 10.0865 8.5 12.0195 8.5C13.9525 8.5 15.5195 10.067 15.5195 12Z",
+            "stroke": "currentColor",
+            "strokeWidth": "1.5",
+            "key": "1"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "eye-off",
+      "exportName": "EyeOffIcon",
+      "modulePath": "dist/cjs/EyeOffIcon.js",
+      "moduleSha256": "18f61362e29348f8a6aa5183c37833a4fc7995293b22b5363e127a19979d8be9",
+      "file": "eye-off.svg",
+      "svgSha256": "ee44dd7516066aeabfea318007695807a96baa2cd9fb0eb796abae603865f8c8",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M6.43385 6.51953C4.22009 7.89049 2.93281 9.86457 2.31858 11.0339C2.10621 11.4382 2.00003 11.6403 2 12.0082C1.99997 12.3761 2.10584 12.5777 2.3176 12.981C3.32862 14.9066 6.16702 19.0195 11.9669 19.0195C14.2454 19.0195 16.0669 18.3848 17.5 17.4972",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M9.87868 9.87868C9.33579 10.4216 9 11.1716 9 12C9 13.6569 10.3431 15 12 15C12.8284 15 13.5784 14.6642 14.1213 14.1213",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeWidth": "1.5",
+            "key": "1"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M2 2L22 22",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "2"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M10 5.14847C10.5934 5.05255 11.224 5 11.8936 5C17.7747 5 20.6528 9.05385 21.6779 10.9517C21.8927 11.3492 22 11.548 22 11.9106C22 12.2733 21.8921 12.4727 21.6765 12.8717C21.3678 13.4428 20.8916 14.2085 20.2167 15",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "3"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "arrow-left",
+      "exportName": "ArrowLeft01Icon",
+      "modulePath": "dist/cjs/ArrowLeft01Icon.js",
+      "moduleSha256": "bc17330a9eec12787f60bbcda79eeac2d89640d88a29e00d8e614b97249de506",
+      "file": "arrow-left.svg",
+      "svgSha256": "e760e8787e31568fc4a63da02fbceb40942c36fb4dc6dc4830f3277dea46e449",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M15 6C15 6 9.00001 10.4189 9 12C8.99999 13.5812 15 18 15 18",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "arrow-right",
+      "exportName": "ArrowRight01Icon",
+      "modulePath": "dist/cjs/ArrowRight01Icon.js",
+      "moduleSha256": "2acd9cf6005816800e3388d62c90639c7f19e7ef52dde9b92940d59c743a44aa",
+      "file": "arrow-right.svg",
+      "svgSha256": "ac6c7b66c0363f824e9616697ddae6d51ce64df23d1ed37f901fdef459f9866b",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M9.00005 6C9.00005 6 15 10.4189 15 12C15 13.5812 9 18 9 18",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "pie-chart",
+      "exportName": "PieChartIcon",
+      "modulePath": "dist/cjs/PieChartIcon.js",
+      "moduleSha256": "e7bea9bc87ed25950586e497ba314292e1f9802a06d668ccdb280adec544278b",
+      "file": "pie-chart.svg",
+      "svgSha256": "14dde4010d7c34766098fd9807b7574d8782f0987d7b191d56185d0f7a655bae",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M20.5 15.8278C17.9985 21.756 9.86407 23.4835 5.20143 18.8641C0.629484 14.3347 2.04493 6.12883 8.05653 3.5",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M17.6831 12.5C19.5708 12.5 20.5146 12.5 21.1241 11.655C21.1469 11.6234 21.1848 11.5667 21.2052 11.5336C21.7527 10.6471 21.4705 9.966 20.9063 8.60378C20.3946 7.36853 19.6447 6.24615 18.6993 5.30073C17.7538 4.35531 16.6315 3.60536 15.3962 3.0937C14.034 2.52946 13.3529 2.24733 12.4664 2.79477C12.4333 2.81523 12.3766 2.85309 12.345 2.87587C11.5 3.4854 11.5 4.42922 11.5 6.31686V8.42748C11.5 10.3473 11.5 11.3072 12.0964 11.9036C12.6928 12.5 13.6527 12.5 15.5725 12.5H17.6831Z",
+            "stroke": "currentColor",
+            "strokeWidth": "1.5",
+            "key": "1"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "message",
+      "exportName": "Message01Icon",
+      "modulePath": "dist/cjs/Message01Icon.js",
+      "moduleSha256": "10914b63cd46e41210c7c043354027ccac5e3a7091a71a5a1d5f4dc37d4e32b8",
+      "file": "message.svg",
+      "svgSha256": "69c13dd854858e8b45552d79737cebd12d0af3229988891257898ccb3c789bbc",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M8.5 14.5H15.5M8.5 9.5H12",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M14.1706 20.8905C18.3536 20.6125 21.6856 17.2332 21.9598 12.9909C22.0134 12.1607 22.0134 11.3009 21.9598 10.4707C21.6856 6.22838 18.3536 2.84913 14.1706 2.57107C12.7435 2.47621 11.2536 2.47641 9.8294 2.57107C5.64639 2.84913 2.31441 6.22838 2.04024 10.4707C1.98659 11.3009 1.98659 12.1607 2.04024 12.9909C2.1401 14.536 2.82343 15.9666 3.62791 17.1746C4.09501 18.0203 3.78674 19.0758 3.30021 19.9978C2.94941 20.6626 2.77401 20.995 2.91484 21.2351C3.05568 21.4752 3.37026 21.4829 3.99943 21.4982C5.24367 21.5285 6.08268 21.1757 6.74868 20.6846C7.1264 20.4061 7.31527 20.2668 7.44544 20.2508C7.5756 20.2348 7.83177 20.3403 8.34401 20.5513C8.8044 20.7409 9.33896 20.8579 9.8294 20.8905C11.2536 20.9852 12.7435 20.9854 14.1706 20.8905Z",
+            "stroke": "currentColor",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "1"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "user-group",
+      "exportName": "UserGroupIcon",
+      "modulePath": "dist/cjs/UserGroupIcon.js",
+      "moduleSha256": "a675011f0cf963ad6aca79917cced4ccc0f19e9ef5ab4d73790575ac2513e1f3",
+      "file": "user-group.svg",
+      "svgSha256": "284e83af96fff840ba16576660869c8e01eb0c5a7b68b194576d5b87ba322434",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M18.4995 20.5C18.2663 17.5685 15.8417 15.2477 12.808 15.0521L11.9995 15C11.7107 15.0076 11.4416 15.0178 11.1877 15.0298C8.18075 15.1723 5.7304 17.5974 5.49951 20.5",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M15.2495 9.25C15.2495 11.0449 13.7944 12.5 11.9995 12.5C10.2046 12.5 8.74952 11.0449 8.74952 9.25C8.74952 7.45507 10.2046 6 11.9995 6C13.7944 6 15.2495 7.45507 15.2495 9.25Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "1"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M5.50249 8.5C5.17908 7.99485 4.99158 7.39432 4.99158 6.75C4.99158 4.95507 6.44665 3.5 8.24157 3.5C8.68752 3.5 9.1125 3.58982 9.49939 3.75235",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "2"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M18.4963 8.5C18.8197 7.99485 19.0072 7.39432 19.0072 6.75C19.0072 4.95507 17.5521 3.5 15.7572 3.5C15.3113 3.5 14.8863 3.58982 14.4994 3.75235",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "3"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M22.0007 17.9996C21.8208 15.7374 19.9995 13.5 17.9995 13",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "4"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M1.99927 17.9996C2.17923 15.7374 4.00049 13.5 6.00049 13",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "5"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "sun",
+      "exportName": "Sun01Icon",
+      "modulePath": "dist/cjs/Sun01Icon.js",
+      "moduleSha256": "91e5e204e5cd672aa394f5063017dca47fffc2c7564a2b3acf38a9fe75dc98cc",
+      "file": "sun.svg",
+      "svgSha256": "bd038730f16d145ab986009d4350a6389cd61186c8e589202507528ec420a609",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M16.9991 12C16.9991 14.7614 14.7605 17 11.9991 17C9.23766 17 6.99908 14.7614 6.99908 12C6.99908 9.23858 9.23766 7 11.9991 7C14.7605 7 16.9991 9.23858 16.9991 12Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12.1247 3.25H11.9997M12.1242 20.75H11.9992M20.75 12.125V12M3.25 12.125V12M18.2752 5.90098L18.1868 5.81259M5.90051 18.275L5.81212 18.1866M18.0987 18.2756L18.187 18.1872M5.72429 5.9012L5.81267 5.81282M12.2497 3.25C12.2497 3.38807 12.1378 3.5 11.9997 3.5C11.8616 3.5 11.7497 3.38807 11.7497 3.25C11.7497 3.11193 11.8616 3 11.9997 3C12.1378 3 12.2497 3.11193 12.2497 3.25ZM12.2492 20.75C12.2492 20.8881 12.1373 21 11.9992 21C11.8611 21 11.7492 20.8881 11.7492 20.75C11.7492 20.6119 11.8611 20.5 11.9992 20.5C12.1373 20.5 12.2492 20.6119 12.2492 20.75ZM20.75 12.25C20.6119 12.25 20.5 12.1381 20.5 12C20.5 11.8619 20.6119 11.75 20.75 11.75C20.8881 11.75 21 11.8619 21 12C21 12.1381 20.8881 12.25 20.75 12.25ZM3.25 12.25C3.11193 12.25 3 12.1381 3 12C3 11.8619 3.11193 11.75 3.25 11.75C3.38807 11.75 3.5 11.8619 3.5 12C3.5 12.1381 3.38807 12.25 3.25 12.25ZM18.3636 5.98937C18.266 6.087 18.1077 6.087 18.01 5.98937C17.9124 5.89174 17.9124 5.73345 18.01 5.63582C18.1077 5.53819 18.266 5.53819 18.3636 5.63582C18.4612 5.73345 18.4612 5.89174 18.3636 5.98937ZM5.9889 18.3634C5.89127 18.461 5.73297 18.461 5.63534 18.3634C5.53771 18.2658 5.53771 18.1075 5.63534 18.0099C5.73297 17.9122 5.89127 17.9122 5.9889 18.0099C6.08653 18.1075 6.08653 18.2658 5.9889 18.3634ZM18.0103 18.364C17.9126 18.2663 17.9126 18.108 18.0103 18.0104C18.1079 17.9128 18.2662 17.9128 18.3638 18.0104C18.4614 18.108 18.4614 18.2663 18.3638 18.364C18.2662 18.4616 18.1079 18.4616 18.0103 18.364ZM5.6359 5.98959C5.53827 5.89196 5.53827 5.73367 5.6359 5.63604C5.73353 5.53841 5.89182 5.53841 5.98945 5.63604C6.08708 5.73367 6.08708 5.89196 5.98945 5.98959C5.89182 6.08722 5.73353 6.08722 5.6359 5.98959Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "1"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "calendar",
+      "exportName": "Calendar03Icon",
+      "modulePath": "dist/cjs/Calendar03Icon.js",
+      "moduleSha256": "757dae834e15d7027d0c0c68668d0d6b33b842863ba9dac46b4481091b5b616f",
+      "file": "calendar.svg",
+      "svgSha256": "e4e0da5cae95dc320644d34b28f4408bf4c4c52abd1c831b0f274165aae189dd",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M16 2V6M8 2V6",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M13 4H11C7.22876 4 5.34315 4 4.17157 5.17157C3 6.34315 3 8.22876 3 12V14C3 17.7712 3 19.6569 4.17157 20.8284C5.34315 22 7.22876 22 11 22H13C16.7712 22 18.6569 22 19.8284 20.8284C21 19.6569 21 17.7712 21 14V12C21 8.22876 21 6.34315 19.8284 5.17157C18.6569 4 16.7712 4 13 4Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "1"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M3 10H21",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "2"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12.1258 14H12.0008M12.1258 18H12.0008M7.625 14H7.5M7.625 18H7.5M16.625 14H16.5M12.2508 14C12.2508 14.1381 12.1389 14.25 12.0008 14.25C11.8628 14.25 11.7508 14.1381 11.7508 14C11.7508 13.8619 11.8628 13.75 12.0008 13.75C12.1389 13.75 12.2508 13.8619 12.2508 14ZM12.2508 18C12.2508 18.1381 12.1389 18.25 12.0008 18.25C11.8628 18.25 11.7508 18.1381 11.7508 18C11.7508 17.8619 11.8628 17.75 12.0008 17.75C12.1389 17.75 12.2508 17.8619 12.2508 18ZM7.75 14C7.75 14.1381 7.63807 14.25 7.5 14.25C7.36193 14.25 7.25 14.1381 7.25 14C7.25 13.8619 7.36193 13.75 7.5 13.75C7.63807 13.75 7.75 13.8619 7.75 14ZM7.75 18C7.75 18.1381 7.63807 18.25 7.5 18.25C7.36193 18.25 7.25 18.1381 7.25 18C7.25 17.8619 7.36193 17.75 7.5 17.75C7.63807 17.75 7.75 17.8619 7.75 18ZM16.75 14C16.75 14.1381 16.6381 14.25 16.5 14.25C16.3619 14.25 16.25 14.1381 16.25 14C16.25 13.8619 16.3619 13.75 16.5 13.75C16.6381 13.75 16.75 13.8619 16.75 14Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "3"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "clock",
+      "exportName": "Clock01Icon",
+      "modulePath": "dist/cjs/Clock01Icon.js",
+      "moduleSha256": "654995912eb97299ea9ed767a922c7f859a911f959fcab35da6ba22fff6ffd75",
+      "file": "clock.svg",
+      "svgSha256": "f41eccbeff9ae02ac281cea5990e040d288eebfe851252aad247774921dca5d2",
+      "nodes": [
+        [
+          "circle",
+          {
+            "cx": "12",
+            "cy": "12",
+            "r": "10",
+            "stroke": "currentColor",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M12 8V12L14 14",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "1"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "drag-handle",
+      "exportName": "DragDropVerticalIcon",
+      "modulePath": "dist/cjs/DragDropVerticalIcon.js",
+      "moduleSha256": "70d3f0067d9e97f6619d2f35cb01254a8d3f1fc37b3af5a4e55987e64ac747b5",
+      "file": "drag-handle.svg",
+      "svgSha256": "81e332a951c49165df3bf4eb26f74d102f930e5c4c70139506c8a238fa24b957",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M16 6C16 6.55228 15.5523 7 15 7C14.4477 7 14 6.55228 14 6C14 5.44772 14.4477 5 15 5C15.5523 5 16 5.44772 16 6Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M10 6C10 6.55228 9.55228 7 9 7C8.44772 7 8 6.55228 8 6C8 5.44772 8.44772 5 9 5C9.55228 5 10 5.44772 10 6Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "1"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M16 18C16 18.5523 15.5523 19 15 19C14.4477 19 14 18.5523 14 18C14 17.4477 14.4477 17 15 17C15.5523 17 16 17.4477 16 18Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "2"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M16 12C16 12.5523 15.5523 13 15 13C14.4477 13 14 12.5523 14 12C14 11.4477 14.4477 11 15 11C15.5523 11 16 11.4477 16 12Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "3"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M10 18C10 18.5523 9.55228 19 9 19C8.44772 19 8 18.5523 8 18C8 17.4477 8.44772 17 9 17C9.55228 17 10 17.4477 10 18Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "4"
+          }
+        ],
+        [
+          "path",
+          {
+            "d": "M10 12C10 12.5523 9.55228 13 9 13C8.44772 13 8 12.5523 8 12C8 11.4477 8.44772 11 9 11C9.55228 11 10 11.4477 10 12Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "5"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "star",
+      "exportName": "StarIcon",
+      "modulePath": "dist/cjs/StarIcon.js",
+      "moduleSha256": "5b89058c0e517c97595b99f27b7bace5046378b0e3f7ab63100df09cebb04dc1",
+      "file": "star.svg",
+      "svgSha256": "e8504b17cfec48a473968059c70835f5c04f61e489aca70923e53b4fad10bd24",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M13.7276 3.44418L15.4874 6.99288C15.7274 7.48687 16.3673 7.9607 16.9073 8.05143L20.0969 8.58575C22.1367 8.92853 22.6167 10.4206 21.1468 11.8925L18.6671 14.3927C18.2471 14.8161 18.0172 15.6327 18.1471 16.2175L18.8571 19.3125C19.417 21.7623 18.1271 22.71 15.9774 21.4296L12.9877 19.6452C12.4478 19.3226 11.5579 19.3226 11.0079 19.6452L8.01827 21.4296C5.8785 22.71 4.57865 21.7522 5.13859 19.3125L5.84851 16.2175C5.97849 15.6327 5.74852 14.8161 5.32856 14.3927L2.84884 11.8925C1.389 10.4206 1.85895 8.92853 3.89872 8.58575L7.08837 8.05143C7.61831 7.9607 8.25824 7.48687 8.49821 6.99288L10.258 3.44418C11.2179 1.51861 12.7777 1.51861 13.7276 3.44418Z",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "arrow-up",
+      "exportName": "ArrowUp01Icon",
+      "modulePath": "dist/cjs/ArrowUp01Icon.js",
+      "moduleSha256": "f57044153db75030ac597cc403b6408615ce8e60f702890c40b325a0cb70edfc",
+      "file": "arrow-up.svg",
+      "svgSha256": "dee956a8270bde740da911148464d7e34acd33d32b78dadefbe365f7bae674c8",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M17.9998 15C17.9998 15 13.5809 9.00001 11.9998 9C10.4187 8.99999 5.99985 15 5.99985 15",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "arrow-down",
+      "exportName": "ArrowDown01Icon",
+      "modulePath": "dist/cjs/ArrowDown01Icon.js",
+      "moduleSha256": "af4ccd0613989f3120a133f59d9e473fa08fe6906b15f887c2bb2af341ddb352",
+      "file": "arrow-down.svg",
+      "svgSha256": "5e68c7ab5b316f146f46095eb726693110cba05c40afcae7c3123bb045b26939",
+      "nodes": [
+        [
+          "path",
+          {
+            "d": "M18 9.00005C18 9.00005 13.5811 15 12 15C10.4188 15 6 9 6 9",
+            "stroke": "currentColor",
+            "strokeLinecap": "round",
+            "strokeLinejoin": "round",
+            "strokeWidth": "1.5",
+            "key": "0"
+          }
+        ]
+      ]
+    }
+  ],
+  "settingsCardSubset": {
+    "introducedIn": "0.3.46",
+    "pageIcons": {
+      "quota": "pie-chart",
+      "conversation": "message",
+      "accounts": "user-group",
+      "today": "sun",
+      "week": "calendar",
+      "lastTurn": "clock",
+      "phrase": "heart"
+    },
+    "controls": {
+      "handle": "drag-handle",
+      "default": "star",
+      "up": "arrow-up",
+      "down": "arrow-down",
+      "reset": "refresh"
+    },
+    "preparation": "Mechanical rendering of official Stroke Rounded nodes; no new geometry. Existing six icon records and SVG bytes retained. UI sizes use CSS."
+  }
+}

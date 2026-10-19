@@ -9,7 +9,7 @@ const http = require('node:http');
 const { StringDecoder } = require('node:string_decoder');
 
 const ACTIONS = ['show', 'hide', 'refresh', 'bounce', 'settings'];
-const CHARACTER_NAMES = new Map([['mint-maid', '薄荷女仆'], ['lilac-dragon', '紫晶龙女仆']]);
+const CHARACTER_NAMES = new Map([['mint-maid', '薄荷女仆'], ['lilac-dragon', '紫晶龙女仆'], ['frost-glass-idle', '小龙娘-端庄'], ['frost-glass-cheek', '小龙娘-托腮']]);
 const MAX_BYTES = 1024 * 1024;
 const TOOLS = [
   {

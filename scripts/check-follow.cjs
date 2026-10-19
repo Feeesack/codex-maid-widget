@@ -13,7 +13,8 @@ const settings = { sizeBaseline: 2, followCodex: true, refreshSeconds: 600, soun
 fs.writeFileSync(settingsFile, JSON.stringify(settings));
 function fixture(roots, known = true) { fs.writeFileSync(fixtureFile, JSON.stringify({ known, roots })); }
 fixture([]);
-function desktop(pid) { return { pid, parentPid: 1, sessionId: 999, path: 'C:\\Program Files\\WindowsApps\\OpenAI.Codex_99.0.0.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe' }; }
+function desktop(pid) { return { pid, parentPid: 1, sessionId: 999, officialDesktop: true,
+  path: (pid === 100 ? 'D:\\WindowsApps' : 'E:\\MountedPackages') + '\\OpenAI.Codex_99.0.0.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe' }; }
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 function read(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; } }
 function lines(file) { try { return fs.readFileSync(path.join(home, file), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)); } catch { return []; } }

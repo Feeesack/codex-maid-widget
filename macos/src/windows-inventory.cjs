@@ -1,6 +1,8 @@
 'use strict';
 const { spawn: nativeSpawn } = require('node:child_process');
 const { StringDecoder } = require('node:string_decoder');
+const { IDENTITY_CSHARP } = require('./codex-identity.cjs');
+const { powershellExecutable } = require('./windows-system.cjs');
 
 // One PowerShell host compiles this once and answers read-only inventory
 // requests. No process command lines, environment blocks or account files are
@@ -16,6 +18,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
+` + IDENTITY_CSHARP + String.raw`
 public static class MaidWindowsInventory {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct ProcessEntry {
@@ -33,10 +36,21 @@ public static class MaidWindowsInventory {
     [DllImport("kernel32.dll")] static extern uint GetCurrentProcessId();
     [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern bool QueryFullProcessImageNameW(IntPtr process, uint flags, StringBuilder path, ref uint length);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)] static extern int GetPackageFamilyName(IntPtr process, ref uint length, StringBuilder family);
     [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
     static Dictionary<string, object> Result(bool known, List<Dictionary<string, object>> items) {
         return new Dictionary<string, object> { { "known", known }, { "processes", items } };
+    }
+    static string PackageFamily(IntPtr process) {
+        uint length = 0;
+        int status = GetPackageFamilyName(process, ref length, null);
+        if (status == 15700) return null; // APPMODEL_ERROR_NO_PACKAGE is the only unpackaged result.
+        if (status != 122 || length < 2 || length > 512) throw new Win32Exception(status);
+        var family = new StringBuilder((int)length);
+        status = GetPackageFamilyName(process, ref length, family);
+        if (status != 0 || family.Length == 0) throw new Win32Exception(status);
+        return family.ToString();
     }
     public static object Query() {
         var items = new List<Dictionary<string, object>>();
@@ -67,9 +81,13 @@ public static class MaidWindowsInventory {
                     uint length = 32768;
                     var path = new StringBuilder((int)length);
                     if (!QueryFullProcessImageNameW(process, 0, path, ref length) || length == 0) throw new Win32Exception();
+                    var family = PackageFamily(process);
+                    bool officialDesktop = MaidCodexIdentity.IsOfficialDesktop(path.ToString(), family,
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
                     items.Add(new Dictionary<string, object> {
                         { "pid", (int)entry.Id }, { "parentPid", (int)entry.Parent },
-                        { "name", entry.Name }, { "path", path.ToString() }, { "sessionId", (int)session }
+                        { "name", entry.Name }, { "path", path.ToString() }, { "sessionId", (int)session },
+                        { "officialDesktop", officialDesktop }
                     });
                 } finally {
                     if (token != IntPtr.Zero) CloseHandle(token);
@@ -99,14 +117,16 @@ function validProcess(item) {
     Number.isInteger(item.parentPid) && item.parentPid >= 0 &&
     Number.isInteger(item.sessionId) && item.sessionId >= 0 &&
     typeof item.name === 'string' && /^(chatgpt|codex)\.exe$/i.test(item.name) &&
-    typeof item.path === 'string' && item.path.length > 0 && !item.path.includes('\0');
+    typeof item.path === 'string' && item.path.length > 0 && !item.path.includes('\0') &&
+    typeof item.officialDesktop === 'boolean';
 }
 
 class WindowsInventoryWorker {
-  constructor({ spawn = nativeSpawn, platform = process.platform, timeout = 7000 } = {}) {
+  constructor({ spawn = nativeSpawn, platform = process.platform, timeout = 7000, env = process.env } = {}) {
     this.spawn = spawn;
     this.platform = platform;
     this.timeout = timeout;
+    this.env = env;
     this.worker = null;
     this.pending = null;
     this.closed = false;
@@ -127,8 +147,8 @@ class WindowsInventoryWorker {
   }
   start() {
     const command = Buffer.from(INVENTORY_WORKER_SCRIPT, 'utf16le').toString('base64');
-    const child = this.spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', command],
-      { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'] });
+    const child = this.spawn(powershellExecutable(this.env), ['-NoLogo', '-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', command],
+      { windowsHide: true, stdio: ['pipe', 'pipe', 'ignore'], env: this.env });
     const worker = { child, decoder: new StringDecoder('utf8'), output: '', bytes: 0 };
     this.worker = worker;
     const failed = () => { if (this.worker === worker) this.fail(); };

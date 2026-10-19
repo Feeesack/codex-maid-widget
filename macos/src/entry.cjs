@@ -3,6 +3,7 @@ const { app } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { prepareDataHome } = require('./data-home.cjs');
+require('./runtime-environment.cjs').applyRuntimeEnvironmentArguments(process.argv);
 app.setName('codex-maid-widget');
 const homeArgument = process.argv.find(value => value.startsWith('--maid-home='));
 const dataEnv = homeArgument ? {...process.env,CODEX_MAID_HOME:homeArgument.slice('--maid-home='.length)} : process.env;

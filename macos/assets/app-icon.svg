@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>紫晶龙女仆 · 晴紫</title>
+  <rect x="6" y="6" width="244" height="244" rx="60" fill="#c7aff2"/>
+  <path d="M73 101C48 96 40 78 49 55c5 16 17 23 34 24Z" fill="#fff9ef" stroke="#9a7bc3" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M183 101c25-5 33-23 24-46-5 16-17 23-34 24Z" fill="#fff9ef" stroke="#9a7bc3" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M69 100c-9-9-7-23 5-28-2-13 9-23 23-20 6-13 21-17 31-8 10-9 25-5 31 8 14-3 25 7 23 20 12 5 14 19 5 28l-16 14H85Z" fill="#fffefa" stroke="#9a7bc3" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M51 139c0-38 31-64 77-64s77 26 77 64v37c0 21-15 33-33 28l-12-20H96l-12 20c-18 5-33-7-33-28Z" fill="#f0e9ff" stroke="#9674c1" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M74 132c20 1 39-12 51-30 10 20 29 31 57 29v25c0 31-23 52-54 52s-54-21-54-52Z" fill="#fff0e4"/>
+  <path d="M125 102c-11 17-29 30-51 32m51-32c11 21 30 31 57 31" fill="none" stroke="#c6b0e4" stroke-width="4" stroke-linecap="round"/>
+  <ellipse cx="103" cy="154" rx="9" ry="12" fill="#705095"/>
+  <ellipse cx="153" cy="154" rx="9" ry="12" fill="#705095"/>
+  <circle cx="100" cy="150" r="3" fill="#fffefa"/>
+  <circle cx="150" cy="150" r="3" fill="#fffefa"/>
+  <ellipse cx="91" cy="175" rx="11" ry="6" fill="#f4b5c5"/>
+  <ellipse cx="165" cy="175" rx="11" ry="6" fill="#f4b5c5"/>
+  <path d="M121 178q7 9 14 0" fill="none" stroke="#98617e" stroke-width="4" stroke-linecap="round"/>
+  <path d="m127 215-20-11c-6-3-10 0-10 6v14c0 6 4 9 10 6l20-10 22 10c6 3 10 0 10-6v-14c0-6-4-9-10-6Z" fill="#f3aec8" stroke="#fff8f4" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="128" cy="217" r="6" fill="#fff8f4"/>
+</svg>

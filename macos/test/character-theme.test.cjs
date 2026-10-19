@@ -27,11 +27,15 @@ function contrast(first, second) {
 test('curated themes are distinct, complete and safe to customize independently', () => {
   const mint = builtinTheme('mint-maid');
   const lilac = builtinTheme('lilac-dragon');
+  const frostIdle = builtinTheme('frost-glass-idle'), frostCheek = builtinTheme('frost-glass-cheek');
+  assert.deepEqual(frostIdle, frostCheek, 'both poses retain the same character palette');
+  assert.notDeepEqual(frostIdle, lilac);
+  assert.deepEqual(Object.keys(frostIdle), Object.keys(mint));
   assert.equal(mint['--theme-outline'], '#1d7e74');
   assert.equal(lilac['--theme-outline'], '#7860a6');
   assert.deepEqual(Object.keys(mint), Object.keys(lilac));
   assert.equal(Object.keys(mint).length, 19);
-  for (const theme of [mint, lilac]) {
+  for (const theme of [mint, lilac, frostIdle, frostCheek]) {
     for (const value of Object.values(theme)) assert.match(value, /^#[0-9a-f]{6}$/);
     for (const key of ['--theme-text', '--theme-accent', '--theme-muted']) {
       assert.ok(contrast(theme[key], theme['--theme-fill-end']) >= 4.5, `${key} stays readable`);
@@ -39,6 +43,9 @@ test('curated themes are distinct, complete and safe to customize independently'
   }
   mint['--theme-outline'] = '#000000';
   assert.equal(builtinTheme('mint-maid')['--theme-outline'], '#1d7e74');
+  frostIdle['--theme-outline'] = '#000000';
+  assert.equal(builtinTheme('frost-glass-cheek')['--theme-outline'], '#64618b');
+  assert.equal(builtinTheme('frost-glass-idle')['--theme-outline'], '#64618b');
   assert.equal(builtinTheme('unknown'), null);
   assert.equal(builtinTheme('__proto__'), null);
 });
@@ -74,8 +81,8 @@ test('red hues on both sides of zero stay red rather than turning cyan', () => {
   assert.ok(red > green * 1.5 && red > blue * 1.5);
 });
 
-test('neutral or empty images fall back to mint without throwing', () => {
-  const mint = builtinTheme('mint-maid');
+test('neutral or empty images fall back to Frost Glass without throwing', () => {
+  const mint = builtinTheme('frost-glass-cheek');
   assert.deepEqual(themeFromPixels(pixels([[255, 255, 255, 255], 10], [[25, 25, 25, 255], 10])), mint);
   assert.deepEqual(themeFromPixels(new Uint8ClampedArray()), mint);
   assert.deepEqual(themeFromPixels(null), mint);

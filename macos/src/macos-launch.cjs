@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFile: nativeExecFile, spawn: nativeSpawn } = require('node:child_process');
+const { runtimeEnvironmentArguments } = require('./runtime-environment.cjs');
 
 const MAC_WATCHER_LABEL = 'com.codex-maid-widget.follow';
 const LAUNCH_ERROR = '无法通过 macOS 登录启动助手。';
@@ -29,11 +30,11 @@ function serviceTarget(uid = process.getuid?.()) {
   if (!Number.isInteger(uid) || uid < 0) throw new TypeError('Invalid user ID');
   return { domain: 'gui/' + uid, service: 'gui/' + uid + '/' + MAC_WATCHER_LABEL };
 }
-function buildLaunchAgentPlist({ executable, dataDir, cwd = path.dirname(executable || '') } = {}) {
+function buildLaunchAgentPlist({ executable, dataDir, cwd = path.dirname(executable || ''), env = process.env } = {}) {
   checkedString(executable, 'executable');
   checkedString(dataDir, 'data directory');
   checkedString(cwd, 'working directory');
-  const args = [executable, '--watch-codex', '--maid-home=' + dataDir];
+  const args = runtimeEnvironmentArguments([executable, '--watch-codex', '--maid-home=' + dataDir], env);
   // RunAtLoad starts the observer at login. KeepAlive is intentionally absent:
   // disabling follow must let the helper finish its receipt and exit normally.
   return '<?xml version="1.0" encoding="UTF-8"?>\n' +
@@ -79,10 +80,11 @@ function disabledStatus(output) {
 }
 
 async function launchMacWatcher({ executable, args = [], cwd = path.dirname(executable || ''), dataDir, enabled = true,
-  homeDir = os.homedir(), uid = process.getuid?.(), execFile = nativeExecFile, spawn = nativeSpawn, timeout = 5000 } = {}) {
-  const plist = buildLaunchAgentPlist({ executable, dataDir, cwd });
+  homeDir = os.homedir(), uid = process.getuid?.(), execFile = nativeExecFile, spawn = nativeSpawn, timeout = 5000, env = process.env } = {}) {
+  const plist = buildLaunchAgentPlist({ executable, dataDir, cwd, env });
   if (!Array.isArray(args)) throw new TypeError('Invalid arguments');
   args.forEach(value => checkedString(value, 'argument', { empty: true }));
+  args = runtimeEnvironmentArguments(args, env);
   if (!enabled) {
     // A transient invocation delivers Electron's second-instance event, or
     // starts a helper if none remains. It never creates a login item. The
@@ -123,7 +125,7 @@ async function launchMacWatcher({ executable, args = [], cwd = path.dirname(exec
 }
 
 async function syncMacFollowStartup({ enabled, executable, dataDir, cwd = path.dirname(executable || ''),
-  homeDir = os.homedir(), uid = process.getuid?.(), execFile = nativeExecFile, timeout = 5000 } = {}) {
+  homeDir = os.homedir(), uid = process.getuid?.(), execFile = nativeExecFile, timeout = 5000, env = process.env } = {}) {
   try {
     const file = launchAgentFile(homeDir);
     if (!enabled) {
@@ -131,7 +133,7 @@ async function syncMacFollowStartup({ enabled, executable, dataDir, cwd = path.d
       if (readAgent(file) !== null) throw new Error(REMOVAL_ERROR);
       return { loginStartupEnabled: false, loginStartupError: '' };
     }
-    const expected = buildLaunchAgentPlist({ executable, dataDir, cwd });
+    const expected = buildLaunchAgentPlist({ executable, dataDir, cwd, env });
     if (readAgent(file) !== expected) return { loginStartupEnabled: false, loginStartupError: 'startup-disabled' };
     const { domain, service } = serviceTarget(uid);
     const options = { execFile, timeout };

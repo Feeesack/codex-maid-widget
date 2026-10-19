@@ -68,9 +68,11 @@ class WindowContainmentController {
     this.placementError = false;
     this.hideError = false;
     this.ownerGeneration = 0;
+    this.closed = false;
     this.reason = 'disabled';
   }
   setEnabled(enabled, { position, alwaysOnTop } = {}) {
+    if (this.closed) return this.getState();
     enabled = enabled === true;
     if (this.standalone && typeof alwaysOnTop === 'boolean') this.standalone.alwaysOnTop = alwaysOnTop;
     if (this.enabled === enabled) return this.getState();
@@ -88,19 +90,22 @@ class WindowContainmentController {
     } else {
       this.restorePending = true;
       this.setVisible(false);
-      this.changeOwner(null);
+      // Even a first native query can still be pending. A mode transition
+      // requires an explicit detach barrier before standalone state is restored.
+      this.changeOwner(null, true);
     }
     this.render();
     return this.getState();
   }
   setManualHidden(hidden) {
+    if (this.closed) return this.getState();
     this.manualHidden = hidden === true;
     this.render();
     if (!this.enabled && this.ownerReady) this.setVisible(!this.manualHidden);
     return this.getState();
   }
   update(snapshot) {
-    if (!this.enabled) return this.getState();
+    if (this.closed || !this.enabled) return this.getState();
     // Retain only necessary non-sensitive fields and copy geometry. A provider
     // mutating its result later cannot silently mutate this controller's state.
     const known = snapshot?.known === true || (snapshot?.known === undefined && snapshot?.status === 'known');
@@ -121,6 +126,7 @@ class WindowContainmentController {
   // through to the standalone drag path could otherwise reveal an uncontained
   // window or overwrite the user's original desktop position.
   moveTo(x, y) {
+    if (this.closed) return false;
     if (!this.enabled) return false;
     const area = this.getArea(), size = validSize(this.callbacks.getSize());
     const bounds = containBounds({ x, y }, area, size);
@@ -170,9 +176,9 @@ class WindowContainmentController {
     this.top = value;
     this.callbacks.setAlwaysOnTop?.(value);
   }
-  changeOwner(host) {
+  changeOwner(host, force = false) {
     const id = host?.id || null;
-    if (id === this.ownerId && !this.ownerError) return;
+    if (!force && id === this.ownerId && !this.ownerError) return;
     this.ownerId = id;
     this.ownerError = false;
     this.placementError = false;
@@ -180,7 +186,7 @@ class WindowContainmentController {
     this.setVisible(false);
     const generation = ++this.ownerGeneration;
     const complete = result => {
-      if (generation !== this.ownerGeneration) return;
+      if (this.closed || generation !== this.ownerGeneration) return;
       this.ownerReady = ownerSucceeded(result);
       this.ownerError = !this.ownerReady;
       this.render();
@@ -199,6 +205,7 @@ class WindowContainmentController {
     this.lastBounds = { ...bounds };
   }
   render() {
+    if (this.closed) return;
     if (!this.enabled) {
       this.reason = this.hideError ? 'hide-unavailable' : this.placementError ? 'placement-unavailable'
         : this.manualHidden ? 'manual-hidden' : this.ownerError ? 'owner-unavailable' : !this.ownerReady ? 'owner-pending' : 'disabled';
@@ -244,6 +251,11 @@ class WindowContainmentController {
     const bounds = anchoredBounds(this.anchor, area, size);
     this.applyBounds(bounds);
     this.setVisible(true);
+  }
+  close() {
+    // A native ACK may arrive after the BrowserWindow was destroyed/replaced.
+    // Invalidate the pending completion before it can read the old surface.
+    this.closed = true; this.ownerGeneration++;
   }
 }
 

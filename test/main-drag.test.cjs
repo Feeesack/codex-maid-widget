@@ -49,6 +49,7 @@ function controller(variant, options = {}) {
     require(name) {
       if (name === 'node:fs') return noFilesystem;
       if (name === 'node:path') return path;
+      if (name === './interaction-sound-catalog.js') return require(path.join(variant.root, 'src', 'interaction-sound-catalog.js'));
       throw new Error('Unexpected settings module: ' + name);
     },
   };
@@ -59,6 +60,7 @@ function controller(variant, options = {}) {
   let cursor = { x: 400, y: 300 };
   let nativeSizeError = options.nativeSizeError || 0;
   const widget = {
+    getNativeWindowHandle: () => '12345', isVisible: () => true, hide() {},
     webContents: { send(name, value) { if (name === 'state') broadcasts.push(JSON.parse(JSON.stringify(value))); } }, isDestroyed: () => false,
     getPosition: () => [bounds.x, bounds.y], getBounds: () => ({ ...bounds }),
     setPosition(x, y) {
@@ -80,6 +82,18 @@ function controller(variant, options = {}) {
   const app = new EventEmitter();
   Object.assign(app, { isPackaged: false, setName() {}, setPath() {}, getPath: () => fakeHome,
     getVersion: () => 'test', requestSingleInstanceLock: () => false, quit() {} });
+  function isolatedModule(file, dependencies = {}) {
+    const loaded = { exports: {} };
+    vm.runInNewContext(fs.readFileSync(path.join(variant.root, 'src', file), 'utf8'), {
+      module: loaded, Date: FakeDate, ...clock, process: { platform: variant.platform },
+      require(name) { if (Object.hasOwn(dependencies, name)) return dependencies[name]; throw new Error('Unexpected isolated window module: ' + name); },
+    }, { filename: file }); return loaded.exports;
+  }
+  const windowModeModule = isolatedModule('window-mode.cjs', {
+    './window-containment.cjs': isolatedModule('window-containment.cjs'), './window-visibility.cjs': isolatedModule('window-visibility.cjs'),
+    './window-topmost.cjs': isolatedModule('window-topmost.cjs'),
+    './codex-window.cjs': { CodexWindowProvider: class { constructor() { throw new Error('Native provider must remain isolated'); } } },
+  });
   const modules = {
     electron: { app, ipcMain, screen: {
       getCursorScreenPoint: () => ({ ...cursor }),
@@ -98,6 +112,11 @@ function controller(variant, options = {}) {
       readSettings(file) { assert.equal(file, fakeSettingsFile); return initial; },
       writeSettings(file, value) { assert.equal(file, fakeSettingsFile); writes.push(JSON.parse(JSON.stringify(value))); },
     },
+    './window-mode.cjs': { CodexWindowMode: class extends windowModeModule.CodexWindowMode {
+      constructor(value) { super({ ...value, platform: variant.platform, topmostProviderFactory: () => ({
+        async setTopmost(_handle, enabled) { return { known: true, ok: true, topmost: enabled }; }, close() {},
+      }) }); }
+    } },
     './data-home.cjs': { prepareDataHome: () => fakeHome },
     './character-library.cjs': {}, './codex-data.cjs': {}, './codex-desktop.cjs': {},
     './auth-change-watch.cjs': {}, './windows-launch.cjs': {}, './macos-launch.cjs': {},

@@ -1,33 +1,15 @@
 'use strict';
 const path = require('node:path');
 const { execFile: nativeExecFile } = require('node:child_process');
+const { classifyCodexDesktop } = require('./codex-identity.cjs');
+const { INVENTORY_WORKER_SCRIPT } = require('./windows-inventory.cjs');
+const { powershellExecutable } = require('./windows-system.cjs');
 const { CODEX_BUNDLE_ID, bundleForExecutable } = require('./macos-bundle.cjs');
 
 // Query only the current user's interactive session. Do not request command lines,
 // credentials, environment blocks, or any of the desktop's account files.
-const INVENTORY_SCRIPT = String.raw`
-$ErrorActionPreference = 'Stop'
-$session = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
-$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-$unknown = $false
-$items = @()
-$processes = @(Get-CimInstance -ClassName Win32_Process -Filter "Name='ChatGPT.exe' OR Name='Codex.exe'" -Property ProcessId,ParentProcessId,Name,ExecutablePath,SessionId -ErrorAction Stop)
-$byId = @{}
-foreach ($entry in $processes) { if ($entry.SessionId -eq $session) { $byId[[int]$entry.ProcessId] = $entry } }
-foreach ($entry in $processes) {
-  if ($entry.SessionId -ne $session) { continue }
-  $parent = $byId[[int]$entry.ParentProcessId]
-  if ($null -ne $parent -and $entry.ExecutablePath -and $parent.ExecutablePath -ieq $entry.ExecutablePath) { continue }
-  try {
-    $owner = Invoke-CimMethod -InputObject $entry -MethodName GetOwner -ErrorAction Stop
-    if ($owner.ReturnValue -ne 0) { $unknown = $true; continue }
-    if (($owner.Domain + '\' + $owner.User) -ine $identity) { continue }
-    if ([string]::IsNullOrWhiteSpace($entry.ExecutablePath)) { $unknown = $true; continue }
-    $items += [pscustomobject]@{ pid = [int]$entry.ProcessId; parentPid = [int]$entry.ParentProcessId; name = [string]$entry.Name; path = [string]$entry.ExecutablePath; sessionId = [int]$entry.SessionId }
-  } catch { $unknown = $true }
-}
-[pscustomobject]@{ known = -not $unknown; processes = @($items) } | ConvertTo-Json -Depth 3 -Compress
-`;
+const INVENTORY_SCRIPT = INVENTORY_WORKER_SCRIPT.slice(0, INVENTORY_WORKER_SCRIPT.indexOf('while ($null -ne ($request'))
+  + '\nConvertTo-Json -InputObject ([MaidWindowsInventory]::Query()) -Depth 5 -Compress\n';
 
 function normalizeWindowsPath(value) {
   if (typeof value !== 'string' || !path.win32.isAbsolute(value) || value.includes('\0')) return '';
@@ -39,7 +21,7 @@ function normalizeMacOSPath(value) {
   return path.posix.normalize(value);
 }
 
-function isCodexDesktopPath(value, { platform = process.platform, bundleId, bundleExecutable, programFiles = process.env.ProgramFiles || 'C:\\Program Files', localAppData = process.env.LOCALAPPDATA } = {}) {
+function isCodexDesktopPath(value, { platform = process.platform, bundleId, bundleExecutable, ...options } = {}) {
   if (platform === 'darwin') {
     const file = normalizeMacOSPath(value);
     const bundle = bundleForExecutable(file);
@@ -47,34 +29,23 @@ function isCodexDesktopPath(value, { platform = process.platform, bundleId, bund
     return Boolean(file) && /\/Codex\.app\/Contents\/MacOS\/Codex$/.test(file);
   }
   if (platform !== 'win32') return false;
-  const file = normalizeWindowsPath(value);
-  if (!file) return false;
-  const packageRoot = normalizeWindowsPath(path.win32.join(programFiles, 'WindowsApps')) + '\\';
-  if (file.startsWith(packageRoot)) {
-    // The Codex desktop currently uses ChatGPT.exe internally. The package name,
-    // publisher and app directory distinguish it from ChatGPT and the Codex CLI.
-    const relative = file.slice(packageRoot.length);
-    return /^openai\.codex_[a-z0-9._-]+__2p2nqsd0c76g0\\app\\(?:chatgpt|codex)\.exe$/.test(relative);
-  }
-  if (!localAppData) return false;
-  const programs = normalizeWindowsPath(path.win32.join(localAppData, 'Programs')) + '\\';
-  if (!file.startsWith(programs)) return false;
-  return /^(?:openai\\codex|openai codex|codex)\\(?:app\\)?(?:chatgpt|codex)\.exe$/.test(file.slice(programs.length));
+  return classifyCodexDesktop({ path: value, packageFamilyName: options.packageFamilyName }, options) === true;
 }
 
 function desktopRoots(processes, options = {}) {
   if (!Array.isArray(processes)) throw new TypeError('Invalid desktop inventory');
   const platform = options.platform || process.platform;
+  if (platform !== 'darwin' && processes.some(item => !item || typeof item.officialDesktop !== 'boolean')) throw new TypeError('Unverified desktop inventory');
   const candidates = processes.filter(item => item && Number.isInteger(item.pid) && item.pid > 0 && Number.isInteger(item.parentPid) && item.parentPid >= 0 &&
     (platform === 'darwin' ? (item.name || path.posix.basename(item.path || '')) === path.posix.basename(item.path || '') && Number.isInteger(item.uid) && item.uid >= 0 && (options.uid === undefined || item.uid === options.uid)
-      : /^(chatgpt|codex)\.exe$/i.test(item.name || path.win32.basename(item.path || ''))) && isCodexDesktopPath(item.path, { ...options, platform, bundleId: item.bundleId, bundleExecutable: item.bundleExecutable }));
+      : /^(chatgpt|codex)\.exe$/i.test(item.name || path.win32.basename(item.path || '')) && item.officialDesktop) && (platform !== 'darwin' || isCodexDesktopPath(item.path, { ...options, platform, bundleId: item.bundleId, bundleExecutable: item.bundleExecutable })));
   const ids = new Set(candidates.map(item => item.pid));
   return candidates.filter(item => !ids.has(item.parentPid)).map(item => ({
-    pid: item.pid, parentPid: item.parentPid, path: item.path, ...(platform === 'darwin' ? { uid: item.uid, ...(item.bundleId === undefined ? {} : { bundleId: item.bundleId, bundleExecutable: item.bundleExecutable }) } : { sessionId: item.sessionId }),
+    pid: item.pid, parentPid: item.parentPid, path: item.path, ...(platform === 'darwin' ? { uid: item.uid, ...(item.bundleId === undefined ? {} : { bundleId: item.bundleId, bundleExecutable: item.bundleExecutable }) } : { sessionId: item.sessionId, officialDesktop: true }),
   })).sort((a, b) => a.pid - b.pid);
 }
 
-async function queryCodexDesktop({ execFile = nativeExecFile, platform = process.platform, programFiles, localAppData, timeout = 7000, uid, readBundle, homedir } = {}) {
+async function queryCodexDesktop({ execFile = nativeExecFile, platform = process.platform, programFiles, localAppData, timeout = 7000, uid, readBundle, homedir, env = process.env } = {}) {
   if (platform === 'darwin') {
     const query = createDesktopInventoryQuery({ execFile, platform, timeout, uid, readBundle, homedir });
     try { return await query.query(); } finally { query.close(); }
@@ -82,8 +53,8 @@ async function queryCodexDesktop({ execFile = nativeExecFile, platform = process
   if (platform !== 'win32') return { known: false, roots: [], reason: 'unsupported-platform' };
   try {
     const output = await new Promise((resolve, reject) => {
-      execFile('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', INVENTORY_SCRIPT],
-        { windowsHide: true, timeout, maxBuffer: 1024 * 1024, encoding: 'utf8' }, (error, stdout) => error ? reject(error) : resolve(stdout));
+      execFile(powershellExecutable(env), ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', INVENTORY_SCRIPT],
+        { windowsHide: true, timeout, maxBuffer: 1024 * 1024, encoding: 'utf8', env }, (error, stdout) => error ? reject(error) : resolve(stdout));
     });
     const inventory = JSON.parse(output.replace(/^\uFEFF/, '').trim());
     if (inventory.known !== true || !Array.isArray(inventory.processes)) return { known: false, roots: [], reason: 'inventory-unavailable' };
@@ -102,7 +73,8 @@ function createDesktopInventoryQuery(options = {}) {
     async query() {
       const result = await worker.query();
       if (result?.known !== true || !Array.isArray(result.processes)) return { known: false, roots: [], reason: 'inventory-unavailable' };
-      return { known: true, roots: desktopRoots(result.processes, { ...options, platform }) };
+      try { return { known: true, roots: desktopRoots(result.processes, { ...options, platform }) }; }
+      catch { return { known: false, roots: [], reason: 'inventory-unavailable' }; }
     },
     close() { worker.close(); },
   };

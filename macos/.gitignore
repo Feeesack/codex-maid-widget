@@ -1,0 +1,23 @@
+# Dependencies, builds and local verification scratch files
+node_modules/
+/release/
+/tmp/
+/coverage/
+*.log
+*.tmp
+
+# Secrets and machine-local widget state
+.env
+.env.*
+!.env.example
+/auth.json
+/control.json
+/watcher.json
+/settings.json
+/characters/
+/userData/
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

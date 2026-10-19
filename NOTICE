@@ -2,10 +2,20 @@ Codex Maid Widget
 https://github.com/Feeesack/codex-maid-widget
 
 Original project code and documentation: MIT (see LICENSE).
-Project-provided character and application icon artwork: CC BY 4.0
+Original mint maid, lilac dragon maid and application icon artwork: CC BY 4.0
 (see ARTWORK_LICENSE.md and licenses/CC-BY-4.0.txt).
 Artwork credit: Codex Maid Widget contributors; generated with GPTimage2.5
 as stated by the project author.
+
+User-supplied character additions
+---------------------------------
+The user supplied final-1.png and final-2.png, included unchanged as
+assets/characters/frost-glass-idle.png (小龙娘-端庄) and
+assets/characters/frost-glass-cheek.png (小龙娘-托腮), plus their macOS copies.
+The user authorized their names and built-in use in this project. They are
+outside the existing CC BY 4.0 artwork grant; no additional independent
+copyright or general reuse/relicensing license is asserted here.
+See docs/asset-provenance.md for original-byte SHA-256 records.
 
 Design references and acknowledgements
 -------------------------------------
@@ -13,6 +23,10 @@ MeteorNOX/DeepSeek-Balance-Whale-Widget
 https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget
 The DeepSeek/DSH whale widget inspired the desktop-companion, bubble,
 drag-and-snap, and interaction ideas.
+The press/release transition and paired-audio timing also follow the MIT
+interaction implementation at commit 5247dd6813d6e4430728f39ccc63d43cda046022.
+The complete upstream code license is retained in licenses/DSH-MIT.txt.
+The original duck audio has its own provenance and rights status below.
 
 Yang-huai406/Codex-Whale-Public
 https://github.com/Yang-huai406/Codex-Whale-Public
@@ -21,8 +35,28 @@ copy adapt desktop/visibility.cjs (MIT, Copyright (c) 2026 MeteorNOX).
 The complete upstream license is retained in those source files.
 
 The interface, character artwork and quota reader are separate. Neither
-reference project's whale artwork, animations nor audio is redistributed.
+reference project's whale artwork or image animations are redistributed.
 Their respective authors retain their rights.
+
+Interaction audio
+-----------------
+The generated PCM bank (and macOS copy) contains four presets: three
+adapt selected Kenney Interface Sounds and Impact Sounds samples (CC0):
+https://kenney.nl/assets/interface-sounds
+https://kenney.nl/assets/impact-sounds
+The fourth, original synthesized chirp is project code/audio under MIT. The other
+files are trimmed, level adjusted and faded; assets/audio/manifest.json records
+each source, license, processing recipe and checksum. Original Kenney license
+notices are retained beside the WAV files. See docs/interaction-audio.md.
+These third-party sounds are separate from the project's CC BY 4.0 artwork.
+
+The original DSH default duck pair (Ya1.mp3 / Ya2.mp3) is bundled byte-for-byte
+from upstream commit 5247dd6813d6e4430728f39ccc63d43cda046022. This audio
+is separate from the project MIT and artwork CC BY 4.0 licenses; no MIT or
+CC0 grant is asserted. Upstream excludes assets/** from MIT, describes an
+as-is scope for its own plugin and grants no relicensing. An independent
+original source or redistribution license has not been verified. See
+assets/audio/DSH-PROVENANCE.txt and docs/interaction-audio.md.
 
 OpenAI mark
 -----------
@@ -46,3 +80,32 @@ retain those files when redistributing the runtime.
 
 Codex app-server and plugin interfaces are provided by OpenAI. Codex is
 installed and authenticated separately and is not redistributed here.
+
+Hugeicons free UI icons
+----------------------
+Toolbar controls and bubble-page editor icons are an unmodified
+path-data subset of @hugeicons/core-free-icons 4.3.5 (Stroke Rounded), from
+https://github.com/hugeicons/hugeicons . SVG markup is generated mechanically
+from the official package data, not redrawn. These third-party icons use MIT,
+not this project's CC BY 4.0 artwork grant. The complete original notice is in
+licenses/hugeicons-LICENSE.txt and assets/ui/hugeicons/LICENSE.md; provenance
+and per-file hashes are in assets/ui/hugeicons/source.json. No Pro or legacy
+restricted static icon assets are included.
+
+Motion Mini animation engine
+----------------------------
+The renderer bundles the original framer-motion 14.4.0 dist/dom-mini.js
+browser distribution from https://github.com/motiondivision/motion .
+The Motion repository's MIT license and version/hash provenance accompany it
+in src/vendor/motion/. No Motion+ material or runtime CDN request is used.
+The project adapter invokes the library's animate/stop interfaces; it does
+not implement its own animation interpolation engine.
+
+SortableJS page ordering
+------------------------
+The settings renderer bundles the original SortableJS 1.15.7 Sortable.min.js
+browser distribution from https://github.com/SortableJS/Sortable .
+Original upstream bytes, the complete MIT license and pinned provenance
+are retained in src/vendor/sortable/. SortableJS provides pointer tracking,
+card displacement animation and auto-scroll through its official options.
+No runtime CDN request or custom reordering animation engine is used.

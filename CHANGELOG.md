@@ -1,5 +1,175 @@
 # Changelog
 
+## 0.3.48 release candidate — Cumulative update since 0.3.21, 2026-10-19
+
+- Add split press/release interactions and five sound choices, including DSH Duck, with smoother rapid clicking and a held pose during drag. Sound assets have separate source/license scopes; see [audio provenance](docs/interaction-audio.md).
+- Record locally observed accounts with independent five-hour reset countdowns and an in-widget reminder with four bounces; add conversation context, confirmed automatic/manual compaction totals and worktree uncommitted-file counts, with automatic detection and a manual list of up to 30 recent eligible conversations.
+- Add two dragon-girl poses, Motion mirroring, Hugeicons controls, previous/next page arrows and SortableJS page ordering, visibility and startup-default settings.
+- Add live size/opacity and independent bottom/side hiding previews; fix toolbar dismissal/access and Windows Codex discovery across installation volumes and user environments.
+- Preserve settings, imported characters and valid selections. This candidate is not yet a published Release. Mac native CI results are pending; hands-on acceptance is separate.
+- See the [complete Chinese and English release notes](docs/releases/0.3.48.md). The entries below retain the history of the local updates that make up this release.
+
+## 0.3.48 — Louder bounce audio and balanced bubble press, 2026-10-19
+
+- Increase interaction playback gain by 1.4× and add a further 1.6× boost to the default bubble-pop press, keeping the release at the shared level.
+- Retain original PCM/sample bytes, pitch, timing, preset base gains, mute and cancellation. Widget playback and settings preview share the adjustment.
+- Local runtime update only; installers remain 0.3.21.
+
+## 0.3.47 — Simplified bubble-page ordering controls, 2026-10-19
+
+- Remove the redundant up/down button pair from each bubble-page card. Retain SortableJS drag ordering, Hugeicons, visibility and default controls, and Alt + Arrow keyboard ordering on the handle.
+- Update both source trees and the local runtime while preserving user preferences and characters. No installer or GitHub publication.
+
+## 0.3.46 — Hugeicons page editor and SortableJS ordering, 2026-10-19
+
+- Replace bubble-page glyphs, drag handles, default stars and move arrows with official Hugeicons Stroke Rounded SVGs.
+- Use the official MIT-licensed SortableJS browser distribution for pointer-following cards, animated reordering and edge scrolling. Keep existing visibility, startup-default and keyboard controls; save only the completed order and restore saved order after failure.
+- Bundle pinned third-party assets and full licenses locally. Update local runtime only; installers remain 0.3.21.
+
+## 0.3.45 — Hugeicons controls and Motion mirroring, 2026-10-19
+
+- Replace the custom perspective turn with the official MIT-licensed Motion Mini browser engine and a restrained planar mirror transition. Keep rapid reversal, breathing, press and corner movement independent.
+- Replace toolbar glyphs with a consistent official Hugeicons Stroke Rounded subset and replace the ellipsis pager with separate previous/next arrows.
+- Page navigation follows the configured visible order in both directions, wraps at either end and retains the independent startup default. Runtime assets are bundled locally with pinned versions, integrity records and full licenses.
+
+## 0.3.44 — Live appearance, paper flip and bubble-page settings, 2026-10-19
+
+- Preview widget size and opacity continuously while dragging, with one final preference save on release and cancellation restoring saved appearance.
+- Animate character mirroring with a paper-like turn when crossing the display or host center line. Keep text readable and preserve drag, bounce and corner movement.
+- Add a card-based bubble-page editor for visibility, drag ordering, keyboard reordering and direct default selection; retain at least one visible page and preserve all seven existing page functions.
+
+## 0.3.43 — Live corner-peeking controls, 2026-10-19
+
+- Hide the bottom and side hiding sliders while corner peeking is disabled. Preview the widget continuously while dragging, and persist the final value on release.
+- Use 50% as the new bottom-hiding default and retain 100% for the side. Preserve existing saved values, including the user's current 50% bottom setting. Cancelled previews restore saved values without writing settings.
+
+## 0.3.42 — Adjustable corner hiding, 2026-10-19
+
+- Add separate bottom and side hiding controls below the corner-peeking switch. Each ranges from 0% to 200%, with 100% preserving the previous hiding amount and 0% exposing that edge.
+- Apply changes when the slider is released, retain values while peeking is disabled, and scale both offsets with the widget. Keep continuous dragging, corner settling and fixed native window dimensions. Local runtime update only; installers remain 0.3.21.
+
+## 0.3.41 — Local character names and order, 2026-10-19
+
+- Rename the supplied poses to 小龙娘-托腮 (`frost-glass-cheek`) and 小龙娘-端庄 (`frost-glass-idle`), and list them first and second, followed by the original mint maid and lilac dragon maid.
+- Retain stable IDs, image bytes, saved selections and names, and the cheek pose as the default and custom-character deletion fallback. Local update only; installers remain 0.3.21.
+
+## 0.3.40 — Local character update, 2026-10-19
+
+- Add the supplied final-1 and final-2 artwork as built-in characters: 霜璃·静候 (`frost-glass-idle`) and 霜璃·托腮 (`frost-glass-cheek`).
+- Use 霜璃·托腮 for fresh settings and as the fallback after removing the selected custom character; retain existing valid selections and the original built-in characters.
+- Keep both source platforms aligned, retain the original image bytes, and record their provenance separately from the existing CC BY 4.0 artwork grant. Local update only; installers remain 0.3.21.
+
+## 0.3.39 — Local compatibility audit, 2026-10-19
+
+- Fix Windows environment casing, minimal-PATH native helper discovery, and explicit Codex path handoff through Explorer/login items and Mac LaunchAgents.
+- Reuse the installed app's trusted CLI resolver for plugin connection/removal, and support validated running Mac apps in moved locations.
+- Close cancelled discovery workers, reject malformed app-server messages and handle pipe failures; invalidate obsolete window callbacks and verify final native parent relationships.
+- Keep animations always enabled and preserve preferences. See the current [release scope and verification boundaries](docs/releases/0.3.48.md). This historical local update did not generate installers.
+
+## 0.3.38 — Local animation update, 2026-10-19
+
+- Remove the animation policy selector and always enable widget animations, regardless of system reduced-motion preferences or obsolete saved modes.
+- Retain movement/hidden-state pauses, interaction behavior, sound preferences and the 0.3.37 Windows compatibility fixes. Local runtime update only; installers remain 0.3.21.
+
+## 0.3.37 — Local compatibility update, 2026-10-19
+
+- Identify the Windows desktop by process package identity and shared classification, independent of installation volume; preserve unknown results on identity-query failure.
+- Discover a verified desktop's bundled CLI when an Explorer/login environment lacks terminal PATH, preserving explicit overrides and PATH precedence.
+- Coordinate topmost through one lifecycle and verify the actual HWND flag; preserve child-window layering and the saved standalone preference.
+- Add System, Always On and Off animation policies with an explanation of the effective state and consistent JavaScript/CSS behavior.
+- This historical local update did not generate installers. Current [release scope and verification boundaries](docs/releases/0.3.48.md) cover the cumulative update.
+
+## 0.3.36 — Local update, 2026-10-19
+
+- Put Bubble Pop first and use it as the default; retain saved choices that remain available, while missing or removed sound IDs fall back to Bubble Pop.
+- Remove Glass Tick, Soft Click, Mechanical, Digital and Pluck from the selectable catalog, and remove the original-version suffix from the classic chirp label.
+- Add the original DSH duck press/release pair as a private local Windows payload. The five-choice local catalog is Bubble Pop, Soft Spring, Classic Chirp, Wood Tap and DSH Duck; source builds without the private payload disable the DSH choice with an installation message.
+- Third-party redistribution permission for the DSH audio has not been obtained, so its bytes remain outside shared source and public packages. No GitHub publication or new installer; the latest generated installers remain 0.3.21.
+
+## 0.3.35 — Local update, 2026-10-19
+
+- Keep the compressed pose and press audio while dragging; rebound and play the matching release on drop, retaining the accepted animation and mute behavior.
+- Add nine locally saved interaction sound presets and a mute-aware preview in settings, including the original chirp split into complementary press/release segments.
+- Curate distinct CC0 Kenney source pairs, preserve notices and processing hashes, and guard preset changes against late decoding. Published installers remain 0.3.21.
+
+## 0.3.34 — Local update, 2026-10-19
+
+- Follow DSH's interruptible press/release transitions so rapid clicks continue from the displayed pose without restarting at rest or queuing delayed bounces.
+- Add paired CC0 Kenney press/release sounds, audio-clock tail overlap, cached local decoding and cancellation of stale voices; preserve mute and the single account-reset chirp.
+- Keep character/bubble motion synchronized, the toolbar fixed and drag/reduced-motion recovery intact. Published installers remain 0.3.21.
+
+## 0.3.33 — Local update, 2026-10-19
+
+- Add an 18 px interaction margin around the visible toolbar and a 600 ms dismissal grace period so the pointer can travel from the character to the buttons.
+- Keep the toolbar open while crossing its expanded area or using the buttons; retain keyboard access and eventual dismissal without invisible mouse targets.
+- Cover slow continuous pointer paths, gaps, all four button actions, reentry and dismissal timing in isolated renderer checks. Published installers remain 0.3.21.
+
+## 0.3.32 — Local update, 2026-10-19
+
+- Collapse the toolbar after mouse interaction ends, even when a clicked button retains focus. Keep it visible for keyboard focus and activation.
+- Limit toolbar reveal to interactive hover regions; transparent outer padding no longer reveals it. Prevent an invisible toolbar from intercepting mouse input.
+- Add isolated renderer regression checks for mouse focus, keyboard navigation, hidden hit testing, mirroring and scaling. Published installers remain 0.3.21.
+
+## 0.3.31 — Local update, 2026-10-19
+
+- Use the real profile nickname for automatic account labels; keep email, account names and handles as auxiliary data. Preserve manual aliases and clearly mark missing nicknames.
+- Fetch scoped nickname and workspace metadata through bounded, read-only official profile requests after explicit local credential-read authorization; keep tokens out of records and output, and metadata out of public quota/MCP snapshots.
+- Restore current-conversation detection by deduplicating Windows log path aliases using physical file identity and distributing the existing 4 MiB tail-read budget across recent log segments.
+- Published installers remain 0.3.21; this update changes local runtime files only.
+
+## 0.3.30 — Local update, 2026-10-19
+
+- Automatically label observed accounts with an explicit display name when provided, otherwise their full email; show exact workspace names only when available.
+- Preserve manual aliases, allow clearing an alias to restore automatic naming, and upgrade previous default numbered labels on observation.
+- Keep identity display metadata local, separate it from public quota/MCP snapshots, and reject stale cross-account metadata. Published installers remain 0.3.21.
+
+## 0.3.29 — Local update, 2026-10-19
+
+- Replace system reset notifications with widget-only text and sound reminders.
+- Bounce the character and bubble four times in one second for account resets; preserve normal interaction animations, mute, reduced motion and reminder deduplication.
+- Published installers remain 0.3.21.
+
+## 0.3.28 — Local update, 2026-10-19
+
+- Add an account-management page with local aliases, observed five-hour windows, countdowns and per-account reset progress.
+- Notify once when a recorded reset deadline arrives, including across restarts; respect reminder and sound settings and clearly mark historical estimates.
+- Keep raw identities and credentials out of storage and account metadata out of MCP. Published installers remain 0.3.21.
+
+## 0.3.27 — Local update, 2026-10-19
+
+- Recognize older local conversations whose stored Windows paths use extended drive or UNC namespace aliases.
+- Preserve lexical and real-path containment checks, and resolve the observed conversation ID independently of recent manual choices.
+- Keep on-demand reads, settings and characters. No new installer or GitHub release.
+
+## 0.3.26 — Local update, 2026-10-18
+
+- Show the detected conversation name in parentheses in the automatic selector, with its project on a separate visible line.
+- Use local project assignments and saved names when available, with workspace-directory fallback and full hover details.
+- Keep six pages, four toolbar buttons, on-demand reads and preserved preferences. No new installer or GitHub release.
+
+## 0.3.25 — Local update, 2026-10-18
+
+- Show the conversation’s recorded context-compaction count on the second page, including automatic and manual compactions.
+- Count committed compaction checkpoints once, restore counts from local history, and scan appended bytes on later clicks. Bounded partial scans show an explicit lower bound.
+- Keep on-demand reads, remembered preferences and characters. No new installer or GitHub release.
+
+## 0.3.24 — Local update, 2026-10-18
+
+- Detect the visible local Codex conversation on demand using bounded window activity/route log metadata and the read-only conversation index.
+- Default the second page to automatic detection, with the remembered manual selection available as a fallback. Show an unknown state when the window evidence is ambiguous.
+- Add no background polling or IPC subscription; preserve preferences and characters. No new installer or GitHub release.
+
+## 0.3.23 — Local update, 2026-10-18
+
+- Move conversation status to the second bubble page, immediately after quota. Restore the four-button toolbar.
+- Read on page entry or a click on the status bubble; preserve manual conversation selection and avoid background polling.
+
+## 0.3.22 — Local update, 2026-10-18
+
+- Add an on-demand conversation status button with a manual local conversation selector and a remembered selection.
+- Show the selected conversation's context usage progress and the number of uncommitted files in its Git workspace, without background polling.
+- Keep the existing pages, preferences and character library. No new installer or GitHub release is produced for this local update.
+
 ## 0.3.21 — 2026-10-18
 
 Shared Windows and macOS release.

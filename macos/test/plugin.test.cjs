@@ -51,7 +51,7 @@ test('MCP hides imported filenames while the local character library keeps its n
   assert.equal(localStatus.characterName, filename);
   assert.equal(new CharacterLibrary(options).get(imported.id).name, filename);
 
-  for (const [id, expected] of [['mint-maid', '薄荷女仆'], ['lilac-dragon', '紫晶龙女仆']]) {
+  for (const [id, expected] of [['mint-maid', '薄荷女仆'], ['lilac-dragon', '紫晶龙女仆'], ['frost-glass-idle', '小龙娘-端庄'], ['frost-glass-cheek', '小龙娘-托腮']]) {
     library.rename(id, 'synthetic-private-label');
     assert.equal(library.get(id).name, 'synthetic-private-label');
     assert.deepEqual(safeValue({ activeCharacterId: id, characterName: library.get(id).name }), { activeCharacterId: id, characterName: expected });

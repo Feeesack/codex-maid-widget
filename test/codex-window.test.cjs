@@ -26,7 +26,7 @@ test('native modal and main-window flags survive transport and malformed modal m
 function harness(options = {}) {
   const children = [], scripts = [];
   const spawn = (file, args, settings) => {
-    assert.equal(file, 'powershell.exe');
+    assert.equal(file, options.expectedExecutable || 'powershell.exe');
     for (const flag of ['-NoLogo', '-NoProfile', '-NonInteractive', '-STA', '-EncodedCommand']) assert.ok(args.includes(flag));
     assert.equal(settings.windowsHide, true);
     assert.deepEqual(settings.stdio, ['pipe', 'pipe', 'ignore']);
@@ -45,7 +45,7 @@ function harness(options = {}) {
     children.push(child);
     return child;
   };
-  const provider = new CodexWindowProvider({ platform: 'win32', widgetPid: 456, spawn, ...options });
+  const provider = new CodexWindowProvider({ platform: 'win32', widgetPid: 456, spawn, env: {}, ...options });
   return { provider, children, scripts };
 }
 
@@ -59,9 +59,18 @@ test('native handles retain 64-bit precision and reject invalid or injectable id
     Number.MAX_SAFE_INTEGER + 1, Buffer.alloc(0), Buffer.alloc(8), null, {}]) assert.equal(nativeHandleId(value), '');
 });
 
+test('a native window worker uses the actual Windows drive when PATH is empty', async t => {
+  const env = { SystemRoot: 'R:\\Windows', PATH: '' };
+  const { provider, children, scripts } = harness({ env, expectedExecutable: 'R:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', widgetHandle: '23456' });
+  t.after(() => provider.close());
+  const pending = provider.setTopmost('23456', false); await turn();
+  assert.equal(children.length, 1); assert.match(scripts[0], /::SetTopmost\(/);
+  children[0].reply({ known: true, supported: true, ok: true, topmost: false }); assert.equal((await pending).ok, true);
+});
+
 test('one native host limits inventory to validated desktop roots and never reads captions', () => {
   assert.equal((WINDOW_WORKER_SCRIPT.match(/Add-Type/g) || []).length, 1);
-  for (const marker of ['MaidWindowsInventory.Query()', 'OfficialPath', 'ownSession', 'ownSid', 'SetThreadDpiAwarenessContext',
+  for (const marker of ['MaidWindowsInventory.Query()', 'officialDesktop', 'ownSession', 'ownSid', 'SetThreadDpiAwarenessContext',
     'GetClientRect', 'ClientToScreen', 'DwmGetWindowAttribute', 'GetForegroundWindow', 'foregroundPid',
     'Pid(widget) != widgetPid', 'roots.Contains(Pid(owner))', 'GetWindowLongPtr64(widget, -8)', 'physical-pixels']) assert.ok(WINDOW_WORKER_SCRIPT.includes(marker), marker);
   assert.doesNotMatch(WINDOW_WORKER_SCRIPT, /GetWindowText|WM_GETTEXT|SendMessage|auth\.json|Get-CimInstance|commandline/i);
@@ -80,6 +89,31 @@ test('native child attachment guards ownership and exact DPI context before repa
   assert.match(attach, /Style = GetLong\(widget, -16\), ExStyle = GetLong\(widget, -20\)/);
   assert.match(WINDOW_WORKER_SCRIPT, /SetParent\(widget, IntPtr.Zero\);[\s\S]*SetLong\(widget, -16, binding.Style\);[\s\S]*SetLong\(widget, -20, binding.ExStyle\)/);
   assert.match(WINDOW_WORKER_SCRIPT, /Math\.Min\(\(long\)availableWidth - width, \(long\)x - origin.X\)/);
+  const position = WINDOW_WORKER_SCRIPT.slice(WINDOW_WORKER_SCRIPT.indexOf('public static object PositionChild('), WINDOW_WORKER_SCRIPT.indexOf('public static object DetachChild('));
+  assert.match(position, /bool parented = OwnWidget\(widget, widgetPid\) && GetParent\(widget\) == host/);
+  assert.match(position, /bool ok = moved && parented/);
+});
+
+test('native topmost binds the current HWND and PID, rejects child styles, and reads back the actual flag', async t => {
+  const native = WINDOW_WORKER_SCRIPT.slice(WINDOW_WORKER_SCRIPT.indexOf('public static object SetTopmost('), WINDOW_WORKER_SCRIPT.indexOf('static bool TrustedHost('));
+  for (const guard of ['widgetValue != expectedWidgetValue', 'OwnWidget(widget, widgetPid)', '0x40000000L', 'GetAncestor(widget, 2) != widget'])
+    assert.ok(native.indexOf(guard) >= 0 && native.indexOf(guard) < native.indexOf('bool moved = SetWindowPos('), guard);
+  assert.doesNotMatch(native, /ValidatedRoots|MaidWindowsInventory.Query/);
+  assert.match(native, /new IntPtr\(enabled \? -1 : -2\)/);
+  assert.match(native, /0x0001 \| 0x0002 \| 0x0010/);
+  assert.match(native, /GetLong\(widget, -20\).*0x00000008L/);
+  const { provider, children } = harness({ widgetHandle: '23456' }); t.after(() => provider.close());
+  assert.equal((await provider.setTopmost('23457', true)).known, false); assert.equal(children.length, 0);
+  const pending = provider.setTopmost('23456', true); await turn();
+  assert.deepEqual(children[0].writes, ['topmost 23456 1\n']);
+  children[0].reply({ known: true, supported: true, ok: false, topmost: false, extra: 'discard' });
+  assert.deepEqual(await pending, { known: true, supported: true, ok: false, topmost: false });
+  const off = provider.setTopmost('23456', false); await turn();
+  children[0].reply({ known: true, supported: true, ok: true, topmost: false });
+  assert.equal((await off).ok, true);
+  const invalid = provider.setTopmost('23456', true); await turn();
+  children[0].reply({ known: true, supported: true, ok: true, topmost: 'true' });
+  assert.equal((await invalid).known, false); assert.equal(children[0].kills, 1);
 });
 
 test('explicit widget handle adds validated native visibility metadata and strips other fields', async t => {
@@ -134,6 +168,16 @@ test('child methods reject invalid geometry and native acknowledgement before an
   children[0].reply({ known: true, supported: true, ok: true, parented: 'true' });
   assert.equal((await attach).known, false);
   assert.equal(children[0].kills, 1);
+});
+
+test('a successful native child acknowledgement must confirm the requested parent relationship', async t => {
+  const { provider, children } = harness(); t.after(() => provider.close());
+  const attach = provider.attachChild('23456', '12345'); await turn();
+  children[0].reply({ known: true, supported: true, ok: true, parented: false });
+  assert.equal((await attach).known, false, 'attach cannot succeed while native reports an unparented HWND');
+  const detach = provider.detachChild('23456'); await turn();
+  children[1].reply({ known: true, supported: true, ok: true, parented: true });
+  assert.equal((await detach).known, false, 'detach cannot succeed while native still reports a child');
 });
 
 test('lost native style cache requests widget recreation using a finite, safe reason', async t => {

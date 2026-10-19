@@ -6,7 +6,30 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
+  const FROST_GLASS_THEME = {
+    '--theme-outline': '#64618b',
+    '--theme-fill-start': '#ffffff',
+    '--theme-fill-end': '#f5f5fc',
+    '--theme-text': '#303048',
+    '--theme-accent': '#514d78',
+    '--theme-muted': '#6b6885',
+    '--theme-track': '#e6e5f1',
+    '--theme-progress-start': '#b3b1de',
+    '--theme-progress-end': '#7773ac',
+    '--theme-pill': '#ebebf8',
+    '--theme-pill-hover': '#ddddf1',
+    '--theme-soft': '#fbfbff',
+    '--theme-toolbar-border': '#ddddec',
+    '--theme-toolbar-text': '#625f86',
+    '--theme-notice': '#303046',
+    '--theme-quota-base': '#514d7c',
+    '--theme-quota-mid': '#8580b8',
+    '--theme-quota-deep': '#403c65',
+    '--theme-quota-glow': '#d2d0f3',
+  };
   const BUILT_INS = {
+    'frost-glass-idle': FROST_GLASS_THEME,
+    'frost-glass-cheek': FROST_GLASS_THEME,
     'mint-maid': {
       '--theme-outline': '#1d7e74',
       '--theme-fill-start': '#ffffff',
@@ -120,7 +143,7 @@
   }
 
   function themeFromPixels(pixels) {
-    if (!pixels || !Number.isFinite(pixels.length) || pixels.length < 4) return builtinTheme('mint-maid');
+    if (!pixels || !Number.isFinite(pixels.length) || pixels.length < 4) return builtinTheme('frost-glass-cheek');
     const buckets = new Float64Array(36);
     const candidates = [];
     for (let index = 0; index + 3 < pixels.length; index += 4) {
@@ -146,7 +169,7 @@
       buckets[Math.floor(hue / 10)] += weight;
       candidates.push({ hue, weight });
     }
-    if (!candidates.length) return builtinTheme('mint-maid');
+    if (!candidates.length) return builtinTheme('frost-glass-cheek');
 
     // Cluster nearby shades rather than averaging unrelated hues into mud.
     let best = 0;

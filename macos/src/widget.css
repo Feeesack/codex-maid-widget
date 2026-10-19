@@ -14,7 +14,7 @@ button:focus-visible,[role=button]:focus-visible{outline:3px solid var(--theme-p
   --theme-quota-base:#12675e;--theme-quota-mid:#2d9e87;--theme-quota-deep:#0d5b57;--theme-quota-glow:#97ddbc}
 
 /* The ellipse and its rounded tail share one path, so the outline has no seam. */
-.bubble-motion{position:absolute;inset:0;pointer-events:none;z-index:2;transform-origin:142px 254px}
+.bubble-motion{position:absolute;inset:0;pointer-events:none;z-index:2;transform-origin:142px 254px;transition:transform .22s cubic-bezier(.34,1.56,.64,1)}
 .bubble{position:absolute;left:12px;top:8px;width:354px;height:246px;z-index:2;padding:25px 40px 23px;text-align:center;cursor:grab;isolation:isolate;pointer-events:auto;opacity:1;scale:1;translate:0 0;transform-origin:130px 228px;transition:opacity .18s ease .23s,scale .28s cubic-bezier(.2,.8,.3,1) .23s,translate .28s cubic-bezier(.2,.8,.3,1) .23s}
 .bubble-content{opacity:1;transition:opacity .16s ease .33s}
 .bubble:active{cursor:grabbing}
@@ -40,14 +40,16 @@ header b{font-weight:650}
 .reset-tag{background:var(--theme-accent);border-radius:6px;color:#fff;font-size:10px;line-height:18px;padding:0 6px}
 time{font-size:19px;font-weight:750;color:var(--theme-accent);font-variant-numeric:tabular-nums}
 footer{display:flex;justify-content:center;align-items:center;color:var(--theme-muted);margin-top:3px;height:22px;position:relative;z-index:3}
-footer button{display:flex;align-items:center;justify-content:center;padding:0 8px;width:40px;height:22px;border-radius:11px;background:var(--theme-pill)}
-footer button:hover{background:var(--theme-pill-hover);color:var(--theme-accent)}
-.cycle-dots{display:flex;align-items:center;gap:4px}
-.cycle-dots span{display:block;width:3.5px;height:3.5px;border-radius:50%;background:currentColor}
+.page-navigation{gap:6px}
+footer button{display:grid;place-items:center;padding:0;width:30px;height:22px;border:1px solid color-mix(in srgb,var(--theme-toolbar-border) 70%,transparent);border-radius:8px;background:var(--theme-pill);transition:background .14s,color .14s,border-color .14s}
+footer button:hover:not(:disabled){background:var(--theme-pill-hover);color:var(--theme-accent);border-color:var(--theme-toolbar-border)}
+.ui-icon{display:block;width:18px;height:18px;flex:none;pointer-events:none;transform:none;scale:1}
+.page-navigation button:disabled{opacity:.38;cursor:default;box-shadow:none}
+.page-navigation button:focus-visible,.toolbar button:focus-visible{outline:2px solid var(--theme-progress-end);outline-offset:3px}
 .thought-dot{position:absolute;border:4px solid var(--theme-outline);background:var(--theme-soft);border-radius:50%;z-index:2;pointer-events:none;opacity:1;scale:1;transition:opacity .14s ease,scale .2s cubic-bezier(.2,.8,.3,1)}
 .dot-one{left:119px;top:260px;width:29px;height:20px;transform:rotate(-8deg);transition-delay:.12s}
 .dot-two{left:153px;top:287px;width:18px;height:13px;transition-delay:0s}
-.character{position:absolute;width:330px;height:305px;right:-5px;bottom:-4px;transform-origin:50% 100%;cursor:grab;z-index:1;transition:filter .2s}
+.character{position:absolute;width:330px;height:305px;right:-5px;bottom:-4px;transform-origin:50% 100%;cursor:grab;z-index:1;transition:filter .2s,transform .22s cubic-bezier(.34,1.56,.64,1)}
 .character:active{cursor:grabbing}
 .character img{display:block;width:100%;height:100%;object-fit:contain;object-position:bottom;pointer-events:none;filter:drop-shadow(0 2px 1px color-mix(in srgb,var(--theme-outline) 9%,transparent));animation:breathe 5s ease-in-out infinite;transform-origin:bottom center}
 .character:hover{filter:brightness(1.025)}
@@ -57,13 +59,19 @@ footer button:hover{background:var(--theme-pill-hover);color:var(--theme-accent)
 .bubble-motion{translate:0 var(--visual-offset-y,0px)}
 .widget.is-moving .character img{animation:none}
 .widget.is-moving .character,.widget.is-moving .bubble-motion{animation:none}
+.widget.is-moving:not(.drag-interaction) .character,.widget.is-moving:not(.drag-interaction) .bubble-motion{transition:none}
 .widget.is-mirrored .character img{scale:-1 1}
-.character.bounce{animation:squish .65s cubic-bezier(.24,.7,.35,1)}
-.bubble-motion.bounce{animation:bubbleFollow .65s cubic-bezier(.24,.7,.35,1)}
-.toolbar{position:absolute;left:29px;bottom:29px;display:flex;flex-direction:column;gap:5px;opacity:0;transform:translateX(7px);transition:opacity .2s,transform .2s;z-index:4}
-.widget:hover .toolbar,.toolbar:focus-within{opacity:1;transform:none}
-.toolbar button{width:30px;height:30px;border:1px solid var(--theme-toolbar-border);border-radius:50%;background:#fffffff0;box-shadow:0 2px 7px color-mix(in srgb,var(--theme-outline) 5%,transparent);color:var(--theme-toolbar-text);font-size:19px;line-height:25px}
-.toolbar button:hover{background:var(--theme-pill);scale:1.08}
+.character.interaction-pressed{transform:scale(1.05,.88)}
+.bubble-motion.interaction-pressed{transform:translateY(8px) scale(1.015,.96)}
+.character.account-alarm-bounce{animation:accountAlarmCharacter .24s cubic-bezier(.24,.7,.35,1) 4}
+.bubble-motion.account-alarm-bounce{animation:accountAlarmBubble .24s cubic-bezier(.24,.7,.35,1) 4}
+.toolbar{position:absolute;left:29px;bottom:29px;display:flex;flex-direction:column;gap:5px;opacity:0;pointer-events:none;transform:translateX(7px);transition:opacity .2s,transform .2s;z-index:4}
+/* Leave time to cross from the character, and keep a forgiving hit area
+   around the visible buttons. Hidden controls never intercept mouse input. */
+.widget.toolbar-open .toolbar,.toolbar:has(:focus-visible){opacity:1;pointer-events:auto;transform:none}
+.toolbar::before{content:"";position:absolute;inset:-18px;z-index:-1}
+.toolbar button{display:grid;place-items:center;width:30px;height:30px;padding:0;border:1px solid var(--theme-toolbar-border);border-radius:10px;background:color-mix(in srgb,var(--theme-fill-start) 94%,transparent);box-shadow:0 2px 6px color-mix(in srgb,var(--theme-outline) 5%,transparent);color:var(--theme-toolbar-text);line-height:1;transition:background .14s,color .14s,border-color .14s,scale .14s}
+.toolbar button:hover{background:var(--theme-pill-hover);color:var(--theme-accent);scale:1.06}
 .toolbar button:active{scale:.93}
 .notice{position:absolute;bottom:12px;left:77px;width:270px;background:color-mix(in srgb,var(--theme-notice) 94%,transparent);color:white;padding:9px 12px;border-radius:13px;font-size:12px;line-height:1.5;z-index:6;text-align:center}
 .demo-label{position:absolute;left:17px;top:2px;font-size:9px;color:#855a28;background:#fff0d7;padding:2px 7px;border-radius:5px;z-index:5}
@@ -74,6 +82,46 @@ footer button:hover{background:var(--theme-pill-hover);color:var(--theme-accent)
 .phrase-view{height:143px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px}
 .phrase-view p{width:100%;font-size:24px;line-height:1.3;font-weight:650;margin:0;color:var(--theme-accent);max-height:94px;flex-shrink:0;overflow:visible;overflow-wrap:anywhere}
 .phrase-heart{font-size:18px;line-height:18px;color:var(--theme-progress-start)}
+.conversation-view{height:143px;display:flex;flex-direction:column;justify-content:center;gap:1px;padding-top:2px}
+.accounts-view{height:143px;display:flex;flex-direction:column;gap:3px;padding-top:4px;min-width:0;text-align:left;cursor:default}
+.account-list{min-height:0;flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--theme-progress-start) transparent;padding:0 4px 0 0;border-radius:6px}
+.account-list:focus-visible{outline:2px solid var(--theme-progress-start);outline-offset:1px}
+.account-card{border-bottom:1px solid var(--theme-track);padding:3px 0 6px;margin-bottom:3px;font-size:13px;line-height:18px}
+.account-card:last-child{border-bottom:0;margin-bottom:0}
+.account-heading{display:flex;align-items:center;gap:4px;min-width:0;height:24px}
+.account-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;color:var(--theme-accent)}
+.account-badge{flex:none;padding:0 4px;border-radius:4px;background:var(--theme-track);font-size:11px;line-height:17px;color:var(--theme-muted)}
+.current-account .account-badge{background:var(--theme-accent);color:#fff}
+.account-plan{font-size:13px;line-height:18px;color:var(--theme-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.account-actions{display:flex;margin-left:auto;gap:3px;flex:none}
+.account-card button{border-radius:4px;background:var(--theme-pill);padding:1px 4px;font-size:12px;line-height:18px;white-space:nowrap}
+.account-card button:hover{background:var(--theme-pill-hover)}
+.account-card button:disabled{opacity:.6;cursor:wait}
+.account-track{height:4px;overflow:hidden;border-radius:4px;background:var(--theme-track);margin:3px 0 4px}
+.account-track span{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--theme-progress-start),var(--theme-progress-end))}
+.account-countdown{font-size:16px;font-weight:700;line-height:22px;color:var(--theme-accent);font-variant-numeric:tabular-nums}
+.account-detail{font-size:13px;line-height:18px;color:var(--theme-muted);white-space:nowrap}
+.account-editor{display:flex;flex-wrap:wrap;gap:3px;align-items:center;margin:3px 0}
+.account-editor-hint{flex-basis:100%;font-size:11px;line-height:14px;color:var(--theme-muted)}
+.account-editor input{width:0;min-width:0;flex:1;border:1px solid var(--theme-toolbar-border);border-radius:4px;background:var(--theme-soft);padding:3px 5px;color:var(--theme-text);font:inherit;user-select:text}
+.account-confirm{display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin:3px 0;color:var(--theme-muted);font-size:12px;line-height:16px}
+.account-confirm span{width:100%}
+.accounts-feedback{flex:none;margin:0;text-align:center;font-size:11px;line-height:14px;color:var(--theme-muted)}
+.accounts-empty{margin:12px 8px 0;text-align:center;font-size:12px;line-height:20px;color:var(--theme-muted);flex:1}
+#conversation-select{display:block;width:100%;height:22px;min-height:22px;padding:0 5px;border:1px solid var(--theme-toolbar-border);border-radius:6px;background:var(--theme-soft);font:inherit;font-size:12px;line-height:20px;color:var(--theme-text);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
+#conversation-select:focus-visible{outline:2px solid var(--theme-progress-start);outline-offset:1px}
+.conversation-project{display:block;min-height:16px;font-size:12px;line-height:16px;color:var(--theme-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conversation-metric{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:26px;font-size:14px;line-height:20px;font-weight:650;color:var(--theme-muted)}
+.conversation-metric strong{font-size:26px;line-height:28px;color:var(--theme-accent);font-variant-numeric:tabular-nums;white-space:nowrap}
+.conversation-metric strong.unavailable{font-size:18px;line-height:24px;color:var(--theme-muted)}
+.conversation-git strong{font-size:24px;line-height:26px}
+.context-track{height:3px;border-radius:5px;background:var(--theme-track);overflow:hidden}
+.context-track span{display:block;width:0;height:100%;border-radius:5px;background:linear-gradient(90deg,var(--theme-progress-start),var(--theme-progress-end))}
+.conversation-feedback{min-height:18px;font-size:12px;line-height:18px;color:var(--theme-muted)}
+.conversation-summary{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;column-gap:10px;row-gap:0}
+.conversation-compaction{display:inline-flex;align-items:baseline;gap:5px;font-size:12px;line-height:18px;color:var(--theme-muted);white-space:nowrap}
+.conversation-compaction strong{font-size:13px;font-weight:750;color:var(--theme-accent);font-variant-numeric:tabular-nums}
+.conversation-compaction strong.unavailable{font-size:12px;font-weight:600;color:var(--theme-muted)}
 .bubble.hidden-bubble{opacity:0;pointer-events:none;scale:.86;translate:0 12px;transition-delay:.12s}
 .hidden-bubble .bubble-content{opacity:0;transition-delay:0s;transition-duration:.12s}
 .thought-dot.hidden-dots{opacity:0;scale:.2}
@@ -85,10 +133,10 @@ footer button:hover{background:var(--theme-pill-hover);color:var(--theme-accent)
 .warning .reset-tag{background:#b77a35}
 .disconnected .headline{color:#829b94}
 @keyframes breathe{0%,100%{transform:translateY(0) rotate(-.3deg)}50%{transform:translateY(-3px) rotate(.3deg)}}
-@keyframes squish{0%{transform:scale(1,1)}18%{transform:scale(1.13,.83)}42%{transform:translateY(-20px) scale(.94,1.08)}66%{transform:scale(1.06,.95)}85%{transform:translateY(-4px)}100%{transform:none}}
 /* A lighter response than the character keeps the bubble inside the window. */
 @keyframes bubbleFollow{0%,100%{transform:translateY(0) scale(1)}18%{transform:translateY(14px) scale(1.025,.94)}42%{transform:translateY(-4px) scale(.99,1.01)}66%{transform:translateY(5px) scale(1.012,.985)}85%{transform:translateY(-2px) scale(1)} }
-@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@keyframes accountAlarmCharacter{0%,100%{transform:none}20%{transform:scale(1.07,.9)}50%{transform:translateY(-20px) scale(.96,1.06)}85%{transform:scale(1.04,.96)}}
+@keyframes accountAlarmBubble{0%,100%{transform:none}50%{transform:translateY(-7px) scale(.99,1.01)}}
 
 /* Mirror the outline and positions, keeping the content and controls readable. */
 .widget.is-mirrored .bubble{left:auto;right:12px}
@@ -99,7 +147,7 @@ footer button:hover{background:var(--theme-pill-hover);color:var(--theme-accent)
 .widget.is-mirrored .dot-two{left:auto;right:153px}
 .widget.is-mirrored .character{left:-5px;right:auto}
 .widget.is-mirrored .toolbar{left:auto;right:29px;transform:translateX(-7px)}
-.widget.is-mirrored:hover .toolbar,.widget.is-mirrored .toolbar:focus-within{transform:none}
+.widget.is-mirrored.toolbar-open .toolbar,.widget.is-mirrored .toolbar:has(:focus-visible){transform:none}
 .widget.is-mirrored .notice{left:auto;right:77px}
 .widget.is-mirrored .demo-label{left:auto;right:17px}
 
@@ -123,4 +171,3 @@ footer button:hover{background:var(--theme-pill-hover);color:var(--theme-accent)
   .hidden-bubble .quota-shimmer .quota-value{animation-play-state:paused}
 }
 @keyframes quotaShimmer{from{background-position:200% 0,0% 0}to{background-position:-100% 0,200% 0}}
-@media(prefers-reduced-motion:reduce){.quota-shimmer .quota-value{animation:none;background-position:60% 0,0% 0}}

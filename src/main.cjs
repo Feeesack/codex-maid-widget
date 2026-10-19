@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, globalShortcut, dialog, net } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
@@ -23,6 +23,19 @@ fs.mkdirSync(dataDir,{recursive:true});
 app.setPath('userData',dataDir);
 const settingsFile = path.join(dataDir, 'settings.json');
 let settings = readSettings(settingsFile);
+let settingsRevision = 0;
+let accountRegistry, accountAlarm, accountStorageError = false;
+function accountManagement() {
+  const view = accountRegistry?.snapshot(demoMode ? null : source?.accountIdentity) || { accounts: [], count: 0 };
+  return { ...view, storageError: accountStorageError || view.storageError === true };
+}
+function notifyAccountReset(event) {
+  if (quitting) return;
+  if (widget && !widget.isDestroyed()) widget.webContents.send('account-reset', {
+    id: event.id, label: event.label, resetsAt: event.resetsAt, estimated: event.estimated,
+  });
+  broadcast();
+}
 let widget, settingsWindow, tray, source, timer, controlServer, library, desktopMonitor, stopAuthWatch, authRefreshTimer;
 let followRegistered = null, followLaunchGeneration = 0, refreshGeneration = 0;
 const followSupported = process.platform === 'win32' && app.isPackaged && !demoMode;
@@ -33,18 +46,119 @@ let windowMode = null;
 let widgetManuallyHidden = false;
 let lastCorner = null;
 let visualMotion = null, poseTimer = null, poseResume = null, poseEpoch = 0;
+let cornerPeekPreview = null, appearancePreview = null, appearancePreviewOrigin = null;
 function save() { writeSettings(settingsFile, settings); }
 function state() {
   const characters = library.list();
   const active = characters.find(item => item.id === settings.activeCharacterId && item.available) || characters.find(item => item.id === library.defaultId);
   const dock = cornerDockState();
-  return { settings, snapshot, demo: demoMode, version: app.getVersion(), characters, followSupported, followError, windowContainment: windowModeState(), cornerDock: dock, visualPose: visualPoseState(dock),
-    activeCharacterId: active.id, characterUrl: active.url, characterName: active.name };
+  return { settings, settingsRevision, snapshot, demo: demoMode, version: app.getVersion(), characters, followSupported, followError, windowContainment: windowModeState(), cornerDock: dock, visualPose: visualPoseState(dock),
+    activeCharacterId: active.id, characterUrl: active.url, characterName: active.name, accountManagement: accountManagement() };
 }
 function broadcast() {
   for (const win of [widget, settingsWindow]) if (win && !win.isDestroyed()) win.webContents.send('state', state());
 }
-function dimensions() { return widgetDimensions(settings.scale); }
+function broadcastWidgetState() {
+  if (widget && !widget.isDestroyed()) widget.webContents.send('state', state());
+}
+function effectivePeekSettings() {
+  return settings.peekAtCorners && cornerPeekPreview ? { ...settings, ...cornerPeekPreview } : settings;
+}
+function effectiveAppearanceSettings() {
+  return appearancePreview ? { ...settings, ...appearancePreview } : settings;
+}
+function appearanceBounds(origin, size = dimensions()) {
+  const area = screen.getDisplayMatching(origin.bounds).workArea;
+  const position = origin.corner ? {
+    x: origin.corner === 'left' ? area.x : area.x + area.width - size.width,
+    y: area.y + area.height - size.height,
+  } : origin.bounds;
+  return { ...constrainPosition({ ...position, ...size }, area), ...size };
+}
+function captureAppearanceOrigin() {
+  const contained = windowMode?.enabled === true;
+  const bounds = { ...(contained ? windowMode.getBounds() : widget.getBounds()), ...dimensions() };
+  const area = contained ? windowMode.getArea() : screen.getDisplayMatching(bounds).workArea;
+  return { bounds, contained, corner: area ? bottomCorner(bounds, area) : null };
+}
+function applyAppearanceGeometry(origin, resize = true) {
+  if (!widget || widget.isDestroyed()) return;
+  widget.setOpacity(effectiveAppearanceSettings().opacity);
+  if (!resize) return;
+  // Preserve a held world point while the native surface takes its new size.
+  // Normal idle resize uses the first real bounds, never a previous preview.
+  if (visualMotion?.visual) {
+    const area = poseArea(visualMotion.visual);
+    if (area) {
+      const projected = projectVisualBounds({ ...visualMotion.visual, ...dimensions() }, area);
+      visualMotion.offset = projected.offset;
+      if (!windowMode?.moveTo(projected.bounds.x, projected.bounds.y)) widget.setBounds(projected.bounds);
+    }
+  } else if (windowMode?.enabled) {
+    // The containment controller already keeps a normalized host anchor and
+    // projects preferred DIP dimensions through its native child provider.
+    windowMode.refreshSize();
+  } else {
+    const bounds = appearanceBounds(origin), current = widget.getBounds();
+    if (['x', 'y', 'width', 'height'].some(key => current[key] !== bounds[key])) widget.setBounds(bounds);
+  }
+}
+function clearPreviews(notify = true, restore = true) {
+  const origin = appearancePreviewOrigin, changed = !!cornerPeekPreview || !!appearancePreview;
+  cornerPeekPreview = null; appearancePreview = null; appearancePreviewOrigin = null;
+  if (origin && restore) applyAppearanceGeometry(origin);
+  if (notify && changed) broadcastWidgetState();
+  return origin;
+}
+function previewAppearance(patch) {
+  if (patch === null) { clearPreviews(); return state(); }
+  const limits = { scale: [0.6, 1.6], opacity: [0.35, 1] };
+  const keys = patch && typeof patch === 'object' && !Array.isArray(patch) ? Reflect.ownKeys(patch) : [];
+  if (!keys.length || keys.some(key => !Object.hasOwn(limits, key) || typeof patch[key] !== 'number' ||
+    !Number.isFinite(patch[key]) || patch[key] < limits[key][0] || patch[key] > limits[key][1])) {
+    throw new TypeError('无效的外观预览参数');
+  }
+  const before = dimensions();
+  if (!appearancePreviewOrigin) appearancePreviewOrigin = captureAppearanceOrigin();
+  appearancePreview = { ...appearancePreview, ...patch };
+  const after = dimensions(), resized = before.width !== after.width || before.height !== after.height;
+  applyAppearanceGeometry(appearancePreviewOrigin, resized);
+  broadcastWidgetState(); return state();
+}
+function previewCornerPeek(patch) {
+  if (patch === null) { clearPreviews(); return state(); }
+  if (patch !== null) {
+    const keys = patch && typeof patch === 'object' && !Array.isArray(patch) ? Reflect.ownKeys(patch) : [];
+    if (!keys.length || keys.some(key => !['peekSidePercent', 'peekBottomPercent'].includes(key) ||
+      typeof patch[key] !== 'number' || !Number.isFinite(patch[key]) || !Number.isInteger(patch[key]) || patch[key] < 0 || patch[key] > 200)) {
+      throw new TypeError('无效的底角预览参数');
+    }
+  }
+  // This synchronous overlay never changes preferences, native bounds or timers.
+  // The settings renderer serializes previews before commit/cancel, so a late
+  // promise result cannot reapply an earlier draft after this overlay is cleared.
+  cornerPeekPreview = settings.peekAtCorners && patch !== null ? { ...cornerPeekPreview, ...patch } : null;
+  broadcastWidgetState();
+  return state();
+}
+function saveDraggedPosition(position, area) {
+  let saved = position;
+  if (appearancePreview) {
+    const size = widgetDimensions(settings.scale), corner = bottomCorner({ ...position, ...dimensions() }, area);
+    const target = corner ? { x: corner === 'left' ? area.x : area.x + area.width - size.width,
+      y: area.y + area.height - size.height } : position;
+    saved = snapBounds({ ...target, ...size }, area);
+    if (appearancePreviewOrigin && !windowMode?.enabled) {
+      // A real drag is user intent. Its saved-size destination supersedes the
+      // original preview anchor, without recording temporary preview bounds.
+      appearancePreviewOrigin.bounds = { x: saved.x, y: saved.y, ...size };
+      appearancePreviewOrigin.corner = bottomCorner(appearancePreviewOrigin.bounds, area);
+    }
+  }
+  if (!windowMode?.enabled) settings.position = { x: saved.x, y: saved.y };
+  settings.mirror = saved.mirror; save();
+}
+function dimensions() { return widgetDimensions(effectiveAppearanceSettings().scale); }
 function cornerDockState() {
   if (!widget || widget.isDestroyed()) return { corner: null, peeking: false };
   const contained = windowMode?.enabled;
@@ -56,7 +170,7 @@ function cornerDockState() {
   return { corner, peeking: !!corner && settings.peekAtCorners && !drag?.moved && !visualMotion };
 }
 function visualPoseState(dock = cornerDockState()) {
-  return { offset: visualMotion ? { ...visualMotion.offset } : cornerPeekOffset(dock.peeking ? dock.corner : null, dimensions()), moving: !!visualMotion };
+  return { offset: visualMotion ? { ...visualMotion.offset } : cornerPeekOffset(dock.peeking ? dock.corner : null, dimensions(), effectivePeekSettings()), moving: !!visualMotion };
 }
 function cancelPose(clear = false) {
   poseEpoch++; clearTimeout(poseTimer); poseTimer = null; poseResume = null;
@@ -91,7 +205,7 @@ function settleVisualPose(from, canonical, area) {
   const epoch = poseEpoch, size = dimensions(), started = Date.now();
   const anchor = { x: area.width > size.width ? (canonical.x - area.x) / (area.width - size.width) : 1,
     y: area.height > size.height ? (canonical.y - area.y) / (area.height - size.height) : 1 };
-  const offset = cornerPeekOffset(settings.peekAtCorners ? bottomCorner({ ...canonical, ...size }, area) : null, size);
+  const offset = cornerPeekOffset(settings.peekAtCorners ? bottomCorner({ ...canonical, ...size }, area) : null, size, effectivePeekSettings());
   const target = { x: canonical.x + offset.x, y: canonical.y + offset.y };
   if (Math.hypot(target.x - from.x, target.y - from.y) < 0.01) {
     visualMotion = null; setWidgetPosition(canonical.x, canonical.y); broadcast(); return;
@@ -101,9 +215,10 @@ function settleVisualPose(from, canonical, area) {
     const liveArea = poseArea(target);
     // Keep the composed child unchanged while its host minimizes or is unknown.
     if (!liveArea) { poseTimer = null; poseResume = frame; return; }
+    const size = dimensions();
     const position = { x: Math.round(liveArea.x + anchor.x * (liveArea.width - size.width)),
       y: Math.round(liveArea.y + anchor.y * (liveArea.height - size.height)) };
-    const inset = cornerPeekOffset(settings.peekAtCorners ? bottomCorner({ ...position, ...size }, liveArea) : null, size);
+    const inset = cornerPeekOffset(settings.peekAtCorners ? bottomCorner({ ...position, ...size }, liveArea) : null, size, effectivePeekSettings());
     const goal = { x: position.x + inset.x, y: position.y + inset.y };
     const start = { x: from.x + liveArea.x - area.x, y: from.y + liveArea.y - area.y };
     const progress = Math.min(1, Math.max(0, (Date.now() - started) / 180)), eased = 1 - (1 - progress) ** 3;
@@ -121,7 +236,7 @@ function windowModeChanged() {
   syncMirror(); broadcast();
 }
 function syncMirror() {
-  if (!widget || widget.isDestroyed()) return false;
+  if (appearancePreview || !widget || widget.isDestroyed()) return false;
   const contained = windowMode?.enabled;
   const bounds = { ...(contained ? windowMode.getBounds() : widget.getBounds()), ...dimensions() };
   const area = contained ? windowMode.getArea() : screen.getDisplayMatching(bounds).workArea;
@@ -136,7 +251,7 @@ function windowModeState() {
     visible: false, reason: settings.stayInCodexWindow ? 'unknown' : 'disabled' };
 }
 function syncWindowMode() {
-  if (!windowMode && settings.stayInCodexWindow) {
+  if (!windowMode) {
     const { CodexWindowMode } = require('./window-mode.cjs');
     windowMode = new CodexWindowMode({ widget, screen, getSize: dimensions, onStatus: windowModeChanged, onRecreate: rebuildWidget });
     if (widgetManuallyHidden) windowMode.hide();
@@ -150,8 +265,7 @@ function setWidgetPosition(x, y) {
   if (syncMirror()) broadcast();
 }
 function applyWindowSettings() {
-  widget.setAlwaysOnTop(settings.stayInCodexWindow ? false : settings.alwaysOnTop, 'floating');
-  widget.setOpacity(settings.opacity);
+  widget.setOpacity(effectiveAppearanceSettings().opacity);
   widget.setIgnoreMouseEvents(settings.clickThrough, { forward: true });
   syncWindowMode();
   if (windowMode?.enabled) windowMode.refreshSize();
@@ -244,12 +358,27 @@ function syncDesktopFollow() {
   }
 }
 function updateSettings(patch) {
+  const appearanceOrigin = clearPreviews(false, false);
   cancelPose(true);
   if (drag?.poseMode) drag = null;
   // File paths and window positions are only set by trusted native actions.
   const { characterPath, activeCharacterId, position, ...safe } = patch || {};
+  const previous = settings, previousRevision = settingsRevision;
   settings = sanitize({ ...settings, ...safe });
-  save(); applyWindowSettings(); schedule(); broadcast();
+  if (appearanceOrigin && !appearanceOrigin.contained && !settings.stayInCodexWindow && Object.hasOwn(safe, 'scale')) {
+    const bounds = appearanceBounds(appearanceOrigin, widgetDimensions(settings.scale));
+    settings.position = { x: bounds.x, y: bounds.y };
+    settings.mirror = mirrorForBounds(bounds, screen.getDisplayMatching(bounds).workArea);
+  }
+  settingsRevision++;
+  try { save(); }
+  catch (error) {
+    settings = previous; settingsRevision = previousRevision;
+    if (appearanceOrigin) applyAppearanceGeometry(appearanceOrigin);
+    broadcast(); throw error;
+  }
+  if (appearanceOrigin) applyAppearanceGeometry(appearanceOrigin);
+  applyWindowSettings(); schedule(); broadcast();
   return state();
 }
 function updateTray() {
@@ -340,6 +469,21 @@ async function refresh() {
     try {
       const next = demoMode ? require('./demo.cjs')() : await source.read();
       if (generation !== refreshGeneration || next.invalidated || quitting) return snapshot;
+      if (!demoMode && accountRegistry && next.status === 'live' && !next.error && source.accountIdentity) {
+        // A fresh quota response may already contain the next window; deliver
+        // the previous recorded deadline before replacing that observation.
+        const deadlinesPersisted = accountAlarm?.check() !== false;
+        try {
+          if (deadlinesPersisted) {
+            const presentation = source.accountPresentation;
+            accountRegistry.observe({ key: source.accountIdentity, planType: next.account?.planType, buckets: next.buckets,
+              presentation: presentation?.key === source.accountIdentity && Number.isSafeInteger(presentation.generation) && presentation.generation === next.generation
+                ? presentation : null });
+            accountStorageError = false;
+          } else accountStorageError = true;
+        } catch { accountStorageError = true; }
+        accountAlarm?.check();
+      }
       snapshot = next.error && !next.clearPrevious && !next.accountChanged && !next.buckets?.length && snapshot.buckets?.length
         ? { ...next, buckets: snapshot.buckets, updatedAt: snapshot.updatedAt, stale: true }
         : next;
@@ -361,13 +505,20 @@ function authChanged() {
 function schedule() { clearInterval(timer); timer = setInterval(() => refresh(), settings.refreshSeconds * 1000); }
 function openSettings() {
   if (settingsWindow && !settingsWindow.isDestroyed()) { settingsWindow.show(); settingsWindow.focus(); return; }
-  settingsWindow = new BrowserWindow({ width: 550, height: 760, minWidth: 470, minHeight: 520,
+  const created = new BrowserWindow({ width: 550, height: 760, minWidth: 470, minHeight: 520,
     icon: windowIcon,
     title: 'Codex 女仆 · 设置', backgroundColor: '#f5faf8', autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
-  secureWindow(settingsWindow);
-  settingsWindow.loadFile(path.join(__dirname, 'settings.html'));
-  settingsWindow.on('closed', () => { settingsWindow = null; });
+  settingsWindow = created;
+  secureWindow(created);
+  const release = () => {
+    if (settingsWindow !== created) return;
+    settingsWindow = null;
+    clearPreviews();
+  };
+  created.once('closed', release);
+  created.webContents.once('destroyed', release);
+  created.loadFile(path.join(__dirname, 'settings.html'));
 }
 function rebuildWidget() {
   if (quitting) return;
@@ -415,6 +566,47 @@ function action(name) {
     default: throw new Error('未知操作');
   }
 }
+let conversationServices;
+function passiveConversationServices() {
+  if (!conversationServices) {
+    const { ConversationReader } = require('./conversation-reader.cjs');
+    const { ConversationStatus } = require('./conversation-status.cjs');
+    const { ActiveConversationDetector } = require('./active-conversation.cjs');
+    const { ConversationTarget } = require('./conversation-target.cjs');
+    const { ProjectLabels } = require('./project-labels.cjs');
+    const codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
+    const reader = new ConversationReader({
+      codexHome,
+      selectionFile: path.join(dataDir, 'conversation-selection.json'),
+    });
+    const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    const logRoots = process.platform === 'darwin' ? [path.join(os.homedir(), 'Library', 'Logs', 'com.openai.codex')]
+      : [path.join(local, 'Codex', 'Logs'), path.join(local, 'Packages', 'OpenAI.Codex_2p2nqsd0c76g0', 'LocalCache', 'Local', 'Codex', 'Logs')];
+    let fallbackInventory, fallbackObservedAt = 0;
+    const detector = new ActiveConversationDetector({ logRoots, getProcesses: async () => {
+      let inventory = readDesktopObservation({ dataDir, executable: process.execPath, version: app.getVersion() });
+      if (!inventory.known) {
+        if (!fallbackInventory?.known || Date.now() - fallbackObservedAt < 0 || Date.now() - fallbackObservedAt > 1500) {
+          fallbackInventory = await require('./codex-desktop.cjs').queryCodexDesktop({ timeout: 1000 });
+          fallbackObservedAt = Date.now();
+        }
+        inventory = fallbackInventory;
+      }
+      if (inventory.known && inventory.roots.some(({ pid }) => { try { process.kill(pid, 0); return false; } catch { return true; } })) {
+        return { known: false, roots: [] };
+      }
+      return inventory;
+    } });
+    const target = new ConversationTarget({ reader, detector, modeFile: path.join(dataDir, 'conversation-mode.json') });
+    const projectLabels = new ProjectLabels({ codexHome });
+    conversationServices = { reader, target, status: new ConversationStatus({
+      resolveSelected: () => target.resolve(), readContext: selection => reader.readContext(selection),
+      readCompactions: selection => reader.readCompactions(selection),
+      readProject: (cwd, threadId) => projectLabels.read(cwd, threadId),
+    }) };
+  }
+  return conversationServices;
+}
 function setupIpc() {
   const trusted = event => event.sender === widget?.webContents || event.sender === settingsWindow?.webContents;
   const handle = (name, callback) => ipcMain.handle(name, (event, ...args) => {
@@ -423,9 +615,39 @@ function setupIpc() {
   });
   handle('state', () => state());
   handle('refresh', () => refresh());
+  handle('list-conversations', () => passiveConversationServices().target.list());
+  handle('select-conversation', async (_event, id) => {
+    const services = passiveConversationServices();
+    services.status.invalidate();
+    const result = await services.target.select(id);
+    services.status.invalidate();
+    return result;
+  });
+  handle('inspect-conversation', () => passiveConversationServices().status.read());
+  handle('list-accounts', () => accountManagement());
+  handle('rename-account', (_event, id, label) => {
+    if (demoMode || !accountRegistry) return accountManagement();
+    accountRegistry.rename(id, label);
+    broadcast(); return accountManagement();
+  });
+  handle('remove-account', (_event, id) => {
+    if (demoMode || !accountRegistry) return accountManagement();
+    accountRegistry.remove(id);
+    accountAlarm?.check(); broadcast(); return accountManagement();
+  });
   handle('settings', (event, patch) => {
     if (event.sender !== settingsWindow?.webContents && event.sender !== widget.webContents) throw new Error('无效窗口');
     return updateSettings(patch);
+  });
+  handle('preview-appearance', (event, patch) => {
+    if (!settingsWindow || settingsWindow.isDestroyed() || event.sender !== settingsWindow.webContents ||
+      (!event.senderFrame || event.senderFrame !== settingsWindow.webContents.mainFrame)) throw new Error('无效窗口');
+    return previewAppearance(patch);
+  });
+  handle('preview-corner-peek', (event, patch) => {
+    if (!settingsWindow || settingsWindow.isDestroyed() || event.sender !== settingsWindow.webContents ||
+      (!event.senderFrame || event.senderFrame !== settingsWindow.webContents.mainFrame)) throw new Error('无效窗口');
+    return previewCornerPeek(patch);
   });
   handle('action', (_event, name) => action(name));
   handle('import-characters', async () => {
@@ -478,8 +700,7 @@ function setupIpc() {
       const area = poseArea(ended.visual);
       if (!area) { cancelPose(true); broadcast(); return; }
       const p = snapBounds({ ...ended.visual, ...dimensions() }, area);
-      if (!windowMode?.enabled) settings.position = { x: p.x, y: p.y };
-      settings.mirror = p.mirror; save();
+      saveDraggedPosition(p, area);
       settleVisualPose(ended.visual, p, area);
       return;
     }
@@ -487,9 +708,8 @@ function setupIpc() {
     const area = windowMode?.enabled ? windowMode.getArea() : screen.getDisplayMatching(bounds).workArea;
     if (!area) return;
     const p = snapBounds(bounds, area);
-    if (!windowMode?.enabled) settings.position = { x: p.x, y: p.y };
-    settings.mirror = p.mirror;
-    setWidgetPosition(p.x, p.y); save(); broadcast();
+    saveDraggedPosition(p, area);
+    setWidgetPosition(p.x, p.y); broadcast();
   });
   ipcMain.on('pointer-region', (event, inside) => {
     if (event.sender === widget.webContents && !settings.clickThrough && !drag) widget.setIgnoreMouseEvents(!inside, { forward: true });
@@ -527,7 +747,17 @@ else {
       if (size.width > 16384 || size.height > 16384 || size.width * size.height > 64000000) throw new Error('图片尺寸过大，请先缩小图片后导入。');
     } });
     if (!library.get(settings.activeCharacterId)?.available) settings.activeCharacterId = library.defaultId;
-    source = new CodexDataSource();
+    // The user explicitly authorized this local read-only profile lookup.
+    // Source/demo runs do not read credentials for nickname metadata.
+    source = new CodexDataSource({ profileMetadata: app.isPackaged && !demoMode,
+      profileFetch: app.isPackaged && !demoMode ? (url, options) => net.fetch(url, options) : undefined });
+    if (!demoMode) {
+      const { AccountRegistry } = require('./account-registry.cjs');
+      const { AccountAlarm } = require('./account-alarm.cjs');
+      accountRegistry = new AccountRegistry({ file: path.join(dataDir, 'account-registry.json') });
+      accountAlarm = new AccountAlarm({ registry: accountRegistry, enabled: () => settings.accountResetAlerts !== false,
+        notify: notifyAccountReset });
+    }
     if (!demoMode) stopAuthWatch = watchAuthChanges(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), authChanged);
     setupIpc(); await createWidget();
     if (settings.characterPath && fs.existsSync(settings.characterPath)) {
@@ -548,12 +778,13 @@ else {
     globalShortcut.register('Control+Alt+M', () => widget.isVisible() ? hide() : show());
     globalShortcut.register('Control+Alt+Q', () => action('bounce'));
     globalShortcut.register('Control+Alt+Shift+M', () => updateSettings({ clickThrough: !settings.clickThrough }));
-    await startControl(); show(); schedule(); refresh();
+    await startControl(); show(); schedule(); refresh(); accountAlarm?.start();
   }).catch(error => { dialog.showErrorBox('Codex 女仆启动失败', error.message); app.quit(); });
 }
 app.on('window-all-closed', () => {});
 app.on('before-quit', () => {
   cancelPose(true);
+  accountAlarm?.close();
   quitting = true; clearInterval(timer); clearTimeout(authRefreshTimer); windowMode?.close(); stopAuthWatch?.(); desktopMonitor?.stop(); globalShortcut.unregisterAll(); source?.close(); controlServer?.close();
   if (ownsControl) try { fs.unlinkSync(path.join(dataDir, 'control.json')); } catch {}
 });

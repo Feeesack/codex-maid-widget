@@ -12,7 +12,7 @@ const { run, syncFollowStartup } = require('../src/desktop-watcher.cjs');
 function fixture(t) {
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maid-mac-follow-'));
   t.after(() => fs.rmSync(homeDir, { recursive: true, force: true }));
-  return { homeDir, uid: 501, executable: '/Applications/女仆 & Codex.app/Contents/MacOS/Codex Maid', dataDir: path.join(homeDir, '.codex-maid-widget') };
+  return { homeDir, uid: 501, executable: '/Applications/女仆 & Codex.app/Contents/MacOS/Codex Maid', dataDir: path.join(homeDir, '.codex-maid-widget'), env: {} };
 }
 function fakeLaunchctl({ loaded = false, disabled = false, fail } = {}) {
   const calls = [];
@@ -43,7 +43,7 @@ function writePlist(options) {
 test('macOS property list preserves literal paths and configures one GUI-session watcher at login', () => {
   const executable = '/Applications/女仆 <&> "quoted" $(launch)\' .app/Contents/MacOS/Maid';
   const dataDir = '/Users/test/图案 & 中文';
-  const output = buildLaunchAgentPlist({ executable, dataDir });
+  const output = buildLaunchAgentPlist({ executable, dataDir, env: {} });
   assert.match(output, /<key>RunAtLoad<\/key><true\/>/);
   assert.match(output, /<key>LimitLoadToSessionType<\/key><string>Aqua<\/string>/);
   assert.doesNotMatch(output, /KeepAlive|sh -c|osascript|--follow-request|openAtLogin/);
@@ -51,6 +51,26 @@ test('macOS property list preserves literal paths and configures one GUI-session
   const strings = [...output.matchAll(/<string>([\s\S]*?)<\/string>/g)].map(match => match[1]
     .replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&'));
   assert.deepEqual(strings.slice(0, 4), [MAC_WATCHER_LABEL, executable, '--watch-codex', '--maid-home=' + dataDir]);
+});
+
+test('macOS login and transient requests preserve only explicit profile and CLI path overrides', async t => {
+  const options = fixture(t);
+  const codexHome = path.join(options.homeDir,'中文 profile & data');
+  const cli = path.join(options.homeDir,'tools','Codex 自定义');
+  const env = {CODEX_HOME:codexHome,CODEX_MAID_CODEX_PATH:cli,PATH:'/private-do-not-persist',TOKEN:'do-not-persist'};
+  const plist = buildLaunchAgentPlist({...options,env});
+  assert.ok(plist.includes('--codex-home=' + codexHome.replaceAll('&','&amp;')));
+  assert.ok(plist.includes('--codex-cli=' + cli));
+  assert.doesNotMatch(plist,/TOKEN|private-do-not-persist|do-not-persist|EnvironmentVariables/);
+  const ctl = fakeLaunchctl();
+  await launchMacWatcher({...options,env,execFile:ctl.execFile});
+  assert.equal(fs.readFileSync(launchAgentFile(options.homeDir),'utf8'),plist);
+  assert.deepEqual(await syncMacFollowStartup({...options,env,enabled:true,execFile:ctl.execFile}),{loginStartupEnabled:true,loginStartupError:''});
+  assert.deepEqual(await syncMacFollowStartup({...options,env:{},enabled:true,execFile:ctl.execFile}),{loginStartupEnabled:false,loginStartupError:'startup-disabled'});
+  let transient;
+  await launchMacWatcher({...options,env,enabled:false,args:['--watch-codex','--maid-home='+options.dataDir],
+    spawn(_file,args) {transient=args;const child=new EventEmitter();child.unref=()=>{};queueMicrotask(()=>child.emit('spawn'));return child;}});
+  assert.deepEqual(transient,['--watch-codex','--maid-home='+options.dataDir,'--codex-home='+codexHome,'--codex-cli='+cli]);
 });
 
 test('macOS dispatch validates property list values before touching launchctl or files', async t => {

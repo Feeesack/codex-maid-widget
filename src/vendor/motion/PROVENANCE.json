@@ -1,0 +1,23 @@
+{
+  "name": "Motion vanilla mini",
+  "package": "framer-motion",
+  "version": "14.4.0",
+  "repository": "https://github.com/motiondivision/motion",
+  "commit": "bcdd7f5377ffea0913a41894c177c0e6da473fd9",
+  "upstreamFile": "dist/dom-mini.js",
+  "download": "https://registry.npmjs.org/framer-motion/-/framer-motion-14.4.0.tgz",
+  "npmIntegrity": "sha512-HtO1fxord2rnXYRyr1laG4uY7+OtgwDc9Szcg1wlMq/LF7BO3/S7a+KEo691U7pSi+i0ueRuRqaD1UaLEmZHuQ==",
+  "sha256": "79c06ff30e72bde4f4275066b1d2400bf5f29e045293ee5f23a64c6388e8fa1a",
+  "bytes": 12300,
+  "license": "MIT",
+  "licenseFile": "LICENSE.md",
+  "licenseSha256": "5ff46083b88563822b0560dd6221ab89d2f74bc97a52d4c97a75020fd62c6f32",
+  "officialEntry": "motion/mini re-exports framer-motion/dom/mini",
+  "officialBuild": "https://github.com/motiondivision/motion/blob/bcdd7f5377ffea0913a41894c177c0e6da473fd9/packages/framer-motion/rollup.config.mjs",
+  "docs": "https://motion.dev/docs/animate",
+  "checkedAt": "2026-10-19T10:02:50.2850557Z",
+  "stars": 34344,
+  "starsSource": "https://api.github.com/repos/motiondivision/motion",
+  "upstreamBytesUnmodified": true,
+  "runtimeNetworkRequired": false
+}

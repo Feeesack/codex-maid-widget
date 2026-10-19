@@ -4,20 +4,32 @@
 
 A small desktop companion for Codex. It shows your remaining quota and local token usage, and gives a little “duang” when a turn finishes. If you've wandered off to your phone, that might be your cue to come back.
 
-<img src="assets/icons/app-128.png" width="96" alt="Codex Maid Widget application icon">
+<img src="assets/icons/app-128.png" width="72" alt="Codex Maid Widget application icon">
 
-<img src="docs/screenshots/widget-dragon-demo.png" width="228" alt="Widget preview with explicitly marked demo quota">
+## See it in action
+
+Screenshots show the current Windows interface with **synthetic demo data**. Account names, conversation names, quota values and repository counts are examples. Click an image to view it at full size.
+
+| Quota and the new dragon girl | Conversation context and Git | Multiple account countdowns |
+| --- | --- | --- |
+| [<img src="docs/screenshots/release-0.3.48-quota.png" width="270" alt="New dragon girl with quota and reset countdown, demo data">](docs/screenshots/release-0.3.48-quota.png) | [<img src="docs/screenshots/release-0.3.48-conversation.png" width="270" alt="Context usage, uncommitted files and compaction count, demo data">](docs/screenshots/release-0.3.48-conversation.png) | [<img src="docs/screenshots/release-0.3.48-accounts.png" width="270" alt="Separate reset countdowns for fictional accounts">](docs/screenshots/release-0.3.48-accounts.png) |
+
+| Arrange and hide bubble pages | Appearance, corner peeking and audio | Built-in and imported characters |
+| --- | --- | --- |
+| [<img src="docs/screenshots/release-0.3.48-pages.png" width="270" alt="Bubble-page order, visibility and startup default settings">](docs/screenshots/release-0.3.48-pages.png) | [<img src="docs/screenshots/release-0.3.48-appearance.png" width="270" alt="Appearance settings with independent bottom and side hiding sliders and sound selection">](docs/screenshots/release-0.3.48-appearance.png) | [<img src="docs/screenshots/release-0.3.48-characters.png" width="270" alt="Character library with the two new dragon-girl poses and original characters">](docs/screenshots/release-0.3.48-characters.png) |
 
 ## Download and install
 
-Windows and macOS share release version **v0.3.21**.
+Windows and macOS share version **v0.3.48**. This checkout is preparing that release; the links below are its intended download targets and become available after publication. Packages already published are listed on [Releases](https://github.com/Feeesack/codex-maid-widget/releases).
 
 | Platform | Installer |
 | --- | --- |
-| Windows x64 | [Download Windows installer (.exe)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.21/Codex-Maid-Widget-0.3.21-windows-x64-setup.exe) |
-| macOS 13+, Apple Silicon and Intel | [Download universal Mac installer (.pkg)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.21/Codex-Maid-Widget-0.3.21-macOS-universal.pkg) |
+| Windows x64 | [Download Windows installer (.exe)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.48/Codex-Maid-Widget-0.3.48-windows-x64-setup.exe) |
+| macOS 13+, Apple Silicon and Intel | [Download universal Mac installer (.pkg)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.48/Codex-Maid-Widget-0.3.48-macOS-universal.pkg) |
 
 Release notes and SHA-256 checksums are on the [Releases](https://github.com/Feeesack/codex-maid-widget/releases) page. The installers include the runtime and optional local Codex plugin, so you don't need to install Node.js or npm, or download the source.
+
+The [0.3.48 release notes](docs/releases/0.3.48.md) bring together the changes since 0.3.21: paired press/release interactions; five sound choices including DSH Duck; multi-account reset reminders; two new dragon-girl poses; conversation context, compaction and Git status; Motion mirroring; Hugeicons controls; page ordering and visibility; live appearance and corner-hiding previews; and Windows installation-path fixes. Sound sources and their separate license scopes are documented in [audio provenance](docs/interaction-audio.md).
 
 1. Install and sign in to the official Codex desktop app to see real account quota.
 2. Run the installer, then open Codex Maid Widget from the Windows Start menu or macOS Applications folder.
@@ -31,15 +43,20 @@ The installers don't yet have developer distribution certificates. The Mac app i
 
 - Quota percentages and reset countdowns, with support for multiple quota buckets. Updates happen automatically, or when you click refresh.
 - Local token totals for today, this week, and the most recently completed turn.
-- A bounce and optional short sound when the widget sees a newly completed turn: “duang.” You can also click the character or use a shortcut to trigger it yourself. It reacts to these events; it isn't a timed reminder.
+- A bounce and optional short sound when the widget sees a newly completed turn: “duang.” You can also click the character or use a shortcut to trigger it yourself.
 - Automatic startup alongside Codex. A login helper waits in the background, opens the widget when Codex starts, and closes it after Codex fully quits. You can turn this off in settings.
-- Two built-in characters, a local image library, custom phrases, and bubble colors that match the character.
+- Four built-in characters, a local image library, custom phrases, and bubble colors that match the character.
 - Dragging with a fixed character size, bottom-corner snapping, mirrored layouts, size and opacity settings, always-on-top, click-through, and remembered window placement. The character turns as you drag it across the screen's midpoint.
 - Optional display inside the Codex window. On Windows, the character is attached to the main window and moves, minimizes and restores with it. On macOS, a separate widget window follows Codex's bounds and visibility.
 - Optional head peeking at the two bottom corners. Drag inward to reveal the whole character; release near a bottom corner to let it settle back.
 - Bubble auto-collapse after 3, 5, 10, 30 or 60 seconds, or keep it visible. The default is 5 seconds; saved choices are retained on upgrade.
-- Breathing, bouncing, rolling numbers, and a shimmer on quota values. Sound is optional, and animations respect the system's reduced-motion setting.
+- Always-on breathing, bouncing, rolling numbers, and a shimmer on quota values. Sound is optional.
 - An optional local MCP plugin so Codex can read widget status, refresh quota, show or hide the widget, trigger a bounce, or open settings.
+- The conversation page shows the selected conversation's name and project, context usage, Git uncommitted-file count and recorded compaction count. Turn to the page or click its bubble to read; there is no extra conversation polling. Automatic detection has a manual fallback listing up to 30 recent eligible local conversations. Compaction counts combine automatic and manual operations confirmed by local checkpoints; incomplete history is marked. The Git number counts uncommitted worktree files, including untracked files, rather than commits waiting to be pushed.
+- The account page records accounts observed on this device, with profile nicknames, available workspace names and editable local aliases. Missing nicknames are explicitly marked; email addresses are not used as nicknames. Display metadata stays local and out of MCP. Each observed five-hour window has a reset progress bar and countdown. A reset reminder shows widget text, four bounces in one second and one short sound. Historical estimates require login to confirm; sound and reminders can be disabled. This is a local record of observed accounts, not an account switcher or simultaneous live connection to all accounts.
+- Press and release have separate animations and matching audio. Rapid clicks continue from the displayed pose; dragging holds the pressed pose until release. Five sound choices and a mute-aware preview are available in settings.
+- Bubble pages can be reordered, hidden and assigned a startup default. SortableJS handles card dragging, with keyboard ordering also supported. Previous/next arrows follow the configured visible order in both directions.
+- Size and opacity preview continuously while dragging. Corner-peeking settings provide independent bottom and side hiding sliders from 0% to 200%, defaulting to 50% and 100%; saved choices are retained. Motion animates mirroring, and Hugeicons supplies the toolbar and page-editor controls.
 
 Quota percentages come from the account currently signed in to Codex. Token totals add up the available session logs from **all accounts on this device**, with the week starting on Monday in local time. The widget marks missing or incomplete records. These are local usage counts, not a bill or an account total across devices.
 
@@ -49,7 +66,7 @@ Quota percentages come from the account currently signed in to Codex. Token tota
 | --- | --- |
 | Move | Drag the character or bubble |
 | Refresh | Click the bubble or refresh button |
-| Change bubble view | Click `···`: quota, today, week, last turn, phrases |
+| Change bubble view | Previous/next arrows: quota, conversation, accounts, today, week, last turn, phrases; order and visibility are configurable |
 | Bounce / interaction | Click the character or heart; press `Q` or Space while focused |
 | Settings | Gear, right-click, or tray/menu bar |
 | Show / hide | Windows `Ctrl+Alt+M`; Mac `Control+Option+M` |
@@ -84,7 +101,9 @@ Before uninstalling a connected widget, use **Disconnect Codex plugin** in the W
 
 ## Data and privacy
 
-The widget gets quota from the local Codex app-server and reads token counter events from local session and archived-session logs. Codex handles authentication. The widget doesn't read the contents of `auth.json`, ask for an API key, or send prompts to a model. It has no application analytics.
+The widget gets quota from the local Codex app-server and extracts conversation metadata and numeric counter/checkpoint events from local session and archived-session records, without exporting conversation text. It asks for no API key, sends no prompts to a model and has no application analytics.
+
+For account nicknames and workspace names, the packaged app can use existing local sign-in credentials within its main process to make read-only requests to fixed official profile endpoints. It does not refresh sign-in or store credentials in account records, logs, control responses or MCP output. Display names and aliases stay local. Profile lookup failure does not prevent quota reading.
 
 Imported images still use their filenames as the default local names. Those names, including any labels you edit, stay out of MCP tool results; tools use fixed built-in labels or “自定义形象” (custom character).
 
@@ -118,15 +137,16 @@ Windows and macOS use the same release version. The build stops if their manifes
 
 ## Testing
 
-Windows has been checked locally for installation, launch, local controls and MCP, upgrade, uninstall, dragging at fractional display scaling, and native containment. Source tests cover rendering, settings, data parsing, corner peeking, and following Codex as it starts and quits. The Mac workflow builds a universal package and checks installation, launch, MCP, and the launchd helper on Apple Silicon and Intel runners.
+Windows 0.3.48 has local runtime evidence for main-app and helper versions, non-demo quota, local controls and MCP. Automated regression covers both source trees, including rendering, settings, data parsing, interactions and path compatibility. The new Mac features have source/renderer checks performed from Windows; **0.3.48 Mac native packaging and runtime checks remain pending**. The Mac workflow can check a universal package, installation, launch, MCP and the launchd helper on Apple Silicon and Intel runners.
 
-Those automated checks can't cover every account or desktop setup. Real signed-in accounts and Mac use with multiple monitors, Spaces, Retina displays, audio, and login sessions still need broader hands-on testing.
+CI does not replace hands-on Mac acceptance for multiple monitors, Spaces, full screen, Retina, audio and login sessions. Subjective sound and animation feel, real five-hour reset reminders and Windows sign-out/sign-in also need hands-on acceptance.
 
 ## Acknowledgements and licenses
 
-- All character illustrations and app icon artwork were generated with **GPTimage2.5**. The different icon sizes and platform formats come from that artwork. Bundled project artwork is licensed under [CC BY 4.0](licenses/CC-BY-4.0.txt). If you reuse it, credit **Codex Maid Widget contributors** and link to this repository. See [asset provenance](docs/asset-provenance.md).
-- Thanks to the maintainers and contributors of [MeteorNOX/DeepSeek-Balance-Whale-Widget](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget), the DeepSeek/DSH whale widget. Its companion, speech bubble, drag-and-snap behavior, and interactions inspired this project.
-- [Yang-huai406/Codex-Whale-Public](https://github.com/Yang-huai406/Codex-Whale-Public) was another reference for a Codex desktop companion. The visibility recovery module adapts its MIT-licensed implementation and retains the license notice. The interface, artwork and quota reader are separate; neither reference project's whale artwork, animations nor audio is redistributed here.
+- The original mint maid, lilac dragon maid and app icon artwork were generated with **GPTimage2.5**, as stated by the project author. These materials use [CC BY 4.0](licenses/CC-BY-4.0.txt); credit **Codex Maid Widget contributors** and link to this repository when reusing them. The user supplied the two 小龙娘 images and authorized their names and built-in use in this project; no additional copyright or reuse license is asserted for them. See [asset provenance](docs/asset-provenance.md) and [artwork scope](ARTWORK_LICENSE.md).
+- Thanks to the maintainers and contributors of [MeteorNOX/DeepSeek-Balance-Whale-Widget](https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget), the DeepSeek/DSH whale widget. Its companion, speech bubble, drag-and-snap behavior and interactions inspired this project. The new dragon-girl expressions take inspiration from its round cheeks, large eyes and slightly lowered brows while keeping this project's GPT dragon-girl features. DSH Duck sound sources and their separate rights scope are recorded in [audio provenance](docs/interaction-audio.md).
+- [Yang-huai406/Codex-Whale-Public](https://github.com/Yang-huai406/Codex-Whale-Public) was another reference for a Codex desktop companion. The visibility recovery module adapts its MIT-licensed implementation and retains the license notice. The interface, artwork and quota reader are separate.
+- [Hugeicons](https://github.com/hugeicons/hugeicons), [Motion](https://github.com/motiondivision/motion) and [SortableJS](https://github.com/SortableJS/Sortable) provide the free UI icon subset, mirror animation and page ordering. Pinned assets and their MIT notices are bundled locally. Interaction audio also includes CC0 [Kenney](https://kenney.nl/assets/interface-sounds) samples and the project's synthesized chirp; see [audio provenance](docs/interaction-audio.md).
 - This app uses [Electron](https://www.electronjs.org/), [Node.js](https://nodejs.org/), [Inno Setup](https://jrsoftware.org/isinfo.php), and the Codex app-server and plugin interfaces. Their licenses remain with their respective authors.
 - The bundled OpenAI mark comes from the [official OpenAI Agents repository](https://github.com/openai/openai-agents-python/blob/main/docs/assets/logo.svg). It is not covered by this project's artwork license, and its inclusion grants no trademark rights or endorsement.
 

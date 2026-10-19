@@ -69,6 +69,7 @@ function harness(variant, options = {}) {
     require(name) {
       if (name === './window-containment.cjs') return require(path.join(variant.root, 'src/window-containment.cjs'));
       if (name === './window-visibility.cjs') return pure.exports;
+      if (name === './window-topmost.cjs') return require(path.join(variant.root, 'src/window-topmost.cjs'));
       if (name === './codex-window.cjs') return { CodexWindowProvider: class { constructor() { throw new Error('Native provider must remain injected'); } }, nativeHandleId: value => String(value) };
       throw new Error('Unexpected adapter dependency: ' + name);
     },
@@ -80,7 +81,12 @@ function harness(variant, options = {}) {
         return { x: value.x / 1.5, y: value.y / 1.5, width: value.width / 1.5, height: value.height / 1.5 };
       },
       dipToScreenRect(_window, value) { return { x: value.x * 1.5, y: value.y * 1.5, width: value.width * 1.5, height: value.height * 1.5 }; },
-    }, getSize: () => ({ ...size }), providerFactory: factory, intervalMs: 100, staleAfterMs: 50,
+    }, getSize: () => ({ ...size }), providerFactory: factory,
+    topmostProviderFactory: () => ({ async setTopmost(_handle, value) {
+      calls.push({ kind: 'native-top', value });
+      return options.topmost?.(value) ?? { known: true, ok: true, topmost: value };
+    }, close() {} }),
+    intervalMs: 100, staleAfterMs: 50,
     onStatus() { statusChanges++; }, onRecreate() { recreations++; },
   });
   if (options.rendererReady !== false) { webContents.emit('did-finish-load'); calls.length = 0; }
@@ -164,7 +170,7 @@ for (const variant of variants) {
     const pending = deferred(), h = harness(variant, { answers: [[pending.promise]] }); t.after(() => h.mode.close());
     h.mode.configure(true, { position: { x: -900, y: 450 }, alwaysOnTop: true }); h.mode.configure(false, { alwaysOnTop: true });
     assert.equal(h.providers[0].closes, 1); assert.equal(h.timers.size, 0); assert.deepEqual(h.bounds, { x: -900, y: 450, ...size }); assert.equal(h.visible, true); assert.equal(h.top, true);
-    const count = h.calls.length; pending.resolve(snapshot()); await flush(); assert.equal(h.calls.length, count); assert.equal(h.timers.size, 0);
+    await flush(); const count = h.calls.length; pending.resolve(snapshot()); await flush(); assert.equal(h.calls.length, count); assert.equal(h.timers.size, 0);
   });
   test(variant.name + ': stale query from previous enable cannot replace the new host', async t => {
     const old = deferred(), current = deferred(), h = harness(variant, { answers: [[old.promise], [current.promise]] }); t.after(() => h.mode.close());
@@ -229,6 +235,53 @@ test('Windows child: standalone restoration and provider close wait for serializ
   detached.resolve(ok()); await flush(); assert.equal(h.mode.getState().embedded, false); assert.equal(h.visible, true); assert.equal(h.top, true); assert.deepEqual(h.bounds, { x: -700, y: 300, ...size }); assert.equal(h.providers[0].closes, 1);
   assert.ok(h.calls.findIndex(c => c.kind === 'detach-ack') < h.calls.findIndex(c => c.kind === 'bounds'));
 });
+
+test('Windows child: attachment waits for native non-topmost verification and a failed guard never embeds', async t => {
+  const verification = deferred(), h = harness(windows, { child: true, topmost: () => verification.promise }); t.after(() => h.mode.close());
+  h.mode.configure(true); await flush(); assert.equal(h.providers[0].attaches, 0);
+  verification.resolve({ known: true, ok: true, topmost: false }); await flush(); assert.equal(h.providers[0].attaches, 1);
+  const failed = harness(windows, { child: true, topmost: () => ({ known: true, ok: false, topmost: true }) }); t.after(() => failed.mode.close());
+  failed.mode.configure(true); await flush(); assert.equal(failed.providers[0].attaches, 0); assert.equal(failed.visible, false);
+  assert.equal(failed.mode.getState().topmost.verified, false);
+});
+
+test('Windows child: settings and show during detach cannot promote the child; saved false remains false', async t => {
+  const detached = deferred(), h = await start(t, windows, { child: true, detach: () => detached.promise }); h.calls.length = 0;
+  h.mode.configure(false, { alwaysOnTop: true }); await flush();
+  h.mode.configure(false, { alwaysOnTop: false }); h.mode.show(); await flush();
+  assert.equal(h.calls.some(c => c.kind === 'native-top'), false);
+  detached.resolve(ok()); await flush();
+  assert.deepEqual(h.calls.filter(c => c.kind === 'native-top').map(c => c.value), [false]);
+  assert.deepEqual(plain(h.mode.getState().topmost), { desired: false, verified: true, reason: 'verified' });
+});
+
+test('Windows child: disabling before the first host query still drains detach before standalone topmost', async t => {
+  const query = deferred(), detached = deferred(), h = harness(windows, { child: true, answers: [[query.promise]], detach: () => detached.promise }); t.after(() => h.mode.close());
+  h.mode.configure(true); h.mode.configure(false, { alwaysOnTop: true }); await flush();
+  assert.equal(h.providers[0].detaches, 1); assert.equal(h.calls.some(c => c.kind === 'native-top' && c.value), false);
+  detached.resolve(ok()); await flush(); assert.equal(h.mode.embedded, false);
+  assert.equal(h.mode.getState().topmost.desired, true); assert.equal(h.mode.getState().topmost.verified, true);
+  const count = h.calls.length; query.resolve(snapshot()); await flush(); assert.equal(h.calls.length, count);
+});
+
+test('Windows child: a temporarily missing host never enables global topmost and reattaches when it returns', async t => {
+  const h = await start(t, windows, { child: true }); h.calls.length = 0;
+  await h.poll(snapshot({ windows: [] }));
+  assert.equal(h.mode.enabled, true); assert.equal(h.mode.embedded, true);
+  assert.equal(h.mode.getState().topmost.desired, false); assert.equal(h.calls.some(c => c.kind === 'native-top' && c.value), false);
+  await h.poll(snapshot()); await h.advance(40);
+  assert.equal(h.providers[0].attaches, 2); assert.equal(h.visible, true);
+});
+
+test('Windows child: explicit show recovers a transient non-topmost barrier failure without toggling the mode', async t => {
+  let attempts = 0;
+  const h = harness(windows, { child: true, topmost: value => ({ known: true, ok: ++attempts > 1, topmost: attempts > 1 ? value : !value }) }); t.after(() => h.mode.close());
+  h.mode.configure(true); await flush(); assert.equal(h.providers[0].attaches, 0);
+  await h.advance(500); assert.equal(attempts, 1, 'a failed entry must not create a native retry poll');
+  h.mode.show(); await h.poll(snapshot()); await h.advance(40);
+  assert.equal(attempts, 2); assert.equal(h.providers[0].attaches, 1); assert.equal(h.visible, true);
+  assert.equal(h.mode.getState().topmost.desired, false);
+});
 test('Windows child: quick disable/re-enable ignores the old detach completion while the new query waits', async t => {
   const detached = deferred(), nextQuery = deferred();
   const h = await start(t, windows, { child: true, detach: () => detached.promise,
@@ -281,4 +334,26 @@ test('Windows child: closing during attach still detaches the late native child 
   h.mode.configure(true); await flush(); h.mode.close(); assert.equal(h.providers[0].detaches, 0); assert.equal(h.providers[0].closes, 0);
   attached.resolve(ok()); await flush(); assert.equal(h.providers[0].detaches, 1); assert.equal(h.providers[0].closes, 0);
   detached.resolve(ok()); await flush(); await h.advance(1000); assert.equal(h.providers[0].closes, 1); assert.equal(h.visible, false); assert.equal(h.calls.some(c => c.kind === 'showInactive'), false);
+});
+
+test('Windows child: closing a destroyed surface invalidates late containment callbacks before they touch its HWND', async () => {
+  const attached = deferred(), h = harness(windows, { child: true, attach: () => attached.promise });
+  h.mode.configure(true); await flush(); h.mode.close();
+  for (const name of ['getBounds', 'setBounds', 'show', 'showInactive', 'hide']) h.widget[name] = () => { throw new Error('closed native surface accessed: ' + name); };
+  attached.resolve(ok()); await flush();
+  assert.equal(h.providers[0].closes, 1); assert.equal(h.visible, false);
+  await new Promise(resolve => setImmediate(resolve));
+});
+
+test('Windows standalone: a blocked or failed native helper never prevents independent display or changes the saved preference', async t => {
+  for (const failure of [() => { throw new Error('isolated helper launch denied'); }, () => ({ known: false, supported: true })]) {
+    const h = harness(windows, { topmost: failure }); t.after(() => h.mode.close());
+    h.mode.configure(false, { alwaysOnTop: true }); h.mode.show(); await flush();
+    assert.equal(h.visible, true); assert.equal(h.providers.length, 0, 'independent mode never queries Codex windows');
+    assert.deepEqual(plain(h.mode.getState().topmost), { desired: true, verified: false, reason: 'topmost-unavailable' });
+    assert.equal(h.mode.getState().reason, 'topmost-unavailable');
+    h.mode.configure(false, { alwaysOnTop: false }); await flush();
+    assert.equal(h.visible, true); assert.equal(h.mode.getState().topmost.desired, false);
+    assert.equal(h.timers.size, 0, 'native failure creates no background poll in independent mode');
+  }
 });

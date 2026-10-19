@@ -1,0 +1,6 @@
+/* Motion's vendored vanilla mini build animates this independent flat plane.
+   Keep interpolation in Motion, separate from breathing, press and peeking. */
+.character-mirror-plane{position:absolute;inset:0;pointer-events:none;transform-origin:50% 50%}
+/* The plane now owns orientation. Override only the former image mirror scale,
+   while its transform animation and all outer transforms remain independent. */
+.widget .character.mirror-flip-enabled img,.widget.is-mirrored .character.mirror-flip-enabled img{scale:1 1}

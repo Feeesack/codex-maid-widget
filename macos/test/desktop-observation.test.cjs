@@ -15,7 +15,7 @@ function fixture(t) {
   const options = { dataDir, ...identity, platform: 'win32', now: () => time, isAlive: pid => pid === 123 };
   return { options, file: path.join(dataDir, 'desktop-observation.json'), writer: new DesktopObservationWriter(options), at: value => { time = value; } };
 }
-const roots = [{ pid: 200, parentPid: 1, sessionId: 12, path: 'C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1013.3656.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe' }];
+const roots = [{ pid: 200, parentPid: 1, sessionId: 12, path: 'D:\\WindowsApps\\OpenAI.Codex_26.1013.3656.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe', officialDesktop: true }];
 
 test('widget consumes the live helper inventory and confirmed empty observations', t => {
   const f = fixture(t);

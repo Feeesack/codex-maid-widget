@@ -1,6 +1,6 @@
 'use strict';
 
-// This module never opens auth.json, sends prompts, or exposes account identifiers.
+// This module never opens auth.json or sends prompts. Public snapshots contain no account identifiers.
 // Its app-server transport is deliberately restricted to these read-only methods.
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -10,6 +10,7 @@ const { spawn } = require('node:child_process');
 const { StringDecoder } = require('node:string_decoder');
 const { createHash } = require('node:crypto');
 const { version: APP_VERSION } = require('../package.json');
+const { environmentValue, codexCommandInvocation } = require('./codex-cli.cjs');
 const { CODEX_BUNDLE_ID, MacBundleReader, standardBundles } = require('./macos-bundle.cjs');
 const macBundleReader = new MacBundleReader();
 
@@ -131,8 +132,42 @@ function accountUsageRange(result, startDate, endDate) {
 function accountFingerprint(result) {
   const account = result?.account;
   const identity = [account?.accountId, account?.id, account?.email].find(value => typeof value === 'string' && value.trim());
-  // Used only in memory to notice a switch; identifiers never enter a snapshot or disk.
-  return identity ? createHash('sha256').update(`${account.type || ''}\0${identity.trim().toLowerCase()}`).digest('hex') : null;
+  const workspace = [account?.workspaceId, account?.organizationId, account?.workspace?.id, account?.organization?.id]
+    .find(value => typeof value === 'string' && value.trim());
+  const plan = textOrNull(account?.planType)?.trim().toLowerCase() || '';
+  // Internal correlation only. Public snapshots never contain raw identifiers;
+  // the private registry uses this digest independently of local display metadata.
+  // One login may have independent personal and workspace quota. Partition by
+  // plan and by a protocol-provided workspace identity whenever available.
+  return identity ? createHash('sha256').update(JSON.stringify([
+    account.type || '', identity.trim().toLowerCase(), plan, workspace?.trim() || '',
+  ])).digest('hex') : null;
+}
+
+function accountPresentationText(value, email = false) {
+  if (typeof value !== 'string' || value.length > 512) return null;
+  const text = value.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '').trim();
+  if (!text || Array.from(text).length > (email ? 254 : 120)) return null;
+  // An explicitly returned, syntactically valid email may legitimately contain
+  // a long hexadecimal local part. Never mistake that display address for a token.
+  if (email) return /^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$/u.test(text) ? text : null;
+  // Names are display text, never an alternative route for credentials or opaque
+  // token strings. Check only known name/email fields; do not retain the reply.
+  if (/\b(?:Bearer|Basic)\s+\S|\bsk-[A-Za-z0-9_-]{12,}|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|\b(?:access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key)\s*[:=]|(?:^|\s)[A-Za-z0-9_-]{48,}(?:$|\s)|\b[a-f0-9]{32,}\b/i.test(text)) return null;
+  return text;
+}
+
+function accountPresentation(result, key, generation, profile = {}) {
+  const account = result?.account;
+  const first = (values, email = false) => values.map(value => accountPresentationText(value, email)).find(Boolean) || null;
+  return {
+    key, generation,
+    profileNickname: accountPresentationText(profile?.profileNickname),
+    displayName: first([account?.displayName, account?.name]),
+    email: first([account?.email], true),
+    workspaceName: first([profile?.workspaceName, account?.workspaceName, account?.workspace?.name, account?.workspace?.displayName,
+      account?.organizationName, account?.organization?.name, result?.workspaceRouting?.workspaceName]),
+  };
 }
 
 function authenticationError(error) {
@@ -152,7 +187,7 @@ function friendlyError(error) {
 
 function findCodexExecutable(explicitPath, { platform = process.platform, env = process.env, homedir = os.homedir(), fileSystem = fs, readBundle = bundle => macBundleReader.read(bundle) } = {}) {
   if (explicitPath) {
-    if (/[\r\n\0]/.test(explicitPath)) throw Object.assign(new Error('Invalid executable path'), { code: 'CLI_MISSING' });
+    if (typeof explicitPath !== 'string' || /[\r\n\0]/.test(explicitPath)) throw Object.assign(new Error('Invalid executable path'), { code: 'CLI_MISSING' });
     return explicitPath;
   }
   const paths = platform === 'win32' ? path.win32 : path.posix;
@@ -164,23 +199,31 @@ function findCodexExecutable(explicitPath, { platform = process.platform, env = 
       return true;
     } catch { return false; }
   };
-  for (const directory of (env.PATH || '').split(platform === 'win32' ? ';' : ':').filter(Boolean)) {
+  for (const directory of (environmentValue(env, 'PATH', platform) || '').split(platform === 'win32' ? ';' : ':').filter(Boolean)) {
     for (const name of names) {
       const candidate = paths.join(directory.replace(/^"|"$/g, ''), name);
       if (isExecutable(candidate)) return candidate;
     }
   }
-  if (platform === 'win32' && env.LOCALAPPDATA) {
-    const desktopCli = paths.join(env.LOCALAPPDATA, 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe');
+  const localAppData = environmentValue(env, 'LOCALAPPDATA', platform);
+  if (platform === 'win32' && localAppData) {
+    const desktopCli = paths.join(localAppData, 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe');
     if (isExecutable(desktopCli)) return desktopCli;
   }
   if (platform === 'darwin') {
     // Finder and LaunchAgents inherit a minimal PATH. Discover the app's own
     // CLI without running a login shell or rewriting the user's shell profile.
     for (const bundle of standardBundles(homedir)) {
-      const candidate = paths.join(bundle, 'Contents', 'Resources', 'codex');
-      if (!isExecutable(candidate)) continue;
-      try { if (readBundle(bundle)?.identifier === CODEX_BUNDLE_ID) return candidate; } catch { /* next installation */ }
+      try {
+        const info = readBundle(bundle);
+        if (info?.identifier !== CODEX_BUNDLE_ID || typeof info.executable !== 'string'
+          || !info.executable || /[\\/\0\r\n]/.test(info.executable) || ['.', '..'].includes(info.executable)
+          || !isExecutable(paths.join(bundle, 'Contents', 'MacOS', info.executable))) continue;
+        for (const relative of ['codex', 'bin/codex']) {
+          const candidate = paths.join(bundle, 'Contents', 'Resources', relative);
+          if (isExecutable(candidate)) return candidate;
+        }
+      } catch { /* next installation */ }
     }
     const candidates = ['/opt/homebrew/bin/codex', '/usr/local/bin/codex', paths.join(homedir, '.local', 'bin', 'codex')];
     for (const candidate of candidates) if (isExecutable(candidate)) return candidate;
@@ -189,24 +232,21 @@ function findCodexExecutable(explicitPath, { platform = process.platform, env = 
 }
 
 function spawnCodex(executable, args, options) {
-  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(executable)) {
-    // npm's Windows shim cannot be spawned directly. Refuse shell metacharacters in its path.
-    if (/["&|<>^%!\r\n]/.test(executable)) throw Object.assign(new Error('Unsupported shim path'), { code: 'CLI_MISSING' });
-    const quoted = [executable, ...args].map(value => `"${value}"`).join(' ');
-    return spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${quoted}"`], options);
-  }
-  return spawn(executable, args, options);
+  const invocation = codexCommandInvocation(executable, args, { env: options.env });
+  return spawn(invocation.file, invocation.args, { ...options, ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}) });
 }
 
 class ReadOnlyAppServer {
   constructor(options = {}) {
-    options = { ...options, codexPath: options.codexPath || process.env.CODEX_MAID_CODEX_PATH };
+    options = { ...options, codexPath: options.codexPath || environmentValue(options.env || process.env, 'CODEX_MAID_CODEX_PATH', options.platform) };
     this.options = options;
     this.pending = new Map();
     this.sequence = 0;
     this.child = null;
     this.connecting = null;
     this.closed = false;
+    this.generation = 0;
+    this.discovery = null;
   }
 
   async connect() {
@@ -219,9 +259,23 @@ class ReadOnlyAppServer {
   }
 
   async start() {
-    const executable = findCodexExecutable(this.options.codexPath, this.options);
-    const env = { ...process.env };
-    if (this.options.codexHome) env.CODEX_HOME = this.options.codexHome;
+    const generation = this.generation;
+    const discovery = new AbortController(); this.discovery = discovery;
+    let executable;
+    try { executable = await require('./codex-cli.cjs').resolveCodexExecutable(this.options.codexPath, {
+      ...this.options, signal: discovery.signal, find: explicit => findCodexExecutable(explicit, this.options),
+    }); } catch (error) {
+      if (this.closed) throw Object.assign(new Error('Closed'), { code: 'CLOSED' });
+      if (generation !== this.generation) throw Object.assign(new Error('Connection superseded'), { code: 'INVALIDATED' });
+      throw error;
+    } finally { if (this.discovery === discovery) this.discovery = null; }
+    if (this.closed) throw Object.assign(new Error('Closed'), { code: 'CLOSED' });
+    if (generation !== this.generation) throw Object.assign(new Error('Connection superseded'), { code: 'INVALIDATED' });
+    const env = { ...(this.options.env || process.env) };
+    if (this.options.codexHome) {
+      for (const key of Object.keys(env)) if (key.toUpperCase() === 'CODEX_HOME') delete env[key];
+      env.CODEX_HOME = this.options.codexHome;
+    }
     const child = (this.options.spawn || spawnCodex)(executable, [
       'app-server', '--listen', 'stdio://',
       // Process-local analytics override; never rewrites the user's config.
@@ -245,9 +299,12 @@ class ReadOnlyAppServer {
         if (line.length > MAX_LINE) continue;
         let message;
         try { message = JSON.parse(line); } catch { continue; }
+        if (!message || typeof message !== 'object' || Array.isArray(message)) {
+          this.disconnect(Object.assign(new Error('Invalid protocol message'), { code: 'PROTOCOL' })); return;
+        }
         if (message.method && message.id !== undefined) {
           // No auth refresh, tool calls, elicitation, or other server request is supported.
-          child.stdin.write(`${JSON.stringify({ id: message.id, error: { code: -32601, message: 'Read-only quota client' } })}\n`);
+          this.write(child, `${JSON.stringify({ id: message.id, error: { code: -32601, message: 'Read-only quota client' } })}\n`);
           continue;
         }
         const pending = this.pending.get(message.id);
@@ -260,14 +317,25 @@ class ReadOnlyAppServer {
     });
     // Drain without retaining stderr: it may contain private filesystem paths or account data.
     child.stderr.on('data', () => {});
-    child.stdin.on('error', () => {});
+    child.stdin.on('error', error => { if (this.child === child) this.disconnect(error); });
+    child.stdout.on('error', error => { if (this.child === child) this.disconnect(error); });
+    child.stderr.on('error', () => {});
     child.on('error', error => { if (this.child === child) this.disconnect(error); });
     child.on('exit', () => { if (this.child === child) this.disconnect(Object.assign(new Error('App-server exited'), { code: 'EXIT' })); });
     try {
       await this.request('initialize', { clientInfo: { name: 'codex_maid_widget', title: 'Codex Maid Widget', version: APP_VERSION } });
       if (this.child !== child) throw Object.assign(new Error('Connection superseded'), { code: 'INVALIDATED' });
-      child.stdin.write(`${JSON.stringify({ method: 'initialized', params: {} })}\n`);
+      if (!this.write(child, `${JSON.stringify({ method: 'initialized', params: {} })}\n`))
+        throw Object.assign(new Error('App-server pipe unavailable'), { code: 'EXIT' });
     } catch (error) { if (this.child === child) this.disconnect(error); throw error; }
+  }
+
+  write(child, value) {
+    if (this.child !== child) return false;
+    try {
+      child.stdin.write(value, error => { if (error && this.child === child) this.disconnect(error); });
+      return this.child === child;
+    } catch (error) { if (this.child === child) this.disconnect(error); return false; }
   }
 
   request(method, params = {}) {
@@ -281,19 +349,19 @@ class ReadOnlyAppServer {
         this.disconnect(error);
       }, this.options.timeoutMs || 12000);
       this.pending.set(id, { resolve, reject, timer });
-      child.stdin.write(`${JSON.stringify({ id, method, params })}\n`, error => {
-        if (error && this.child === child) this.disconnect(error);
-      });
+      this.write(child, `${JSON.stringify({ id, method, params })}\n`);
     });
   }
 
   disconnect(error = Object.assign(new Error('Closed'), { code: 'CLOSED' })) {
+    this.generation++;
+    this.discovery?.abort(); this.discovery = null;
     const child = this.child;
     this.child = null;
     this.connecting = null;
     for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(error); }
     this.pending.clear();
-    if (child) { child.stdin.destroy(); child.kill(); }
+    if (child) { try { child.stdin.destroy(); } catch {} try { child.kill(); } catch {} }
   }
 
   close() { this.closed = true; this.disconnect(); }
@@ -504,6 +572,14 @@ class CodexDataSource {
     this.closed = false;
     this.revision = 0;
     this.accountIdentity = null;
+    // Local presentation is intentionally absent from public snapshots and from
+    // accidental source serialization. Only the main process reads this field.
+    Object.defineProperty(this, 'accountPresentation', { value: null, writable: true, enumerable: false });
+    Object.defineProperty(this, 'accountProfileReader', { value: options.profileReader ||
+      (options.profileMetadata ? new (require('./account-profile-reader.cjs').AccountProfileReader)({
+        codexHome: options.codexHome || process.env.CODEX_HOME || path.join(os.homedir(), '.codex'),
+        fetch: options.profileFetch,
+      }) : null), writable: true, enumerable: false });
     this.generation = 0;
   }
 
@@ -519,6 +595,8 @@ class CodexDataSource {
     this.revision++;
     this.generation++;
     this.accountIdentity = null;
+    this.accountPresentation = null;
+    this.accountProfileReader?.invalidate?.();
     this.inflight = null;
     this.server.disconnect?.(Object.assign(new Error('Account state changed'), { code: 'INVALIDATED' }));
     // Device-wide usage is independent of login. Keep the incremental log cache.
@@ -526,6 +604,7 @@ class CodexDataSource {
   }
 
   async readSnapshot(revision) {
+    if (revision === this.revision) this.accountPresentation = null;
     const now = new Date(this.now());
     const base = {
       status: 'offline', updatedAt: now.toISOString(), account: null, buckets: [], today: null, weekly: null, lastTurn: null,
@@ -572,6 +651,17 @@ class CodexDataSource {
         base.status = base.today || base.weekly || base.lastTurn ? 'partial' : 'offline';
         base.error = friendlyError(limits.reason);
       }
+      if (base.status === 'live' && !base.error && identity) {
+        let profile = {};
+        if (this.accountProfileReader) {
+          try {
+            profile = await this.accountProfileReader.read({ key: identity,
+              scopeId: accountResult?.workspaceRouting?.chatgptAccountId, email: accountResult?.account?.email });
+          } catch { /* Optional profile metadata can never invalidate live quota. */ }
+          if (revision !== this.revision || this.closed) return superseded();
+        }
+        this.accountPresentation = accountPresentation(accountResult, identity, base.generation, profile);
+      }
       return base;
     } catch (error) {
       const local = await localPromise;
@@ -579,6 +669,7 @@ class CodexDataSource {
       // Without a confirmed identity, never allow the main process to revive a
       // previous account's quota as stale. Device token totals can remain visible.
       this.accountIdentity = null;
+      this.accountPresentation = null;
       return {
         ...base, today: local.today || null, weekly: local.weekly || null, lastTurn: local.lastTurn || null,
         account: null, clearPrevious: true,
@@ -594,7 +685,7 @@ class CodexDataSource {
     }
   }
 
-  close() { this.closed = true; this.revision++; this.server.close(); }
+  close() { this.closed = true; this.revision++; this.accountPresentation = null; this.accountProfileReader?.close?.(); this.server.close(); }
 }
 
 module.exports = {

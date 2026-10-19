@@ -49,7 +49,7 @@ test('Explorer launch rejects NUL and invalid parameter shapes before running Po
   let calls = 0;
   const base = { executable: 'C:\\Maid\\widget.exe', execFile: () => { calls++; } };
   for (const patch of [{ executable: 'bad\0.exe' }, { executable: '' }, { cwd: 'bad\0' }, { args: ['bad\0'] }, { args: [42] }, { args: 'string' }]) {
-    await assert.rejects(launchThroughExplorer({ ...base, ...patch }), TypeError);
+    await assert.rejects(launchThroughExplorer({ env: {}, ...base, ...patch }), TypeError);
   }
   assert.throws(() => quoteWindowsArgument('bad\0'), TypeError);
   assert.equal(calls, 0);
@@ -59,7 +59,7 @@ test('Explorer dispatch uses a hidden noninteractive STA PowerShell process with
   const executable = 'C:\\Program Files\\女仆\\widget.exe';
   const cwd = 'C:\\Program Files\\女仆';
   const args = ['--watch-codex'];
-  const result = await launchThroughExplorer({ executable, cwd, args, timeout: 1234,
+  const result = await launchThroughExplorer({ env: {}, executable, cwd, args, timeout: 1234,
     execFile: (file, commandArgs, options, done) => {
       assert.equal(file, 'powershell.exe');
       for (const flag of ['-NoProfile', '-NonInteractive', '-STA', '-EncodedCommand']) assert.ok(commandArgs.includes(flag));
@@ -80,13 +80,13 @@ test('failed, empty or malformed Explorer responses reject without exposing Powe
     { error: new Error(privateDetail), stdout: '' },
     { stdout: '' }, { stdout: 'not-json' }, { stdout: '{}' }, { stdout: '{"launched":false}' }, { stdout: privateDetail },
   ]) {
-    await assert.rejects(launchThroughExplorer({ executable: 'C:\\Maid\\widget.exe',
+    await assert.rejects(launchThroughExplorer({ env: {}, executable: 'C:\\Maid\\widget.exe',
       execFile: (_file, _args, _options, done) => done(fixture.error || null, fixture.stdout) }), error => {
       assert.equal(error.message, '无法通过 Windows 桌面启动助手。');
       assert.equal(error.message.includes(privateDetail), false);
       return true;
     });
   }
-  await assert.rejects(launchThroughExplorer({ executable: 'C:\\Maid\\widget.exe', execFile: () => { throw new Error(privateDetail); } }),
+  await assert.rejects(launchThroughExplorer({ env: {}, executable: 'C:\\Maid\\widget.exe', execFile: () => { throw new Error(privateDetail); } }),
     { message: '无法通过 Windows 桌面启动助手。' });
 });

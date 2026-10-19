@@ -1,0 +1,16 @@
+DSH original duck interaction audio
+===================================
+
+Original upstream: MeteorNOX/DeepSeek-Balance-Whale-Widget
+https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget
+Source commit: 5247dd6813d6e4430728f39ccc63d43cda046022
+Press: assets/Ya1.mp3; release: assets/Ya2.mp3. Original MP3 bytes are
+embedded without transcoding in src/local-interaction-samples.js.
+
+These audio assets are separate from this project's MIT code license and
+CC BY 4.0 artwork license. No MIT or CC0 grant is asserted for this pair.
+The upstream PROVENANCE.md excludes assets/** from MIT and states an as-is
+scope for running the upstream plugin, without relicensing. An earlier
+original source or independent redistribution license has not been verified.
+Including these sounds does not grant downstream users additional rights.
+https://github.com/MeteorNOX/DeepSeek-Balance-Whale-Widget/blob/5247dd6813d6e4430728f39ccc63d43cda046022/PROVENANCE.md

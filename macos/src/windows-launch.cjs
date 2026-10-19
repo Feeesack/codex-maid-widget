@@ -1,6 +1,8 @@
 'use strict';
 const path = require('node:path');
 const { execFile: nativeExecFile } = require('node:child_process');
+const { runtimeEnvironmentArguments } = require('./runtime-environment.cjs');
+const { powershellExecutable } = require('./windows-system.cjs');
 
 const LAUNCH_ERROR = '无法通过 Windows 桌面启动助手。';
 
@@ -41,13 +43,13 @@ try {
 `;
 }
 
-async function launchThroughExplorer({ executable, args = [], cwd = path.dirname(executable), execFile = nativeExecFile, timeout = 7000 } = {}) {
-  const script = buildExplorerLaunchScript({ executable, args, cwd });
+async function launchThroughExplorer({ executable, args = [], cwd = path.dirname(executable), env = process.env, execFile = nativeExecFile, timeout = 7000 } = {}) {
+  const script = buildExplorerLaunchScript({ executable, args: runtimeEnvironmentArguments(args, env), cwd });
   const command = Buffer.from(script, 'utf16le').toString('base64');
   let output;
   try {
     output = await new Promise((resolve, reject) => {
-      execFile('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', command],
+      execFile(powershellExecutable(env), ['-NoLogo', '-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', command],
         { windowsHide: true, timeout, maxBuffer: 64 * 1024, encoding: 'utf8' },
         (error, stdout) => error ? reject(error) : resolve(stdout));
     });

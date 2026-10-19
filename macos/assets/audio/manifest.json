@@ -1,0 +1,245 @@
+{
+  "schemaVersion": 1,
+  "defaultId": "bubble-pop",
+  "sampleFormat": "PCM signed 16-bit mono 44100 Hz WAV",
+  "licenseFiles": [
+    "Kenney-License.txt",
+    "Kenney-impact-sounds-License.txt"
+  ],
+  "sources": {
+    "interface-sounds": {
+      "creator": "Kenney",
+      "sourcePage": "https://kenney.nl/assets/interface-sounds",
+      "downloadUrl": "https://kenney.nl/media/pages/assets/interface-sounds/fa43c1dd4d-1677589452/kenney_interface-sounds.zip",
+      "downloadedDate": "2026-10-19",
+      "license": "CC0-1.0",
+      "licensePage": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "archiveSha256": "f2193d072726d6758a5f7871b2dcc54dcce0d5c35c6f0a62f92549b327c81232"
+    },
+    "impact-sounds": {
+      "creator": "Kenney",
+      "sourcePage": "https://kenney.nl/assets/impact-sounds",
+      "downloadUrl": "https://kenney.nl/media/pages/assets/impact-sounds/87b4ddecda-1677589768/kenney_impact-sounds.zip",
+      "downloadedDate": "2026-10-19",
+      "license": "CC0-1.0",
+      "licensePage": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "archiveSha256": "029d734af1582474edf3a694d1b0cebc97c1c152f2f39fa34d4c2bafc5de77f8"
+    },
+    "project-original": {
+      "creator": "Codex Maid Widget contributors",
+      "license": "MIT",
+      "sourceSnapshot": "f0b9b6e:src/widget.js playBounceSound, lines 439–452",
+      "generator": "scripts/prepare-interaction-audio.cjs:synthesizeOriginalClips"
+    }
+  },
+  "presets": [
+    {
+      "id": "bubble-pop",
+      "gain": 0.5,
+      "sourcePack": "interface-sounds",
+      "clips": {
+        "press": {
+          "file": "bubble-pop-press.wav",
+          "sha256": "94b34167da2c846e3ea6b4d5c33eb93e2ed284556d30bcb15ce8155a911aa857",
+          "sampleRate": 44100,
+          "channels": 1,
+          "bitsPerSample": 16,
+          "durationMs": 119.750567,
+          "peakDbFS": -7.4172,
+          "rmsDbFS": -26.2154,
+          "sourceFile": "Audio/drop_001.ogg",
+          "sourceSha256": "692ee3a6f1821402ca649ff735bee9591dc4846c8098fc7d6a90fd15fa57c1af",
+          "processing": {
+            "removeDcOffset": true,
+            "silenceThresholdRelativePeak": 0.002,
+            "sourceStartFrame": 0,
+            "sourceEndFrameExclusive": 5194,
+            "sourceSampleRate": 44100,
+            "speedFactor": 1,
+            "attackMs": 0.5,
+            "releaseMs": 8,
+            "silencePaddingMs": 1,
+            "minimumDurationMs": 50,
+            "pairPeakTargetDbFS": -6,
+            "pairNormalizationScalar": 0.5688272313865774
+          }
+        },
+        "release": {
+          "file": "bubble-pop-release.wav",
+          "sha256": "1d7013323198e65c58ae525557e1bbcdf04c68fceb8be2d897377a9a75008880",
+          "sampleRate": 44100,
+          "channels": 1,
+          "bitsPerSample": 16,
+          "durationMs": 190.15873,
+          "peakDbFS": -6.0002,
+          "rmsDbFS": -24.855,
+          "sourceFile": "Audio/drop_002.ogg",
+          "sourceSha256": "4ac4d1cef7e936965cbf795852ca2020300b9e2ba7daa59f2bf4f1f7bf416218",
+          "processing": {
+            "removeDcOffset": true,
+            "silenceThresholdRelativePeak": 0.002,
+            "sourceStartFrame": 0,
+            "sourceEndFrameExclusive": 8299,
+            "sourceSampleRate": 44100,
+            "speedFactor": 1,
+            "attackMs": 0.5,
+            "releaseMs": 8,
+            "silencePaddingMs": 1,
+            "minimumDurationMs": 50,
+            "pairPeakTargetDbFS": -6,
+            "pairNormalizationScalar": 0.5688272313865774
+          }
+        }
+      }
+    },
+    {
+      "id": "soft-spring",
+      "gain": 0.5,
+      "sourcePack": "interface-sounds",
+      "processingNote": "Preserve v0.3.34 WAV bytes and playback gain unchanged. Matching original minimize/maximize gestures shortened together by 1.5x; no further processing.",
+      "clips": {
+        "press": {
+          "file": "interaction-press.wav",
+          "sha256": "d82391669c399d0be5b4826f2e702b6c39a4ffad4894e37e682ee3f08cddf90d",
+          "sampleRate": 44100,
+          "channels": 1,
+          "bitsPerSample": 16,
+          "durationMs": 152.222222,
+          "peakDbFS": -6.0002,
+          "rmsDbFS": -17.8545,
+          "sourceFile": "Audio/minimize_008.ogg",
+          "sourceSha256": "bc14c17875436dcaaf809c25db5e61454dbc35612880f329ff37a95ef9b6a865",
+          "processing": {
+            "removeDcOffset": true,
+            "speedFactor": 1.5,
+            "attackMs": 2,
+            "releaseMs": 8,
+            "silencePaddingMs": 1,
+            "peakTargetDbFS": -6
+          }
+        },
+        "release": {
+          "file": "interaction-release.wav",
+          "sha256": "d96d217acf9abd603ed249d1884528134f3be21f2a2af3bb4da26db506344d92",
+          "sampleRate": 44100,
+          "channels": 1,
+          "bitsPerSample": 16,
+          "durationMs": 152.222222,
+          "peakDbFS": -6.0002,
+          "rmsDbFS": -17.8552,
+          "sourceFile": "Audio/maximize_008.ogg",
+          "sourceSha256": "57c074e600e193a303ce781c04c0ccc191c6030f9f106594fd94a65e55435c17",
+          "processing": {
+            "removeDcOffset": true,
+            "speedFactor": 1.5,
+            "attackMs": 2,
+            "releaseMs": 8,
+            "silencePaddingMs": 1,
+            "peakTargetDbFS": -6
+          }
+        }
+      }
+    },
+    {
+      "id": "original",
+      "gain": 1,
+      "sourcePack": "project-original",
+      "processingNote": "Analytical recreation of v0.3.33 src/widget.js playBounceSound (f0b9b6e). Original sine phase, exponential frequency 730 to 1050 Hz over 100 ms; gain .001 to .18 over 12 ms then to .001 at 200 ms; 220 ms total. Only final 5 ms additionally fade to exact zero. Press 0–50 ms; release 10–220 ms. Complementary cos²/sin² overlap across original 10–50 ms preserves the original combined envelope. No normalization or individual release amplification. Reproduce/verify with exported synthesizeOriginalClips() in scripts/prepare-interaction-audio.cjs.",
+      "clips": {
+        "press": {
+          "file": "original-press.wav",
+          "sha256": "4800799d66f3280bc9ab0f0969aa4ad95864d10b598810261f2891c2664053d3",
+          "sampleRate": 44100,
+          "channels": 1,
+          "bitsPerSample": 16,
+          "durationMs": 50.0,
+          "peakDbFS": -15.0672,
+          "rmsDbFS": -25.0085,
+          "processing": {
+            "originalStartMs": 0,
+            "originalEndMs": 50,
+            "complementaryOverlapMs": 40,
+            "tailFadeMs": 0,
+            "normalize": false
+          }
+        },
+        "release": {
+          "file": "original-release.wav",
+          "sha256": "16a9a06efc11f213b09a6bc72930feece0fa42a6bdff30504f1278df29b15821",
+          "sampleRate": 44100,
+          "channels": 1,
+          "bitsPerSample": 16,
+          "durationMs": 210.0,
+          "peakDbFS": -22.9579,
+          "rmsDbFS": -33.7187,
+          "processing": {
+            "originalStartMs": 10,
+            "originalEndMs": 220,
+            "complementaryOverlapMs": 40,
+            "tailFadeMs": 5,
+            "normalize": false
+          }
+        }
+      }
+    },
+    {
+      "id": "wood-tap",
+      "gain": 0.5,
+      "sourcePack": "impact-sounds",
+      "clips": {
+        "press": {
+          "file": "wood-tap-press.wav",
+          "sha256": "ebc0ea13a39b6f939f3ebf9de72ea87e1ecc5956e7dd4cb5c6796c31e7e4426e",
+          "sampleRate": 44100,
+          "channels": 1,
+          "bitsPerSample": 16,
+          "durationMs": 142.76644,
+          "peakDbFS": -6.0002,
+          "rmsDbFS": -24.5916,
+          "sourceFile": "Audio/impactWood_light_000.ogg",
+          "sourceSha256": "eb45e35b4bed784d3f120de4afec4b0d6ac09d9e143cce8cfcb7d739e1b1f3c3",
+          "processing": {
+            "removeDcOffset": true,
+            "silenceThresholdRelativePeak": 0.002,
+            "sourceStartFrame": 0,
+            "sourceEndFrameExclusive": 6209,
+            "sourceSampleRate": 44100,
+            "speedFactor": 1,
+            "attackMs": 0.5,
+            "releaseMs": 8,
+            "silencePaddingMs": 1,
+            "minimumDurationMs": 50,
+            "pairPeakTargetDbFS": -6,
+            "pairNormalizationScalar": 0.5700518194011572
+          }
+        },
+        "release": {
+          "file": "wood-tap-release.wav",
+          "sha256": "8ecd8cc6ca03e479bc811cb12a1f5811a6f898dd32b2ff78962d50156936cec4",
+          "sampleRate": 44100,
+          "channels": 1,
+          "bitsPerSample": 16,
+          "durationMs": 183.560091,
+          "peakDbFS": -6.0039,
+          "rmsDbFS": -25.4468,
+          "sourceFile": "Audio/impactWood_light_002.ogg",
+          "sourceSha256": "b183cf7a5bd783817e0e4b82af34ac6658fa1927049089dadc8b15c2ecc771dc",
+          "processing": {
+            "removeDcOffset": true,
+            "silenceThresholdRelativePeak": 0.002,
+            "sourceStartFrame": 0,
+            "sourceEndFrameExclusive": 8008,
+            "sourceSampleRate": 44100,
+            "speedFactor": 1,
+            "attackMs": 0.5,
+            "releaseMs": 8,
+            "silencePaddingMs": 1,
+            "minimumDurationMs": 50,
+            "pairPeakTargetDbFS": -6,
+            "pairNormalizationScalar": 0.5700518194011572
+          }
+        }
+      }
+    }
+  ]
+}

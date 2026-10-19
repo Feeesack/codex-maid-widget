@@ -1,6 +1,8 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
+const { defaultId: defaultInteractionSound, presets: interactionSounds } = require('./interaction-sound-catalog.js');
+const interactionSoundIds = new Set(interactionSounds.map(preset => preset.id));
 const LEGACY_DEFAULT_PHRASES = ['主人，今天也一起把想法变成代码吧。', '额度我来照看，你只管专心创造。', '写累了记得喝水，休息一下也很好。', '每一个小进展，都值得开心一下。'];
 const PREVIOUS_DEFAULT_PHRASES = [
   '先开分支再放大招，勇者翻车也得留个存档点。',
@@ -18,9 +20,10 @@ const PREVIOUS_DEFAULT_PHRASES = [
 ];
 const DEFAULTS = Object.freeze({
   sizeBaseline: 2,
-  scale: 1, opacity: 1, alwaysOnTop: true, clickThrough: false, sound: true,
+  scale: 1, opacity: 1, alwaysOnTop: true, clickThrough: false, sound: true, interactionSound: defaultInteractionSound, accountResetAlerts: true,
   autoStart: false, followCodex: true, stayInCodexWindow: false, peekAtCorners: false, showBubble: true, autoHideSeconds: 5, refreshSeconds: 60,
-  bucketId: '', mode: 'quota', characterPath: '', activeCharacterId: 'lilac-dragon', position: null, mirror: false,
+  peekSidePercent: 100, peekBottomPercent: 50,
+  bucketId: '', mode: 'quota', characterPath: '', activeCharacterId: 'frost-glass-cheek', position: null, mirror: false,
   phrases: [
     'Tibo 义父，reset please……',
     '别急着重置嘛，让我再蹬蹬。',
@@ -34,21 +37,31 @@ const DEFAULTS = Object.freeze({
     '还不睡？睡前还得给 Codex 留作业是吧。',
   ],
 });
-const MODES = ['quota', 'today', 'week', 'lastTurn', 'phrase'];
+const MODES = ['quota', 'conversation', 'accounts', 'today', 'week', 'lastTurn', 'phrase'];
 function clamp(value, min, max, fallback) {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
 }
 function sanitize(input = {}) {
   const s = { ...DEFAULTS };
-  for (const key of ['alwaysOnTop','clickThrough','sound','autoStart','followCodex','stayInCodexWindow','peekAtCorners','showBubble','mirror']) {
+  for (const key of ['alwaysOnTop','clickThrough','sound','accountResetAlerts','autoStart','followCodex','stayInCodexWindow','peekAtCorners','showBubble','mirror']) {
     if (typeof input[key] === 'boolean') s[key] = input[key];
   }
   s.scale = clamp(input.scale, 0.6, 1.6, DEFAULTS.scale);
+  s.peekSidePercent = Math.round(clamp(input.peekSidePercent, 0, 200, DEFAULTS.peekSidePercent));
+  s.peekBottomPercent = Math.round(clamp(input.peekBottomPercent, 0, 200, DEFAULTS.peekBottomPercent));
   s.opacity = clamp(input.opacity, 0.35, 1, DEFAULTS.opacity);
   s.refreshSeconds = clamp(input.refreshSeconds, 30, 600, DEFAULTS.refreshSeconds);
   s.autoHideSeconds = clamp(input.autoHideSeconds, 0, 300, DEFAULTS.autoHideSeconds);
   if (typeof input.bucketId === 'string') s.bucketId = input.bucketId.slice(0, 100);
   if (MODES.includes(input.mode)) s.mode = input.mode;
+  s.bubblePageOrder = [...new Set((Array.isArray(input.bubblePageOrder) ? input.bubblePageOrder : []).filter(id => MODES.includes(id)))];
+  s.bubblePageOrder.push(...MODES.filter(id => !s.bubblePageOrder.includes(id)));
+  const hidden = new Set((Array.isArray(input.bubbleHiddenPages) ? input.bubbleHiddenPages : []).filter(id => MODES.includes(id)));
+  if (hidden.size === MODES.length) hidden.delete(MODES.includes(input.defaultBubblePage) ? input.defaultBubblePage : s.mode);
+  s.bubbleHiddenPages = s.bubblePageOrder.filter(id => hidden.has(id));
+  s.defaultBubblePage = MODES.includes(input.defaultBubblePage) ? input.defaultBubblePage : s.mode;
+  if (hidden.has(s.defaultBubblePage)) s.defaultBubblePage = s.bubblePageOrder.find(id => !hidden.has(id));
+  if (interactionSoundIds.has(input.interactionSound)) s.interactionSound = input.interactionSound;
   if (typeof input.characterPath === 'string') s.characterPath = input.characterPath;
   if (typeof input.activeCharacterId === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(input.activeCharacterId)) s.activeCharacterId = input.activeCharacterId;
   if (Array.isArray(input.phrases)) {
@@ -98,10 +111,12 @@ function bottomCorner(bounds, area, tolerance = 2) {
   const left = Math.abs(bounds.x - area.x), right = Math.abs(area.x + area.width - bounds.x - bounds.width);
   return left <= tolerance && left < right ? 'left' : right <= tolerance ? 'right' : null;
 }
-function cornerPeekOffset(corner, size) {
+function cornerPeekOffset(corner, size, settings = {}) {
   if (corner !== 'left' && corner !== 'right') return { x: 0, y: 0 };
   const scale = size.width / 380;
-  return { x: (corner === 'left' ? -48 : 48) * scale, y: 56 * scale };
+  const side = Math.round(clamp(settings?.peekSidePercent, 0, 200, DEFAULTS.peekSidePercent)) / 100;
+  const bottom = Math.round(clamp(settings?.peekBottomPercent, 0, 200, DEFAULTS.peekBottomPercent)) / 100;
+  return { x: side === 0 ? 0 : (corner === 'left' ? -48 : 48) * scale * side, y: 56 * scale * bottom };
 }
 function projectVisualBounds(visualBounds, area) {
   // Keep the native surface within its host and preserve the exact visual origin

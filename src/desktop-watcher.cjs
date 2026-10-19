@@ -5,6 +5,7 @@ const { spawn: nativeSpawn } = require('node:child_process');
 const { CodexDesktopMonitor, createDesktopInventoryQuery, buildLaunchArgs, rootKey } = require('./codex-desktop.cjs');
 const { isFollowStartupEnabled } = require('./windows-launch.cjs');
 const { DesktopObservationWriter } = require('./desktop-observation.cjs');
+const { runtimeEnvironmentArguments } = require('./runtime-environment.cjs');
 
 function followPreference(settingsFile) {
   try {
@@ -21,13 +22,13 @@ function startupRequestId(args) {
   return flag ? flag.slice('--follow-request='.length) : '';
 }
 
-function syncFollowStartup({ app, enabled, executable, dataDir, packaged, platform = process.platform }) {
+function syncFollowStartup({ app, enabled, executable, dataDir, packaged, platform = process.platform, env = process.env }) {
   if (platform !== 'win32' || !packaged) return { loginStartupEnabled: false, loginStartupError: 'unsupported-platform' };
   try {
     // This helper is owned by Explorer, so these writes affect the real user
     // startup registry rather than a launching Store app's virtual registry.
     app.setLoginItemSettings({ openAtLogin: false, path: executable });
-    const args = ['--watch-codex', '--maid-home=' + dataDir];
+    const args = runtimeEnvironmentArguments(['--watch-codex', '--maid-home=' + dataDir], env);
     app.setLoginItemSettings({ openAtLogin: enabled, enabled, name: 'CodexMaidFollow', path: executable, args });
     const startup = app.getLoginItemSettings({ path: executable, args });
     const actual = isFollowStartupEnabled(startup, executable);

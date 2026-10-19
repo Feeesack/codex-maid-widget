@@ -7,25 +7,28 @@ const os = require('node:os');
 const { EventEmitter } = require('node:events');
 const { INVENTORY_SCRIPT, isCodexDesktopPath, desktopRoots, queryCodexDesktop, CodexDesktopMonitor, buildLaunchArgs } = require('../src/codex-desktop.cjs');
 const { run, DesktopLaunchGate, followsCodex, syncFollowStartup } = require('../src/desktop-watcher.cjs');
+const { RULES, classifyCodexDesktop } = require('../src/codex-identity.cjs');
 
-const paths = { platform: 'win32', programFiles: 'C:\\Program Files', localAppData: 'C:\\Users\\test\\AppData\\Local' };
+const paths = { platform: 'win32', localAppData: 'C:\\Users\\test\\AppData\\Local' };
 const desktop = 'C:\\Program Files\\WindowsApps\\OpenAI.Codex_26.1013.3656.0_x64__2p2nqsd0c76g0\\app\\ChatGPT.exe';
-function processEntry(pid, parentPid = 1, file = desktop) { return { pid, parentPid, path: file, name: path.win32.basename(file), sessionId: 12 }; }
+function processEntry(pid, parentPid = 1, file = desktop) { return { pid, parentPid, path: file, name: path.win32.basename(file), sessionId: 12,
+  officialDesktop: classifyCodexDesktop({ path: file, packageFamilyName: file.includes('WindowsApps') ? RULES.packageFamily : null }, paths) }; }
 const roots = [processEntry(100)];
 
-test('desktop paths distinguish official Codex from ChatGPT, CLI and unrelated executables', () => {
-  for (const file of [desktop, desktop.replace('26.1013.3656.0_x64', '27.2000.0.0_arm64'),
-    'C:\\Users\\test\\AppData\\Local\\Programs\\OpenAI\\Codex\\ChatGPT.exe',
+test('desktop identity needs verified package membership or the confirmed unpackaged user layout', () => {
+  for (const file of [desktop, desktop.replace('C:\\Program Files', 'D:'), desktop.replace('26.1013.3656.0_x64', '27.2000.0.0_arm64')]) {
+    assert.equal(isCodexDesktopPath(file, { ...paths, packageFamilyName: RULES.packageFamily }), true, file);
+    assert.equal(isCodexDesktopPath(file, paths), false, 'an unverified path cannot establish identity');
+    assert.equal(isCodexDesktopPath(file, { ...paths, packageFamilyName: null }), false, 'a fake package directory cannot establish identity');
+  }
+  for (const file of ['C:\\Users\\test\\AppData\\Local\\Programs\\OpenAI\\Codex\\ChatGPT.exe',
     'C:\\Users\\test\\AppData\\Local\\Programs\\OpenAI Codex\\Codex.exe']) {
-    assert.equal(isCodexDesktopPath(file, paths), true, file);
+    assert.equal(isCodexDesktopPath(file, { ...paths, packageFamilyName: null }), true, file);
+    assert.equal(isCodexDesktopPath(file, { ...paths, packageFamilyName: 'OpenAI.ChatGPT_2p2nqsd0c76g0' }), false, file);
   }
-  for (const file of [desktop.replace('OpenAI.Codex_', 'OpenAI.ChatGPT_'), desktop.replace('2p2nqsd0c76g0', 'otherpublisher'),
-    desktop.replace('\\app\\', '\\bin\\'), desktop + '.bak',
-    'C:\\Users\\test\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe',
-    'C:\\Users\\test\\AppData\\Local\\OpenAI\\Codex\\bin\\a1234\\codex.exe',
-    'C:\\tools\\Codex.exe', 'C:\\Users\\test\\AppData\\Local\\Programs\\ChatGPT\\ChatGPT.exe']) {
-    assert.equal(isCodexDesktopPath(file, paths), false, file);
-  }
+  for (const file of [desktop.replace('\\app\\', '\\bin\\'), desktop + '.bak',
+    'C:\\Users\\test\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe', 'C:\\tools\\Codex.exe'])
+    assert.equal(isCodexDesktopPath(file, { ...paths, packageFamilyName: null }), false, file);
 });
 
 test('desktop inventory removes renderer children and retains multiple desktop roots', () => {
@@ -34,11 +37,19 @@ test('desktop inventory removes renderer children and retains multiple desktop r
   assert.deepEqual(desktopRoots(inventory, paths).map(item => item.pid), [100, 200]);
 });
 
+test('missing or malformed identity classification cannot turn an incompatible helper snapshot into a confirmed absence', () => {
+  for (const officialDesktop of [undefined, null, 'true', 1])
+    assert.throws(() => desktopRoots([{ ...processEntry(100), officialDesktop }], paths), /Unverified desktop inventory/);
+  const relocated = processEntry(100, 1, desktop.replace('C:\\Program Files', 'D:'));
+  assert.deepEqual(desktopRoots([relocated], paths).map(({ path: file, officialDesktop }) => [file, officialDesktop]), [[relocated.path, true]]);
+});
+
 test('Windows inventory is hidden, session/user scoped and never asks for command lines', async () => {
-  assert.match(INVENTORY_SCRIPT, /SessionId -ne \$session/);
-  assert.match(INVENTORY_SCRIPT, /GetOwner/);
+  assert.match(INVENTORY_SCRIPT, /session != ownSession/);
+  assert.match(INVENTORY_SCRIPT, /ownSid/);
+  assert.match(INVENTORY_SCRIPT, /GetPackageFamilyName/);
   assert.doesNotMatch(INVENTORY_SCRIPT, /commandline|auth\.json/i);
-  const query = await queryCodexDesktop({ platform: 'win32', ...paths, execFile: (file, args, options, done) => {
+  const query = await queryCodexDesktop({ platform: 'win32', env: {}, ...paths, execFile: (file, args, options, done) => {
     assert.equal(file, 'powershell.exe');
     assert.equal(options.windowsHide, true);
     assert.ok(args.includes('-NonInteractive'));

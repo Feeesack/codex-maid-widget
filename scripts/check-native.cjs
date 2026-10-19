@@ -47,7 +47,7 @@ async function until(callback,ms=10000){const end=Date.now()+ms;while(Date.now()
     const gallery=JSON.parse(fs.readFileSync(path.join(home,'gallery-check.json'),'utf8'));
     assert.equal(gallery.ok,true,gallery.error);
     const galleryStatus=await(await fetch(url+'/status',{headers})).json();
-    assert.equal(galleryStatus.activeCharacterId,'lilac-dragon');assert.equal(galleryStatus.characterCount,2);
+    assert.equal(galleryStatus.activeCharacterId,'lilac-dragon');assert.equal(galleryStatus.characterCount,4);
     // A rejected second instance must not remove the first instance's endpoint.
     second=spawn(exe,args,opts);second.stderr.on('data',x=>errors+=x);
     await new Promise((resolve,reject)=>{second.once('exit',resolve);second.once('error',reject);setTimeout(()=>reject(new Error('Second instance did not exit')),5000).unref();});

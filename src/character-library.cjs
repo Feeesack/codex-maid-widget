@@ -11,6 +11,8 @@ const MAX_CHARACTERS = 500;
 const EXTENSIONS = new Set(['.png', '.webp', '.jpg', '.jpeg', '.gif']);
 const CUSTOM_ID = /^custom-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const BUILT_INS = Object.freeze([
+  { id: 'frost-glass-cheek', name: '小龙娘-托腮', file: 'characters/frost-glass-cheek.png' },
+  { id: 'frost-glass-idle', name: '小龙娘-端庄', file: 'characters/frost-glass-idle.png' },
   { id: 'mint-maid', name: '薄荷女仆', file: 'maid.png' },
   { id: 'lilac-dragon', name: '紫晶龙女仆', file: 'characters/lilac-dragon.png' },
 ]);
@@ -66,7 +68,7 @@ class CharacterLibrary {
     this.assetRoot = path.resolve(assetRoot);
     this.directory = path.join(this.dataDir, 'characters');
     this.manifestPath = path.join(this.directory, 'library.json');
-    this.defaultId = 'lilac-dragon';
+    this.defaultId = 'frost-glass-cheek';
     this.validateImage = validateImage;
     fs.mkdirSync(this.dataDir, { recursive: true });
     fs.mkdirSync(this.directory, { recursive: true });

@@ -22,7 +22,7 @@ function sha(file) { return crypto.createHash('sha256').update(fs.readFileSync(p
 app.whenReady().then(async () => {
   const report = { ok: false, platform: process.platform, electron: process.versions.electron, factor: config.factor,
     isolation: { profile: true, trustedRootsReplacedWithSelfCreatedHostPid: true, appStartupNotLoaded: true },
-    sourceSha256: Object.fromEntries(['window-mode.cjs', 'window-containment.cjs', 'codex-window.cjs', 'window-visibility.cjs'].map(file => [file, sha(file)])),
+    sourceSha256: Object.fromEntries(['window-mode.cjs', 'window-topmost.cjs', 'window-containment.cjs', 'codex-window.cjs', 'window-visibility.cjs'].map(file => [file, sha(file)])),
     realNativeChild: true, realProductionProvider: true, cases: [] };
   let hostProcess, occluderProcess, hostId, hostPid, widget, mode, provider, probe, queryKind = 'known', lastNative = null;
   let queries = 0, factories = 0, recreates = 0, request = 0;
@@ -40,7 +40,8 @@ app.whenReady().then(async () => {
       // discards it. The real C# provider and adapter remain otherwise intact.
       script = script.replace('return answer;', `Rect fixtureRect; GetWindowRect(widget,out fixtureRect);
         answer["fixtureWidgetBounds"]=new Dictionary<string,object>{{"x",fixtureRect.Left},{"y",fixtureRect.Top},{"width",fixtureRect.Right-fixtureRect.Left},{"height",fixtureRect.Bottom-fixtureRect.Top}};
-        answer["fixtureWidgetStyle"]=ownWidget?GetLong(widget,-16).ToInt64():0; return answer;`);
+        answer["fixtureWidgetStyle"]=ownWidget?GetLong(widget,-16).ToInt64():0;
+        answer["fixtureWidgetExStyle"]=ownWidget?GetLong(widget,-20).ToInt64():0; return answer;`);
       script = script.replace('public static object SetOwner(', `
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr hwnd,uint message,IntPtr w,IntPtr l);
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hwnd,int command);
@@ -62,7 +63,7 @@ app.whenReady().then(async () => {
       let pending = ''; child.stdout.on('data', chunk => { pending += chunk.toString('utf8'); let newline;
         while ((newline = pending.indexOf('\n')) >= 0) { const line = pending.slice(0, newline).replace(/^\uFEFF/, '').trim(); pending = pending.slice(newline + 1);
           try { const item = JSON.parse(line); if (item.fixtureWidgetBounds) lastNative = { bounds: item.fixtureWidgetBounds, style: item.fixtureWidgetStyle,
-            parentId: item.widgetParentId, visible: item.widgetVisible, parented: item.widgetParented }; } catch {} }
+            exStyle: item.fixtureWidgetExStyle, parentId: item.widgetParentId, visible: item.widgetVisible, parented: item.widgetParented }; } catch {} }
       }); return child;
     } });
     if (injectFailures) { const query = value.query.bind(value); value.query = async () => { queries++;
@@ -71,6 +72,7 @@ app.whenReady().then(async () => {
     }; } return value;
   }
   function newMode() { return new CodexWindowMode({ widget, screen, getSize: () => size, intervalMs: 50, staleAfterMs: 1600,
+    topmostProviderFactory: () => createProvider(false),
     providerFactory: () => { factories++; provider = createProvider(); return provider; }, onRecreate: () => { recreates++; } }); }
   async function observation() { const value = await provider.query(); assert.equal(value.known, true, 'Native self-host observation unavailable.'); return value; }
   function inside(a, b) { return a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.width <= b.x + b.width + 1 && a.y + a.height <= b.y + b.height + 1; }
@@ -82,10 +84,20 @@ app.whenReady().then(async () => {
     const host = (await observation()).windows.find(item => item.id === hostId), expected = screen.dipToScreenRect(null, { ...mode.getBounds(), ...size }), actual = lastNative.bounds;
     assert.ok(Math.abs(actual.width - expected.width) <= 1 && Math.abs(actual.height - expected.height) <= 1, 'Native child dimensions drifted.');
     assert.equal(widget.webContents.getZoomFactor(), 1); assert.equal(widget.isAlwaysOnTop(), false);
+    assert.equal((lastNative.exStyle & 0x00000008) !== 0, false, 'Embedded child must not be globally topmost.');
     const presence = await widget.webContents.executeJavaScript('({opacity:+getComputedStyle(document.body).opacity,scale:parseFloat(getComputedStyle(document.body).scale)||1,inert:document.body.inert})');
     assert.equal(presence.opacity, 1); assert.equal(presence.scale, 1); assert.equal(presence.inert, false); return host;
   }
   function capture(name) { report.cases.push({ name, state: mode?.getState(), native: lastNative, alive: !widget.isDestroyed() }); }
+  async function standaloneTopmost(expected) {
+    await until(() => !mode.enabled && !mode.embedded && mode.getState().topmost.verified &&
+      mode.getState().topmost.desired === expected, 'Native standalone topmost verification failed.');
+    probe = createProvider(false); const value = await probe.query();
+    assert.equal(value.known, true); assert.equal(value.widgetParented, false); assert.equal(value.widgetParentId, '0');
+    assert.equal(value.widgetTopmost, expected);
+    assert.equal((lastNative.exStyle & 0x00000008) !== 0, expected, 'Actual HWND ExStyle disagrees with the requested topmost state.');
+    probe.close(); probe = null;
+  }
   async function composed(name) { await wait(250);
     const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 1400, height: 1100 }, fetchWindowIcons: false });
     const own = sources.find(item => item.id === 'window:' + hostId + ':0'); assert.ok(own, 'Self-host thumbnail missing.');
@@ -107,6 +119,8 @@ app.whenReady().then(async () => {
     widget = createWidget();
     ipcMain.handle('state', () => ({ windowContainment: mode?.getState() })); ipcMain.on('pointer-region', () => {}); mode = newMode();
     mode.configure(false, { position: standalone, alwaysOnTop: true }); assert.equal(factories, 0); capture('default-off-no-provider');
+    await standaloneTopmost(true); capture('standalone-native-topmost-on');
+    mode.configure(false, { alwaysOnTop: false }); await standaloneTopmost(false); capture('standalone-native-topmost-off');
     mode.configure(true, { position: standalone, alwaysOnTop: true }); await widget.loadFile(path.join(__dirname, '../test/window-presence.html'));
     await settled(); capture('initial-hidden-show-projects-correctly'); await composed('host-composes-child');
     const beforeMove = mode.getArea(), initial = mode.getBounds(), moved = { ...bounds, x: bounds.x + 53, y: bounds.y + 37 };
@@ -164,13 +178,17 @@ app.whenReady().then(async () => {
     mode.configure(false, { position: standalone, alwaysOnTop: true });
     await until(() => !mode.enabled && !mode.embedded && widget.isVisible() && widget.isAlwaysOnTop(), 'Disable failed to restore standalone.');
     assert.ok(Math.abs(widget.getBounds().x - standalone.x) <= 1 && Math.abs(widget.getBounds().y - standalone.y) <= 1, 'Standalone position not restored.');
-    probe = createProvider(false); const detached = await probe.query(); assert.equal(detached.widgetParented, false); assert.equal(detached.widgetParentId, '0'); probe.close(); probe = null;
-    capture('disable-detaches-position-and-top'); mode.configure(true, { position: standalone, alwaysOnTop: true }); await settled();
+    await standaloneTopmost(true); capture('disable-detaches-position-and-top');
+    mode.configure(true, { position: standalone, alwaysOnTop: false }); await settled();
+    mode.configure(false, { alwaysOnTop: false }); await standaloneTopmost(false); capture('second-detach-preserves-topmost-off');
+    mode.configure(true, { position: standalone, alwaysOnTop: true }); await settled();
     const beforeRecreate = recreates; provider.fail();
     await until(() => recreates > beforeRecreate, 'Restarted worker lost style cache without requesting recreation.'); capture('worker-restart-requests-recreate');
     mode.close(); mode = null; widget.destroy(); widget = createWidget();
-    mode = newMode(); mode.configure(true, { position: standalone, alwaysOnTop: true });
-    await widget.loadFile(path.join(__dirname, '../test/window-presence.html')); await settled(); capture('replacement-child-surface-recovers');
+    mode = newMode(); mode.configure(false, { position: standalone, alwaysOnTop: true });
+    await widget.loadFile(path.join(__dirname, '../test/window-presence.html')); mode.show();
+    await standaloneTopmost(true); capture('replacement-standalone-topmost-recovers');
+    mode.configure(true, { position: standalone, alwaysOnTop: true }); await settled(); capture('replacement-child-surface-recovers');
     const reloaded = new Promise(resolve => widget.webContents.once('did-finish-load', resolve)); widget.webContents.reload(); await reloaded;
     await settled(); capture('renderer-reload-reapplies-presence');
     await hostCommand('close'); await until(() => widget.isDestroyed(), 'Host destruction did not destroy native child surface.'); capture('host-destroys-child-surface'); mode.close(); mode = null;

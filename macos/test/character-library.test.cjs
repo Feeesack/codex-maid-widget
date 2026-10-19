@@ -23,6 +23,8 @@ function fixture(t, options = {}) {
   fs.mkdirSync(sources);
   fs.writeFileSync(path.join(assetRoot, 'maid.png'), PNG);
   fs.writeFileSync(path.join(assetRoot, 'characters', 'lilac-dragon.png'), PNG);
+  // Keep each new built-in distinct so fixture hashes do not mask duplicate detection.
+  for (const id of ['frost-glass-idle', 'frost-glass-cheek']) fs.copyFileSync(path.join(__dirname, '../assets/characters', id + '.png'), path.join(assetRoot, 'characters', id + '.png'));
   const library = new CharacterLibrary({ dataDir, assetRoot, ...options });
   return {
     root, dataDir, assetRoot, sources, library,
@@ -33,8 +35,10 @@ function fixture(t, options = {}) {
 
 test('built-in entries have stable ids and do not need a manifest', t => {
   const { library } = fixture(t);
-  assert.equal(library.defaultId, 'lilac-dragon');
+  assert.equal(library.defaultId, 'frost-glass-cheek');
   assert.deepEqual(library.list().map(({ id, name, available, builtIn }) => ({ id, name, available, builtIn })), [
+    { id: 'frost-glass-cheek', name: '小龙娘-托腮', available: true, builtIn: true },
+    { id: 'frost-glass-idle', name: '小龙娘-端庄', available: true, builtIn: true },
     { id: 'mint-maid', name: '薄荷女仆', available: true, builtIn: true },
     { id: 'lilac-dragon', name: '紫晶龙女仆', available: true, builtIn: true },
   ]);
@@ -75,7 +79,7 @@ test('same bytes deduplicate across names, batches, restarts and built-ins', t =
   const duplicate = restored.importFiles([first]);
   assert.equal(duplicate.imported.length, 0);
   assert.equal(duplicate.existing[0].id, result.imported[0].id);
-  assert.equal(restored.list().length, 3);
+  assert.equal(restored.list().length, 5);
 });
 
 test('each bad image is reported while good files in the same batch are still imported', t => {
@@ -93,7 +97,7 @@ test('each bad image is reported while good files in the same batch are still im
   assert.equal(result.imported[0].name, 'good');
   assert.deepEqual(result.errors.map(error => error.name), ['fake.png', 'renamed.jpg', 'image.svg', 'oversized.png']);
   assert.match(result.errors[3].message, /15 MB/);
-  assert.equal(library.list().length, 3);
+  assert.equal(library.list().length, 5);
 });
 
 test('optional decoder can reject a signed but undecodable image without saving a copy', t => {
@@ -121,7 +125,7 @@ test('custom and built-in renames persist without overwriting images', t => {
   assert.throws(() => library.rename('missing', '名字'), { code: 'UNKNOWN_CHARACTER' });
 });
 
-test('delete removes only the imported copy and protects both built-ins', t => {
+test('delete removes only the imported copy and protects all built-ins', t => {
   const { library, source, reopen, assetRoot } = fixture(t);
   const original = source();
   const entry = library.importFiles([original]).imported[0];
@@ -132,7 +136,9 @@ test('delete removes only the imported copy and protects both built-ins', t => {
   assert.deepEqual(fs.readFileSync(original), GIF);
   assert.equal(library.remove(entry.id), false);
   assert.throws(() => library.remove('mint-maid'), { code: 'BUILTIN_CHARACTER_PROTECTED' });
-  assert.throws(() => library.remove('lilac-dragon'), { code: 'BUILTIN_CHARACTER_PROTECTED' });
+  for (const id of ['lilac-dragon', 'frost-glass-idle', 'frost-glass-cheek']) {
+    assert.throws(() => library.remove(id), { code: 'BUILTIN_CHARACTER_PROTECTED' });
+  }
   assert.equal(fs.existsSync(path.join(assetRoot, 'maid.png')), true);
 });
 
@@ -143,7 +149,7 @@ test('missing custom files remain visible as unavailable and can be removed safe
   const restored = reopen();
   assert.equal(restored.get(entry.id).available, false);
   assert.equal(restored.remove(entry.id), true);
-  assert.equal(restored.list().length, 2);
+  assert.equal(restored.list().length, 4);
 });
 
 test('legacy images migrate once, preserve their originals and recognize the old built-in path', t => {
@@ -156,7 +162,7 @@ test('legacy images migrate once, preserve their originals and recognize the old
   assert.equal(library.migrateLegacy(path.join(assetRoot, 'maid.png')).id, 'mint-maid');
   assert.equal(library.migrateLegacy(''), null);
   assert.throws(() => library.migrateLegacy(path.join(assetRoot, 'missing.png')), { code: 'LEGACY_CHARACTER_IMPORT_FAILED' });
-  assert.equal(library.list().length, 3);
+  assert.equal(library.list().length, 5);
 });
 
 test('malformed and traversal manifests are preserved byte-for-byte with recoverable images', t => {
@@ -198,7 +204,7 @@ test('failed atomic commits retain the previous library and remove partial impor
   } finally { fs.renameSync = originalRename; }
   assert.deepEqual(fs.readFileSync(library.manifestPath), before);
   assert.deepEqual(fs.readdirSync(library.directory), ['library.json']);
-  assert.equal(reopen().list().length, 2);
+  assert.equal(reopen().list().length, 4);
 });
 
 test('failed delete commit restores both the record and the image copy', t => {

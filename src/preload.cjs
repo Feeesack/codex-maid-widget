@@ -3,7 +3,15 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('maid', {
   getState: () => ipcRenderer.invoke('state'),
   refresh: () => ipcRenderer.invoke('refresh'),
+  inspectConversation: () => ipcRenderer.invoke('inspect-conversation'),
+  listConversations: () => ipcRenderer.invoke('list-conversations'),
+  selectConversation: id => ipcRenderer.invoke('select-conversation', id),
+  listAccounts: () => ipcRenderer.invoke('list-accounts'),
+  renameAccount: (id, label) => ipcRenderer.invoke('rename-account', id, label),
+  removeAccount: id => ipcRenderer.invoke('remove-account', id),
   setSettings: patch => ipcRenderer.invoke('settings', patch),
+  previewCornerPeek: patch => ipcRenderer.invoke('preview-corner-peek', patch),
+  previewAppearance: patch => ipcRenderer.invoke('preview-appearance', patch),
   action: name => ipcRenderer.invoke('action', name),
   importCharacters: () => ipcRenderer.invoke('import-characters'),
   selectCharacter: id => ipcRenderer.invoke('select-character', id),
@@ -13,5 +21,6 @@ contextBridge.exposeInMainWorld('maid', {
   pointerRegion: inside => ipcRenderer.send('pointer-region', !!inside),
   onState: callback => { const listener = (_event, value) => callback(value); ipcRenderer.on('state', listener); return () => ipcRenderer.removeListener('state', listener); },
   onBounce: callback => { const listener = () => callback(); ipcRenderer.on('bounce', listener); return () => ipcRenderer.removeListener('bounce', listener); },
+  onAccountReset: callback => { const listener = (_event, value) => callback(value); ipcRenderer.on('account-reset', listener); return () => ipcRenderer.removeListener('account-reset', listener); },
   onPresence: callback => { const listener = (_event, value) => callback(value); ipcRenderer.on('presence', listener); return () => ipcRenderer.removeListener('presence', listener); },
 });

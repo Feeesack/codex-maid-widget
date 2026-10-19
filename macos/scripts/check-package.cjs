@@ -69,7 +69,7 @@ async function main() {
       await sleep(100);
     }
     assert.equal(status.status, 'demo'); assert.equal(status.version, packed.version);
-    assert.equal(status.followCodex, false); assert.equal(status.characterCount, 2);
+    assert.equal(status.followCodex, false); assert.equal(status.characterCount, 4); assert.equal(status.activeCharacterId, 'frost-glass-cheek');
     for (const action of ['hide', 'show', 'bounce', 'refresh']) assert.equal((await fetch(url + '/action', { method: 'POST', headers, body: JSON.stringify({ action }) })).status, 200);
     assert.equal(fs.existsSync(path.join(home, 'watcher.json')), false, 'Verification must not start a login helper');
     await checkBundledMcp(packed, home);
