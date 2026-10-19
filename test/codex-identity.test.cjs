@@ -61,21 +61,31 @@ public static class IsolatedIdentityFixture {
     }
 }
 '@\n`);
-  const script = prefix + `
+  const script = prefix.replace('Add-Type -TypeDefinition', "[Console]::Error.WriteLine('MAID_IDENTITY_PHASE compiling ' + $fixtureClock.ElapsedMilliseconds)\nAdd-Type -TypeDefinition") + `
+[Console]::Error.WriteLine('MAID_IDENTITY_PHASE compiled ' + $fixtureClock.ElapsedMilliseconds)
 $vectors = ConvertFrom-Json ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}')))
 $results = @()
 foreach ($vector in $vectors) { $results += [IsolatedIdentityFixture]::Classify($vector.file, $vector.packageFamilyName, $vector.packaged, $vector.localAppData) }
 ConvertTo-Json -InputObject @($results) -Compress
+[Console]::Error.WriteLine('MAID_IDENTITY_PHASE classified ' + $fixtureClock.ElapsedMilliseconds)
 `;
   // CreateProcess's command-line limit also applies to the persistent host.
   assert.ok(Buffer.from(INVENTORY_WORKER_SCRIPT, 'utf16le').toString('base64').length + 512 < 32767);
   // The vector payload is larger than a normal query; pass it on stdin to keep
   // this independent from the command-line size of the test fixture itself.
-  const bootstrap = "$ProgressPreference = 'SilentlyContinue'; [Console]::InputEncoding = New-Object Text.UTF8Encoding($false); Invoke-Expression ([Console]::In.ReadToEnd())";
-  const output = execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(bootstrap, 'utf16le').toString('base64')], {
-    input: script, cwd: temporary, windowsHide: true, timeout: 20000, encoding: 'utf8',
-    env: { ...process.env, TEMP: temporary, TMP: temporary, CODEX_MAID_DATA_DIR: temporary }, maxBuffer: 1024 * 1024,
-  });
+  const bootstrap = "$fixtureClock = [Diagnostics.Stopwatch]::StartNew(); [Console]::Error.WriteLine('MAID_IDENTITY_PHASE bootstrap 0'); $ProgressPreference = 'SilentlyContinue'; [Console]::InputEncoding = New-Object Text.UTF8Encoding($false); Invoke-Expression ([Console]::In.ReadToEnd())";
+  let output;
+  try {
+    output = execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(bootstrap, 'utf16le').toString('base64')], {
+      input: script, cwd: temporary, windowsHide: true, timeout: 20000, encoding: 'utf8',
+      env: { ...process.env, TEMP: temporary, TMP: temporary, CODEX_MAID_DATA_DIR: temporary }, maxBuffer: 1024 * 1024,
+    });
+  } catch (error) {
+    const phases = String(error.stderr || '').match(/MAID_IDENTITY_PHASE (?:bootstrap|compiling|compiled|classified) \d+/g) || [];
+    // Keep diagnostics restricted to fixture phases; never echo native paths,
+    // environment values or arbitrary PowerShell output on a failure.
+    assert.fail(`isolated native identity fixture failed (${error.code || 'process-exit'}); phases: ${phases.join(', ') || 'none'}`);
+  }
   assert.deepEqual(JSON.parse(output.trim()), vectors.map(([, , , , expected]) => expected));
 });
 

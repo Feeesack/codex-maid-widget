@@ -12,6 +12,7 @@ const assert = require('node:assert/strict');
 const { sanitize, widgetDimensions, cornerPeekOffset } = require('../src/settings.cjs');
 const { CharacterLibrary } = require('../src/character-library.cjs');
 const { checkBubbleSortUi } = require('./bubble-sort-ui.cjs');
+const { captureOffscreenFrame } = require('./offscreen-frame.cjs');
 const root=path.join(__dirname,'..');
 let smokePhase = 'starting Electron';
 const smokeWatchdog = setTimeout(() => { console.error('UI smoke timed out during: ' + smokePhase); app.exit(1); }, 180000);
@@ -626,7 +627,7 @@ async function checkCornerPeeking(capture) {
         assert.ok(!/(?:all|translate)/.test(after.bubbleTransition),'native bubble translation has no second interpolation');
         if(scale===1.4&&((character==='mint-maid'&&mirror)||(character==='lilac-dragon'&&!mirror))) {
           await evaluate(`document.getElementById('notice').hidden=true`);
-          await pause(80);await win.webContents.capturePage();await pause(50);
+          await pause(80);await captureOffscreenFrame(win);await pause(50);
           await capture(`widget-corner-peek-${character}-${corner}.png`);
           await evaluate(`document.getElementById('notice').hidden=false`);
         }
@@ -768,7 +769,7 @@ app.whenReady().then(async()=>{
   await publish({activeCharacterId:'mint-maid'});await waitForTheme('mint-maid','builtin');
   assert.deepEqual(await themeColors(),mintTheme,'switching back should restore the mint palette');
   const screenshots=screenshotDirectory;fs.mkdirSync(screenshots,{recursive:true});
-  const capture = async name => fs.writeFileSync(path.join(screenshots,name),(await win.webContents.capturePage()).toPNG());
+  const capture = async name => fs.writeFileSync(path.join(screenshots,name),(await captureOffscreenFrame(win)).toPNG());
   await checkMirrorMotion();
   await publish({autoHideSeconds:0});
   await evaluate(`document.getElementById('notice').hidden=false;document.getElementById('notice').textContent='测试提示';document.querySelector('.toolbar').style.opacity='1';document.querySelector('.toolbar').style.transition='none'`);
@@ -795,7 +796,7 @@ app.whenReady().then(async()=>{
   const waitForShineFrame = async previous => {
     // Request real compositor paints while waiting for the CSS animation.
     for(let attempt=0;attempt<40;attempt++) {
-      await win.webContents.capturePage();await pause(50);
+      await captureOffscreenFrame(win);await pause(50);
       const frame=await shine();
       if(frame.position!==previous.position)return frame;
     }
@@ -805,7 +806,7 @@ app.whenReady().then(async()=>{
   assert.equal(shineAfter.active,true);assert.ok(shineAfter.animations>0);assert.notEqual(shineBefore.position,shineAfter.position);
   await evaluate('setBubbleVisible(false)');await pause(60);
   const pausedShine=await shine();assert.equal(pausedShine.playState,'paused');
-  await win.webContents.capturePage();await pause(180);
+  await captureOffscreenFrame(win);await pause(180);
   assert.equal((await shine()).position,pausedShine.position,'hidden quota shimmer should stop repainting');
   await evaluate('setBubbleVisible(true)');
   assert.equal((await shine()).playState,'running');
@@ -820,20 +821,20 @@ app.whenReady().then(async()=>{
   const systemMotionEvidence=[];
   for(const systemReduced of [true,false]){
     await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:systemReduced?'reduce':'no-preference'}]});
-    win.webContents.invalidate();await win.webContents.capturePage();await pause(80);
+    win.webContents.invalidate();await captureOffscreenFrame(win);await pause(80);
     assert.equal(await evaluate(`matchMedia('(prefers-reduced-motion: reduce)').matches`),systemReduced);
     const before=await shine(),after=await waitForShineFrame(before);assert.ok(after.animations>0);assert.notEqual(after.position,before.position);
     assert.equal(await evaluate(`document.getElementById('maid-image').getAnimations().some(animation=>animation.animationName==='breathe')`),true);
-    await evaluate('pressInteraction(false)');await win.webContents.capturePage();await pause(280);
-    win.webContents.invalidate();await win.webContents.capturePage();
+    await evaluate('pressInteraction(false)');await captureOffscreenFrame(win);await pause(280);
+    win.webContents.invalidate();await captureOffscreenFrame(win);
     assert.equal(await evaluate(`['character','bubble-motion'].every(id=>document.getElementById(id).classList.contains('interaction-pressed'))`),true,'press animation remains enabled for either OS motion preference');
     assert.ok(Math.abs(await evaluate(`new DOMMatrix(getComputedStyle(document.getElementById('character')).transform).d`)-.88)<.002);
     await evaluate('releaseInteraction(false)');await pause(320);
     await evaluate('setBubbleVisible(false)');
     assert.ok(await evaluate(`['bubble','bubble-content','dot-one','dot-two'].reduce((count,id)=>count+(document.getElementById(id)||document.querySelector('.'+id)).getAnimations().length,0)`)>0,'bubble hide transitions remain enabled');
-    await win.webContents.capturePage();await pause(550);win.webContents.invalidate();await win.webContents.capturePage();
+    await captureOffscreenFrame(win);await pause(550);win.webContents.invalidate();await captureOffscreenFrame(win);
     assert.equal(await evaluate(`getComputedStyle(document.getElementById('bubble')).opacity`),'0');
-    await evaluate('setBubbleVisible(true)');await win.webContents.capturePage();await pause(550);win.webContents.invalidate();await win.webContents.capturePage();
+    await evaluate('setBubbleVisible(true)');await captureOffscreenFrame(win);await pause(550);win.webContents.invalidate();await captureOffscreenFrame(win);
     assert.equal(await evaluate(`getComputedStyle(document.getElementById('bubble')).opacity`),'1');
     systemMotionEvidence.push({systemReduced,shimmerPaints:true,breathing:true,pressedPose:true,bubbleShowHideAnimated:true});
   }
@@ -917,7 +918,7 @@ app.whenReady().then(async()=>{
   // ResizeObserver runs on a render update; hidden hosted surfaces may defer
   // it beyond a fixed 60 ms sleep. Wait for the real observer to refit text.
   for(let attempt=0;attempt<40;attempt++) {
-    await win.webContents.capturePage();await pause(50);
+    await captureOffscreenFrame(win);await pause(50);
     if((await phraseLayout()).fits)break;
   }
   assert.equal((await phraseLayout()).fits,true,'container width changes recalculate the fitting size');

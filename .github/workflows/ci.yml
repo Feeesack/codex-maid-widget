@@ -18,7 +18,10 @@ jobs:
           cache: npm
       - run: node distribution/check-versions.cjs
       - run: npm ci
-      - run: npm test
+      # Cold PowerShell/.NET native fixtures share the hosted runner's CPU and
+      # compiler resources. Keep every test and its existing timeout, and avoid
+      # starting all test files concurrently on the first Windows boot.
+      - run: node --test --test-concurrency=1 test/*.test.cjs
       - run: node --test distribution/test/*.test.cjs distribution/integration/test/*.test.cjs
       - name: Prepare hosted Windows display for the full DPI matrix
         run: ./scripts/configure-ci-display.ps1
