@@ -146,6 +146,9 @@ app.whenReady().then(async()=>{
     }
     await release(point);await settled('system motion change during hold');
     assert.equal(await evaluate(`soundAttempts`),0);
+    // The preceding dialogue checks leave the quota page hidden. Its shimmer
+    // exists only while visible, so restore the page before inspecting it.
+    await evaluate(`setMode('quota',false);void 0`);await pause(250);
     phase='always-on animation with ignored legacy storage';
     const legacyAnimationMatrix=[];
     for(const legacyValue of ['system','full','reduced'])for(const systemReduced of [false,true]){
