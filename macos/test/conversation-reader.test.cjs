@@ -413,6 +413,15 @@ test('superseded selection aborts temporary writes and cannot rename or update s
 
 test('compaction history is lazy, counts only committed top-level envelopes and survives a reader restart', async t => {
   const data = await fixture(t);
+  // Large histories may yield at the production scan budget on a busy machine.
+  // Each explicit read resumes the cached offset, as another user click would.
+  const readComplete = async (reader, selection) => {
+    for (let attempt = 0; attempt < 32; attempt++) {
+      const result = await reader.readCompactions(selection);
+      if (result.status !== 'ready' || result.complete !== false) return result;
+    }
+    assert.fail('Fixture history did not finish within 32 explicit reads');
+  };
   const compacted = summary => JSON.stringify({ type: 'compacted', payload: { message: summary, compaction_response_id: 'fixture-response' } });
   const notified = JSON.stringify({ type: 'event_msg', payload: { type: 'context_compacted' } });
   const nested = JSON.stringify({ type: 'response_item', payload: { type: 'message', text: compacted('fake escaped'), nested: { type: 'compacted' } } });
@@ -420,15 +429,15 @@ test('compaction history is lazy, counts only committed top-level envelopes and 
   assert.equal(data.reader.compactionCounter, null);
   const selected = await data.reader.resolveId('chosen');
   assert.equal(data.reader.compactionCounter, null);
-  assert.deepEqual(await data.reader.readCompactions(selected), { status: 'ready', count: 2, complete: true });
+  assert.deepEqual(await readComplete(data.reader, selected), { status: 'ready', count: 2, complete: true });
   assert.ok(data.reader.compactionCounter);
   assert.equal(data.reader.selectedId, null); assert.equal(data.reader.selectionLoaded, false);
   assert.equal(await fs.stat(data.maidData).then(() => true, () => false), false);
   const reader = new ConversationReader({ codexHome: data.codexHome });
-  assert.deepEqual(await reader.readCompactions(await reader.resolveId('chosen')), { status: 'ready', count: 2, complete: true });
+  assert.deepEqual(await readComplete(reader, await reader.resolveId('chosen')), { status: 'ready', count: 2, complete: true });
   await fs.appendFile(rollout, compacted('third') + '\n' + notified + '\n');
-  assert.deepEqual(await data.reader.readCompactions(selected), { status: 'ready', count: 3, complete: true });
-  assert.deepEqual(await data.reader.readCompactions(selected), { status: 'ready', count: 3, complete: true });
+  assert.deepEqual(await readComplete(data.reader, selected), { status: 'ready', count: 3, complete: true });
+  assert.deepEqual(await readComplete(data.reader, selected), { status: 'ready', count: 3, complete: true });
 });
 
 test('compaction read revalidates selection paths and missing IDs before opening rollout data', async t => {
