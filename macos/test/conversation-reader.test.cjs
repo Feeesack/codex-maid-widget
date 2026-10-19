@@ -560,7 +560,9 @@ test('an old namespaced conversation outside the recent 30 and candidate 120 res
   const listed = await data.reader.list();
   assert.equal(listed.threads.length, 30); assert.equal(listed.threads.some(thread => thread.id === 'legacy-old'), false);
   const selected = await data.reader.resolveId('legacy-old');
-  assert.equal(selected.status, 'ready'); assert.equal(selected.cwd, data.workspace); assert.equal(selected.rolloutPath, filename);
+  assert.equal(selected.status, 'ready');
+  assert.equal(await fs.realpath(selected.cwd), await fs.realpath(data.workspace));
+  assert.equal(await fs.realpath(selected.rolloutPath), await fs.realpath(filename));
   assert.equal((await data.reader.readContext(selected)).usedTokens, 30000);
   const { ConversationTarget } = require('../src/conversation-target.cjs');
   data.reader.list = async () => { throw Error('Automatic lookup must not use the recent list'); };
