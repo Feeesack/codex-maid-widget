@@ -16,3 +16,10 @@
 *.jpeg binary
 *.webp binary
 *.gif binary
+*.wav binary
+*.mp3 binary
+
+# Integrity checks bind these files to their unmodified upstream bytes.
+src/vendor/** -text
+licenses/** -text
+assets/audio/*License.txt -text
