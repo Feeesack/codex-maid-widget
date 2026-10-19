@@ -1,12 +1,12 @@
 # Changelog
 
-## 0.3.48 release candidate — Cumulative update since 0.3.21, 2026-10-19
+## 0.3.48 — Cumulative update since 0.3.21, 2026-10-19
 
 - Add split press/release interactions and five sound choices, including DSH Duck, with smoother rapid clicking and a held pose during drag. Sound assets have separate source/license scopes; see [audio provenance](docs/interaction-audio.md).
 - Record locally observed accounts with independent five-hour reset countdowns and an in-widget reminder with four bounces; add conversation context, confirmed automatic/manual compaction totals and worktree uncommitted-file counts, with automatic detection and a manual list of up to 30 recent eligible conversations.
 - Add two dragon-girl poses, Motion mirroring, Hugeicons controls, previous/next page arrows and SortableJS page ordering, visibility and startup-default settings.
 - Add live size/opacity and independent bottom/side hiding previews; fix toolbar dismissal/access and Windows Codex discovery across installation volumes and user environments.
-- Preserve settings, imported characters and valid selections. This candidate is not yet a published Release. Mac native CI results are pending; hands-on acceptance is separate.
+- Preserve settings, imported characters and valid selections. Native Mac CI covers both architectures; hands-on acceptance is separate.
 - See the [complete Chinese and English release notes](docs/releases/0.3.48.md). The entries below retain the history of the local updates that make up this release.
 
 ## 0.3.48 — Louder bounce audio and balanced bubble press, 2026-10-19

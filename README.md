@@ -20,7 +20,7 @@ Screenshots show the current Windows interface with **synthetic demo data**. Acc
 
 ## Download and install
 
-Windows and macOS share version **v0.3.48**. This checkout is preparing that release; the links below are its intended download targets and become available after publication. Packages already published are listed on [Releases](https://github.com/Feeesack/codex-maid-widget/releases).
+Windows and macOS share release version **v0.3.48**. Download the matching installer below, or visit [Releases](https://github.com/Feeesack/codex-maid-widget/releases) for other versions.
 
 | Platform | Installer |
 | --- | --- |
@@ -137,7 +137,7 @@ Windows and macOS use the same release version. The build stops if their manifes
 
 ## Testing
 
-Windows 0.3.48 has local runtime evidence for main-app and helper versions, non-demo quota, local controls and MCP. Automated regression covers both source trees, including rendering, settings, data parsing, interactions and path compatibility. The new Mac features have source/renderer checks performed from Windows; **0.3.48 Mac native packaging and runtime checks remain pending**. The Mac workflow can check a universal package, installation, launch, MCP and the launchd helper on Apple Silicon and Intel runners.
+Windows 0.3.48 has local runtime evidence for main-app and helper versions, non-demo quota, local controls and MCP. Automated regression covers both source trees, including rendering, settings, data parsing, interactions and path compatibility. The universal Mac installer is built on a native runner, with installation, launch, MCP, native window and launchd-helper checks on Apple Silicon and Intel runners.
 
 CI does not replace hands-on Mac acceptance for multiple monitors, Spaces, full screen, Retina, audio and login sessions. Subjective sound and animation feel, real five-hour reset reminders and Windows sign-out/sign-in also need hands-on acceptance.
 

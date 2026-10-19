@@ -2,15 +2,15 @@
 
 [English documentation](../README.md) · [简体中文文档](../README.zh-CN.md)
 
-The Mac implementation shares version **0.3.48** with Windows. One universal installer targets Apple Silicon and Intel on macOS 13 or newer. This is a release candidate; its download link becomes available after publication.
+The Mac implementation shares version **0.3.48** with Windows. One universal installer targets Apple Silicon and Intel on macOS 13 or newer.
 
 Shared features include conversation context/Git status, compaction totals, local account reset countdowns, paired press/release interactions and five sound choices including DSH Duck. The built-in list starts with 小龙娘-托腮 and 小龙娘-端庄, followed by the original mint maid and lilac dragon maid; 小龙娘-托腮 is the default for fresh settings and the fallback after removing the selected custom character. Existing valid selections and user-defined names are retained. See the [bilingual release notes](../docs/releases/0.3.48.md) and [audio source/license scope](docs/interaction-audio.md).
 
 Settings hide the corner-hiding sliders until peeking is enabled, preview changes while dragging and save on release. Bottom hiding defaults to 50% and side hiding to 100%; saved values are retained.
 
-The renderer also supports live size/opacity previews, Motion-powered mirroring, Hugeicons controls, previous/next arrows and a page editor with SortableJS ordering, visibility and default selection. Source/renderer behavior has been checked from Windows; **native Mac 0.3.48 packaging and runtime CI results remain pending**. These checks do not establish hands-on Mac acceptance.
+The renderer also supports live size/opacity previews, Motion-powered mirroring, Hugeicons controls, previous/next arrows and a page editor with SortableJS ordering, visibility and default selection. The universal package is built on a native Mac runner, with installation, launch, MCP, native window and launchd-helper checks on Apple Silicon and Intel runners. These checks do not establish hands-on Mac acceptance.
 
-- [Download the Mac installer (after publication)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.48/Codex-Maid-Widget-0.3.48-macOS-universal.pkg)
+- [Download the Mac installer](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.48/Codex-Maid-Widget-0.3.48-macOS-universal.pkg)
 - [Installation and plugin connection](../docs/INSTALLATION.md)
 - [Build and validation details](../docs/BUILDING.md)
 - [Artwork sources](docs/asset-provenance.md) and [artwork license](ARTWORK_LICENSE.md)

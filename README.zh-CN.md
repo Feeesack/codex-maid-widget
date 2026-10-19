@@ -20,7 +20,7 @@
 
 ## 下载与安装
 
-Windows 和 macOS 使用同一个版本号 **v0.3.48**。当前源码正在准备该版本发布；下方为预定下载链接，发布后生效。已发布安装包以 [Releases](https://github.com/Feeesack/codex-maid-widget/releases) 页面为准。
+Windows 和 macOS 使用同一个版本号 **v0.3.48**。从下方下载对应安装包，或在 [Releases](https://github.com/Feeesack/codex-maid-widget/releases) 查看其他版本。
 
 | 平台 | 安装包 |
 | --- | --- |
@@ -137,7 +137,7 @@ npm run build:installer
 
 ## 验证范围
 
-Windows 0.3.48 已有本机主程序、助手版本、非演示额度、本地控制与 MCP 的运行证据。自动回归覆盖双端源码的渲染、设置、数据解析、交互与路径兼容。本次 Mac 新功能目前在 Windows 上完成源码／渲染检查，**0.3.48 的 Mac 原生打包和运行验证仍待完成**。Mac 工作流可在 Apple 芯片与 Intel runner 上检查通用安装包、安装、启动、MCP 与 launchd 助手。
+Windows 0.3.48 已有本机主程序、助手版本、非演示额度、本地控制与 MCP 的运行证据。自动回归覆盖双端源码的渲染、设置、数据解析、交互与路径兼容。macOS 通用安装包由原生 runner 构建，并在 Apple 芯片与 Intel runner 上完成安装、启动、MCP、原生窗口与 launchd 助手检查。
 
 CI 不代替 Mac 多屏、Spaces、全屏、Retina、声音及登录会话的人工体验。主观音量、动画手感、真实五小时提醒和 Windows 注销重登也仍需人工验收。
 
