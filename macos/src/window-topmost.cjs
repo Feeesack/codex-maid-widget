@@ -7,6 +7,7 @@ class WindowTopmostController {
     now = () => Date.now(), schedule = setTimeout, cancel = clearTimeout } = {}) {
     Object.assign(this, { widget, platform, providerFactory, onStatus, now, schedule, cancel });
     this.closed = false; this.contained = false; this.preference = true;
+    this.containedVisible = false;
     this.revision = 0; this.completed = 0; this.provider = null; this.providerHandle = null;
     this.work = Promise.resolve();
     this.state = { desired: true, verified: false, reason: 'pending' };
@@ -23,13 +24,20 @@ class WindowTopmostController {
   }
   getState() { return { ...this.state }; }
   handle() { try { return this.widget.getNativeWindowHandle?.().toString('hex') || ''; } catch { return ''; } }
-  configure({ contained = this.contained, alwaysOnTop = this.preference } = {}) {
+  configure({ contained = this.contained, alwaysOnTop = this.preference, containedVisible = this.containedVisible } = {}) {
     const wasContained = this.contained;
+    const wasVisible = this.containedVisible;
     this.contained = contained === true; this.preference = alwaysOnTop !== false;
+    this.containedVisible = this.platform === 'darwin' && this.contained && containedVisible === true;
     if (this.contained && this.blurTimer !== null) { this.cancel(this.blurTimer); this.blurTimer = null; }
     // No standalone topmost command is ever issued to an attached child.
-    if (this.contained && wasContained && this.state.reason !== 'topmost-unavailable') return this.work;
+    if (this.contained && wasContained && wasVisible === this.containedVisible && this.state.reason !== 'topmost-unavailable') return this.work;
     return this.request();
+  }
+  desired() {
+    // macOS has a separate companion window rather than a cross-process child.
+    // Float it only while the foreground/containment policy permits showing it.
+    return this.contained ? this.platform === 'darwin' && this.containedVisible : this.preference;
   }
   recover() {
     // A failed entry barrier has never allowed a child attach. Only an explicit
@@ -39,7 +47,7 @@ class WindowTopmostController {
   request() {
     if (this.closed) return this.work;
     this.revision++;
-    this.state = { desired: !this.contained && this.preference, verified: false, reason: 'pending' };
+    this.state = { desired: this.desired(), verified: false, reason: 'pending' };
     this.work = this.work.catch(() => {}).then(() => this.drain());
     try { this.onStatus(); } catch {}
     return this.work;
@@ -47,7 +55,7 @@ class WindowTopmostController {
   settled() { return this.work; }
   async drain() {
     while (!this.closed && this.completed !== this.revision) {
-      const revision = this.revision, desired = !this.contained && this.preference, handle = this.handle();
+      const revision = this.revision, desired = this.desired(), handle = this.handle();
       let verified = false;
       try {
         if (this.widget.isDestroyed?.()) break;

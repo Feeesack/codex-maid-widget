@@ -23,6 +23,7 @@ var expectedBundle = ${JSON.stringify(CODEX_BUNDLE_ID)};
 function emptyWindowState() {
     return { known: false, windows: [], foregroundWindow: '0', foregroundPid: 0 };
 }
+// NSString keys also work when CoreGraphics CFString constants are opaque.
 function scalar(dictionary, key) {
     var value = dictionary.objectForKey(key);
     return !value || value.isNil() ? undefined : ObjC.unwrap(value);
@@ -34,6 +35,7 @@ function snapshot(request) {
     var raw;
     try {
         if (!request || request.op !== 'query' || !Array.isArray(request.pids) || request.pids.length > ${MAX_ROOTS}) return emptyWindowState();
+        var trackWidget = typeof request.widgetWindowId === 'string' && /^[1-9]\d*$/.test(request.widgetWindowId) && positiveInteger(request.widgetPid);
         // NSRunningApplication's changing properties are cached until the main
         // run loop advances. Drain events between requests before using them.
         $.NSRunLoop.currentRunLoop.runUntilDate($.NSDate.dateWithTimeIntervalSinceNow(0.001));
@@ -56,15 +58,16 @@ function snapshot(request) {
         if (!list) list = ObjC.castRefToObject(raw);
         var count = Number(list.count);
         if (!isFinite(count) || Math.floor(count) !== count || count < 0 || count > 20000) return emptyWindowState();
-        var windows = [], foregroundWindow = '0';
+        var windows = [], foregroundWindow = '0', widgetIndex = -1;
         for (var j = 0; j < count; j++) {
             var info = list.objectAtIndex(j);
-            var owner = Number(scalar(info, $.kCGWindowOwnerPID));
-            if (!trusted[owner] || Number(scalar(info, $.kCGWindowLayer)) !== 0 || !(Number(scalar(info, $.kCGWindowAlpha)) > 0)) continue;
-            var onScreen = scalar(info, $.kCGWindowIsOnscreen);
+            var owner = Number(scalar(info, "kCGWindowOwnerPID"));
+            if (trackWidget && owner === request.widgetPid && String(Number(scalar(info, "kCGWindowNumber"))) === request.widgetWindowId && Number(scalar(info, "kCGWindowAlpha")) > 0) widgetIndex = j;
+            if (!trusted[owner] || Number(scalar(info, "kCGWindowLayer")) !== 0 || !(Number(scalar(info, "kCGWindowAlpha")) > 0)) continue;
+            var onScreen = scalar(info, "kCGWindowIsOnscreen");
             if (onScreen === false || onScreen === 0) continue;
-            var id = Number(scalar(info, $.kCGWindowNumber));
-            var rect = info.objectForKey($.kCGWindowBounds);
+            var id = Number(scalar(info, "kCGWindowNumber"));
+            var rect = info.objectForKey("kCGWindowBounds");
             if (!positiveInteger(id) || !rect || rect.isNil()) return emptyWindowState();
             var x = Number(scalar(rect, 'X')), y = Number(scalar(rect, 'Y'));
             var width = Number(scalar(rect, 'Width')), height = Number(scalar(rect, 'Height'));
@@ -72,12 +75,18 @@ function snapshot(request) {
             if (width < 320 || height < 200) continue; // Same minimum as the reference CGWindow probe.
             var foreground = owner === foregroundPid && foregroundWindow === '0';
             if (foreground) foregroundWindow = String(id);
-            windows.push({ id: String(id), pid: owner, bounds: { x: x, y: y, width: width, height: height }, visible: true, minimized: false, cloaked: false, foreground: foreground });
+            windows.push({ id: String(id), pid: owner, bounds: { x: x, y: y, width: width, height: height }, visible: true, minimized: false, cloaked: false, foreground: foreground, orderIndex: j });
             if (windows.length > ${MAX_WINDOWS}) return emptyWindowState();
         }
-        return { known: true, windows: windows, foregroundWindow: foregroundWindow, foregroundPid: foregroundPid };
+        for (var k = 0; k < windows.length; k++) {
+            if (trackWidget) windows[k].widgetAboveHost = widgetIndex >= 0 && widgetIndex < windows[k].orderIndex;
+            delete windows[k].orderIndex;
+        }
+        var result = { known: true, windows: windows, foregroundWindow: foregroundWindow, foregroundPid: foregroundPid };
+        if (trackWidget) result.widgetVisible = widgetIndex >= 0;
+        return result;
     } catch (_) { return emptyWindowState(); }
-    finally { if (raw) { try { $.CFRelease(raw); } catch (_) {} } }
+    // JXA owns the bridged object; CFRelease causes a later double release.
 }
 function run() {
     var input = $.NSFileHandle.fileHandleWithStandardInput;
@@ -125,27 +134,33 @@ function parseSnapshot(answer, allowedPids) {
   if (!answer || answer.known !== true || !Array.isArray(answer.windows) || answer.windows.length > MAX_WINDOWS ||
       !Number.isSafeInteger(answer.foregroundPid) || answer.foregroundPid < 0 ||
       (answer.foregroundWindow !== '0' && nativeHandleId(answer.foregroundWindow) === '0')) return null;
+  if (answer.widgetVisible !== undefined && typeof answer.widgetVisible !== 'boolean') return null;
   const ids = new Set(), windows = [];
   for (const item of answer.windows) {
     if (!item || typeof item.id !== 'string' || nativeHandleId(item.id) !== item.id || ids.has(item.id) ||
         !Number.isSafeInteger(item.pid) || !allowedPids.has(item.pid) || !validBounds(item.bounds) ||
         item.visible !== true || item.minimized !== false || item.cloaked !== false || typeof item.foreground !== 'boolean' ||
-        item.foreground !== (item.id === answer.foregroundWindow && item.pid === answer.foregroundPid)) return null;
+        item.foreground !== (item.id === answer.foregroundWindow && item.pid === answer.foregroundPid) ||
+        (item.widgetAboveHost !== undefined && typeof item.widgetAboveHost !== 'boolean')) return null;
     ids.add(item.id);
     windows.push({ id: item.id, pid: item.pid, bounds: { x: item.bounds.x, y: item.bounds.y, width: item.bounds.width, height: item.bounds.height },
-      visible: true, minimized: false, cloaked: false, foreground: item.foreground });
+      visible: true, minimized: false, cloaked: false, foreground: item.foreground,
+      ...(item.widgetAboveHost === undefined ? {} : { widgetAboveHost: item.widgetAboveHost }) });
   }
   if (answer.foregroundWindow !== '0' && !windows.some(item => item.foreground)) return null;
-  return { known: true, supported: true, windows, foregroundWindow: answer.foregroundWindow, foregroundPid: answer.foregroundPid, coordinateSpace: 'dip', foregroundWindowIsGuess: true };
+  return { known: true, supported: true, windows, foregroundWindow: answer.foregroundWindow, foregroundPid: answer.foregroundPid, coordinateSpace: 'dip', foregroundWindowIsGuess: true,
+    ...(answer.widgetVisible === undefined ? {} : { widgetVisible: answer.widgetVisible }) };
 }
 
 class CodexWindowProvider {
-  constructor({ platform = process.platform, spawn = nativeSpawn, execFile, inventory, queryRoots, timeout = 4000, rootCacheMs = 2500, now = Date.now, uid, readBundle, homedir } = {}) {
+  constructor({ platform = process.platform, spawn = nativeSpawn, execFile, inventory, queryRoots, timeout = 4000, rootCacheMs = 2500, now = Date.now, uid, readBundle, homedir, getWidgetWindowId, widgetPid = process.pid } = {}) {
     this.platform = platform;
     this.spawn = spawn;
     this.timeout = timeout;
     this.rootCacheMs = rootCacheMs;
     this.now = now;
+    this.getWidgetWindowId = getWidgetWindowId;
+    this.widgetPid = widgetPid;
     this.inventory = inventory || (!queryRoots && platform === 'darwin' ? createDesktopInventoryQuery({ platform, execFile, uid, readBundle, homedir }) : null);
     this.queryRoots = queryRoots || (() => this.inventory.query());
     this.roots = null;
@@ -187,7 +202,8 @@ class CodexWindowProvider {
       try {
         if (!this.worker) this.startWorker();
         const worker = this.worker;
-        worker.child.stdin.write(JSON.stringify({ op: 'query', pids: this.roots }) + '\n', error => {
+        const widgetWindowId = this.getWidgetWindowId?.();
+        worker.child.stdin.write(JSON.stringify({ op: 'query', pids: this.roots, widgetWindowId, widgetPid: widgetWindowId ? this.widgetPid : undefined }) + '\n', error => {
           if (error && this.worker === worker) this.disposeWorker();
         });
       } catch { this.disposeWorker(); }

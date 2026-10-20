@@ -31,6 +31,7 @@ function harness(variant, options = {}) {
   const widget = { webContents, isDestroyed: () => false,
     getBounds: () => ({ ...bounds }), getNativeWindowHandle: () => Buffer.alloc(8, 1),
     setBounds(value) { bounds = { ...value }; calls.push({ kind: 'bounds', ...value }); },
+    setPosition(x, y) { bounds = { ...bounds, x, y }; calls.push({ kind: 'position', ...bounds }); },
     setAlwaysOnTop(value) { top = value; calls.push({ kind: 'top', value }); },
     showInactive() { visible = true; calls.push({ kind: 'showInactive' }); },
     show() { visible = true; calls.push({ kind: 'show' }); }, moveTop() { calls.push({ kind: 'moveTop' }); },
@@ -86,7 +87,7 @@ function harness(variant, options = {}) {
       calls.push({ kind: 'native-top', value });
       return options.topmost?.(value) ?? { known: true, ok: true, topmost: value };
     }, close() {} }),
-    intervalMs: 100, staleAfterMs: 50,
+    intervalMs: 100, activeIntervalMs: 100, staleAfterMs: 50,
     onStatus() { statusChanges++; }, onRecreate() { recreations++; },
   });
   if (options.rendererReady !== false) { webContents.emit('did-finish-load'); calls.length = 0; }
@@ -119,12 +120,14 @@ for (const variant of variants) {
     assert.equal(h.visible, true); assert.equal(h.mode.getState().reason, 'contained');
     assert.ok(h.calls.some(c => c.kind === 'showInactive')); assert.ok(h.calls.some(c => c.kind === 'moveAbove' && c.id === 'window:123:0'));
     assert.equal(h.calls.some(c => c.kind === 'show' || c.kind === 'moveTop'), false);
-    assert.deepEqual(plain(h.mode.getArea()), { x: 102, y: 82, width: 996, height: 796 });
+    const inset = variant.platform === 'darwin' ? 8 : 2;
+    assert.deepEqual(plain(h.mode.getArea()), { x: 100 + inset, y: 80 + inset, width: 1000 - inset * 2, height: 800 - inset * 2 });
   });
   test(variant.name + ': physical rectangles convert before inset and preserve fixed preferred dimensions', async t => {
     const value = snapshot({ coordinateSpace: 'physical-pixels', windows: [{ ...snapshot().windows[0], bounds: { x: -1500, y: 150, width: 1500, height: 1200 } }] });
     const h = await start(t, variant, { answers: [[Promise.resolve(value)]] }); assert.deepEqual(h.conversions, [{ window: null, value: value.windows[0].bounds }]);
-    assert.deepEqual(plain(h.mode.getArea()), { x: -998, y: 102, width: 996, height: 796 }); assert.equal(h.bounds.width, 228); assert.equal(h.bounds.height, 288);
+    const inset = variant.platform === 'darwin' ? 8 : 2;
+    assert.deepEqual(plain(h.mode.getArea()), { x: -1000 + inset, y: 100 + inset, width: 1000 - inset * 2, height: 800 - inset * 2 }); assert.equal(h.bounds.width, 228); assert.equal(h.bounds.height, 288);
   });
   test(variant.name + ': dialogs/tool windows cannot replace main host and hidden zero-size helpers are unavailable', () => {
     const h = harness(variant), main = { ...snapshot().windows[0], foreground: false };
