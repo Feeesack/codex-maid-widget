@@ -4,14 +4,14 @@
 
 ## Current installers
 
-Both platforms use **v0.3.48**.
+Both platforms use **v0.3.51**.
 
 | Platform | Download |
 | --- | --- |
-| Windows x64 | [Windows setup.exe](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.48/Codex-Maid-Widget-0.3.48-windows-x64-setup.exe) |
-| macOS 13+, Apple Silicon and Intel | [Mac universal.pkg](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.48/Codex-Maid-Widget-0.3.48-macOS-universal.pkg) |
+| Windows x64 | [Windows setup.exe](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.51/Codex-Maid-Widget-0.3.51-windows-x64-setup.exe) |
+| macOS 13+, Apple Silicon and Intel | [Mac universal.pkg](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.51/Codex-Maid-Widget-0.3.51-macOS-universal.pkg) |
 
-The [Release page](https://github.com/Feeesack/codex-maid-widget/releases/tag/v0.3.48) provides SHA-256 checksums. Installers include Electron and the optional local Codex-plugin connector; you do not need Node.js, npm, a source checkout, or an API key.
+The [Release page](https://github.com/Feeesack/codex-maid-widget/releases/tag/v0.3.51) provides SHA-256 checksums. Installers include Electron and the optional local Codex-plugin connector; you do not need Node.js, npm, a source checkout, or an API key.
 
 Real quota requires the official Codex desktop app to be installed and signed in. The widget does not sign you in or include account credentials.
 

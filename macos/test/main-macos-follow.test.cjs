@@ -19,7 +19,10 @@ function controller(t) {
     getVersion: () => 'test', requestSingleInstanceLock: () => false, quit() {} });
   let finishFinalizer;
   const finalizer = new Promise(resolve => { finishFinalizer = resolve; });
+  const translations = {module:{exports:{}}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n.js'), 'utf8'), translations);
   const modules = {
+    './i18n.js': translations.module.exports,
     electron: { app },
     'node:fs': {
       mkdirSync() {},

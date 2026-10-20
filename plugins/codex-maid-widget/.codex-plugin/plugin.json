@@ -1,6 +1,6 @@
 {
   "name": "codex-maid-widget",
-  "version": "0.3.48",
+  "version": "0.3.51",
   "description": "查看 Codex 女仆桌面挂件的额度与本地用量，控制显示、刷新和互动。",
   "author": {
     "name": "Codex Maid Widget contributors"

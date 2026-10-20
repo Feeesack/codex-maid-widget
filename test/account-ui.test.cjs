@@ -9,7 +9,7 @@ const vm = require('node:vm');
 // deterministic DOM/clock doubles. They never import data-home or Codex readers.
 class Element {
   constructor(tag = 'div') {
-    this.tagName = tag; this.children = []; this.style = {}; this.attributes = {}; this.listeners = {}; this.hidden = false;
+    this.tagName = tag; this.children = []; this.style = {}; this.attributes = {}; this.dataset = {}; this.listeners = {}; this.hidden = false;
     const classes = new Set();
     this.classList = {toggle(name, value) { if (value) classes.add(name); else classes.delete(name); }, add(...names) {for (const name of names) classes.add(name);},remove(...names) {for (const name of names) classes.delete(name);},contains(name) {return classes.has(name);}};
   }
@@ -24,11 +24,14 @@ class Element {
 }
 function harness(folder = '') {
   const source = fs.readFileSync(path.join(__dirname, '..', folder, 'src/widget.js'), 'utf8');
+  const translations = {module:{exports:{}}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', folder, 'src/i18n.js'), 'utf8'), translations);
+  const i18n = translations.module.exports;
   const nodes = new Map(['account-list', 'accounts-empty', 'accounts-feedback'].map(id => [id, new Element()]));
   let clock = 2000000000, pending;
   class Clock extends Date { static now() { return clock * 1000; } }
   const noises = [], notices = [];
-  const context = {
+  const context = { t:i18n.t, locale:i18n.getLocale, accountFeedbackSource:'',
     document: { createElement: tag => new Element(tag) },
     $: id => nodes.get(id), Date: Clock, setTimeout() {}, clearTimeout() {},
     current: {settings: {accountResetAlerts: true}}, window: {maid: {listAccounts: () => new Promise(resolve => { pending = resolve; })}},

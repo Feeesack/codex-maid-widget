@@ -8,6 +8,8 @@ const vm = require('node:vm');
 const ids = ['quota', 'conversation', 'accounts', 'today', 'week', 'lastTurn', 'phrase'];
 function harness(folder, settings = {}) {
   const source = fs.readFileSync(path.join(__dirname, '..', folder, 'src/widget.js'), 'utf8');
+  const translations = {module:{exports:{}}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', folder, 'src/i18n.js'), 'utf8'), translations);
   const start = source.indexOf('function visibleBubblePages('), end = source.indexOf('function renderConversation(', start);
   const bindingStart = source.indexOf("for (const [id, direction] of [['previous-page'"), bindingEnd = source.indexOf('let talkPointer', bindingStart);
   const dragStart = source.indexOf("for (const target of [$('character'), $('bubble')])"), dragEnd = source.indexOf('let toolbarHideTimer', dragStart);
@@ -22,7 +24,7 @@ function harness(folder, settings = {}) {
     });
     return nodes.get(id);
   };
-  const context = { $: node, window: { addEventListener() {}, maid: {
+  const context = { t:translations.module.exports.t, $: node, window: { addEventListener() {}, maid: {
     setSettings(patch) { writes.push(patch); return Promise.resolve({ settingsRevision: writes.length }); },
     drag(phase) { drags.push(phase); },
   } }, document: { addEventListener() {} }, fitTokenLabels() {}, nextPhrase() {}, renderConversation() {},

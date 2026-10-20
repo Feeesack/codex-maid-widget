@@ -99,7 +99,8 @@ async function harness(variant, options = {}) {
     vm.runInNewContext(fs.readFileSync(path.join(variant.root, 'src', file), 'utf8'), context, { filename: file });
     return context.module.exports;
   }
-  const settings = load('settings.cjs', { 'node:fs': isolatedFs, 'node:path': path,
+  const i18n = load('i18n.js');
+  const settings = load('settings.cjs', { './i18n.js': i18n, 'node:fs': isolatedFs, 'node:path': path,
     './interaction-sound-catalog.js': load('interaction-sound-catalog.js') });
   let registryModule, alarmModule;
   function ledgerModule() {
@@ -144,6 +145,7 @@ async function harness(variant, options = {}) {
       windows.push(this);
     }
     isDestroyed() { return this.destroyed === true; } getBounds() { return { ...this.bounds }; }
+    setTitle(value) { this.title = value; }
     setBounds(value) { this.bounds = { ...this.bounds, ...value }; }
     setAlwaysOnTop() {} setOpacity() {} setIgnoreMouseEvents() {}
     getNativeWindowHandle() { return Buffer.from([1, 0, 0, 0]); }
@@ -179,7 +181,7 @@ async function harness(variant, options = {}) {
       return { once() {}, listen(_port, host, ready) { assert.equal(host, '127.0.0.1'); ready(); },
         address: () => ({ port: 12345 }), close() {} };
     } },
-    './settings.cjs': settings,
+    './settings.cjs': settings, './i18n.js': i18n,
     './window-mode.cjs': { CodexWindowMode: class extends windowModeModule.CodexWindowMode {
       constructor(value) { super({ ...value, platform: variant.platform, topmostProviderFactory: () => ({
         async setTopmost(_handle, enabled) { return { known: true, ok: true, topmost: enabled }; }, close() {},
@@ -241,6 +243,25 @@ async function harness(variant, options = {}) {
 }
 
 for (const variant of variants) {
+  test(`${variant.name}: reset reminders localize generated names while preserving explicit aliases and the stored ledger`, async t => {
+    const fixture = await harness(variant, {settings:{language:'en'}}); t.after(() => fixture.close());
+    const account = fixture.invoke('list-accounts').accounts[0];
+    const event = {id:account.id,label:account.label,resetsAt:initialTime / 1000 + 60,estimated:true};
+    const stored = fixture.files.get(fixture.ledgerFile);
+    fixture.notify(event);
+    assert.equal(fixture.messages.filter(value => value.name === 'account-reset').at(-1).value.label, 'Account 1 · Personal');
+    assert.equal(fixture.files.get(fixture.ledgerFile), stored);
+    fixture.invoke('settings', {language:'zh-CN'});
+    fixture.notify(event);
+    assert.equal(fixture.messages.filter(value => value.name === 'account-reset').at(-1).value.label, account.label);
+    fixture.invoke('rename-account', account.id, '我的独立别名 <img src=x>');
+    fixture.invoke('settings', {language:'en'});
+    const renamedStored = fixture.files.get(fixture.ledgerFile);
+    fixture.notify(event);
+    assert.equal(fixture.messages.filter(value => value.name === 'account-reset').at(-1).value.label, '我的独立别名 <img src=x>');
+    assert.equal(fixture.files.get(fixture.ledgerFile), renamedStored);
+    assert.deepEqual(Object.keys(fixture.messages.filter(value => value.name === 'account-reset').at(-1).value).sort(), ['estimated','id','label','resetsAt']);
+  });
   test(`${variant.name}: account IPC uses the production registry and keeps records out of public status`, async t => {
     const fixture = await harness(variant); t.after(() => fixture.close());
     const initial = plain(fixture.invoke('list-accounts'));

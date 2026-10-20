@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.51 — Bilingual interface and macOS window fixes, 2026-10-21
+
+- Add persistent Simplified Chinese / English settings, bubbles, menus and dialogs, with layouts for longer English labels and reviewed built-in phrases.
+- Preserve custom phrases, renamed characters, aliases, project and conversation names when changing language.
+- Improve macOS Codex window identification, bounded native visibility recovery, smooth following and stacking after focus changes.
+- Ignore delayed hidden snapshots from a previous remap; cancel pending recovery after a manual hide or foreground-app change and cap recovery attempts.
+- Use `overflow: clip` on macOS to prevent focused bubble content from retaining an internal scroll crop.
+- Preserve user settings, imported characters and original assets. See the [bilingual release notes](docs/releases/0.3.51.md).
+
 ## 0.3.48 — Cumulative update since 0.3.21, 2026-10-19
 
 - Add split press/release interactions and five sound choices, including DSH Duck, with smoother rapid clicking and a held pose during drag. Sound assets have separate source/license scopes; see [audio provenance](docs/interaction-audio.md).

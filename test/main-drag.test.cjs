@@ -44,9 +44,13 @@ function controller(variant, options = {}) {
     if (Object.hasOwn(target, key)) return target[key];
     throw new Error('Unexpected filesystem access: ' + String(key));
   } });
+  const i18nContext = {module:{exports:{}}};
+  vm.runInNewContext(fs.readFileSync(path.join(variant.root, 'src', 'i18n.js'), 'utf8'), i18nContext);
+  const i18n = i18nContext.module.exports;
   const geometryContext = {
     module: { exports: {} },
     require(name) {
+      if (name === './i18n.js') return i18n;
       if (name === 'node:fs') return noFilesystem;
       if (name === 'node:path') return path;
       if (name === './interaction-sound-catalog.js') return require(path.join(variant.root, 'src', 'interaction-sound-catalog.js'));
@@ -75,7 +79,7 @@ function controller(variant, options = {}) {
     },
     setIgnoreMouseEvents() {}, setAlwaysOnTop() {}, setOpacity() {}, show() {}, moveTop() {},
   };
-  const settingsWindow = { webContents: { send() {} }, isDestroyed: () => false };
+  const settingsWindow = { setTitle() {}, webContents: { send() {} }, isDestroyed: () => false };
   const ipcMain = new EventEmitter();
   const handlers = new Map();
   ipcMain.handle = (name, callback) => handlers.set(name, callback);
@@ -108,7 +112,7 @@ function controller(variant, options = {}) {
     'node:fs': noFilesystem,
     'node:path': path,
     'node:http': {}, 'node:crypto': {}, 'node:os': {}, 'node:child_process': {},
-    './settings.cjs': { ...geometry,
+    './i18n.js': i18n, './settings.cjs': { ...geometry,
       readSettings(file) { assert.equal(file, fakeSettingsFile); return initial; },
       writeSettings(file, value) { assert.equal(file, fakeSettingsFile); writes.push(JSON.parse(JSON.stringify(value))); },
     },

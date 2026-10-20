@@ -2,7 +2,7 @@
 
 [English documentation](../README.md) · [简体中文文档](../README.zh-CN.md)
 
-The Mac implementation shares version **0.3.48** with Windows. One universal installer targets Apple Silicon and Intel on macOS 13 or newer.
+The Mac source shares version **0.3.50** with Windows, refining English phrases, interface copy and connection-result dialogs. Settings offers an immediate Simplified Chinese / English choice. Chinese remains the default; custom names, phrases and project names stay as written. The latest published universal installer is still **0.3.48** and targets Apple Silicon and Intel on macOS 13 or newer. This local update does not create a new installer; see the [0.3.50 local update notes](../docs/releases/0.3.50.md).
 
 Shared features include conversation context/Git status, compaction totals, local account reset countdowns, paired press/release interactions and five sound choices including DSH Duck. The built-in list starts with 小龙娘-托腮 and 小龙娘-端庄, followed by the original mint maid and lilac dragon maid; 小龙娘-托腮 is the default for fresh settings and the fallback after removing the selected custom character. Existing valid selections and user-defined names are retained. See the [bilingual release notes](../docs/releases/0.3.48.md) and [audio source/license scope](docs/interaction-audio.md).
 

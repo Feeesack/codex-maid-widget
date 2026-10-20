@@ -25,6 +25,7 @@ const library=new CharacterLibrary({dataDir:testHome,assetRoot:path.join(root,'a
 let settings=sanitize({sound:false}), win, refreshes=0;
 let settingsRevision=0, settingsWriteAttempts=0, settingsDeliveryPlans=[], settingsDeliveries=[], settingsReplies=[];
 let inspections=0, inspectionDelay=0, inspectionFailure=false, inspectionResult, inspectionsAfterChecks=0;
+let nextInspectionWait=null;
 let conversationLists=0, conversationListsAfterChecks=0, conversationSelections=[];
 let selectedConversation='fixture-one', conversationListFailure=false;
 let conversationSelectionMode='manual', conversationSelectionRevision=0;
@@ -81,6 +82,8 @@ ipcMain.handle('select-conversation',(_event,id)=>{
 ipcMain.handle('inspect-conversation',async()=>{
   inspections++;
   const result={...inspectionResult,selectionMode:conversationSelectionMode,selectionRevision:conversationSelectionRevision,targetTitle:conversationSelectionMode==='auto'?'自动测试对话':conversationThreads.find(thread=>thread.id===selectedConversation)?.title,targetProject:conversationSelectionMode==='auto'?'automatic-project':conversationThreads.find(thread=>thread.id===selectedConversation)?.workspaceLabel,targetProjectDetail:conversationSelectionMode==='auto'?'automatic-team / automatic-project':'fixture-team / fixture-workspace',...inspectionTargetOverrides}, delay=inspectionDelay, fail=inspectionFailure;
+  const wait=nextInspectionWait;nextInspectionWait=null;
+  if(wait)await wait;
   if(delay) await pause(delay);
   if(fail) throw new Error('isolated inspection fixture unavailable');
   return result;
@@ -248,17 +251,30 @@ async function checkConversationStatus(capture) {
   await pause(1100);await publish();
   assert.equal(inspections,0,'waiting through a timer tick must not inspect a conversation');
   assert.equal(conversationLists,0,'waiting and state delivery must not list conversations');
-  inspectionResult=ready;inspectionDelay=160;
-  await evaluate(`document.getElementById('next-page').click()`);await pause(20);
-  let view=await inspectView();
-  assert.equal(view.shown,true);assert.equal(view.label,'所选对话');assert.equal(view.feedback,'读取中…');
-  assert.equal(settings.mode,'conversation','the first cycle after quota selects and saves the second conversation page');
-  assert.equal(view.busy,'true','page entry shows its loading state immediately');
-  assert.equal(view.compaction,'--','compaction counts share the immediate loading state');
-  assert.equal(view.project,'项目：读取中…');assert.equal(view.projectTitle,'');assert.equal(view.automaticLabel,'自动识别当前对话');
-  await click();await pause(30);
-  assert.equal(inspections,1,'repeated clicks while loading must not overlap IPC reads');
-  assert.equal(conversationLists,1,'entering the second page lists conversations only once');
+  inspectionResult=ready;inspectionDelay=0;
+  // Hold the reply until the repeated native gesture has really completed.
+  // On a busy runner, CDP input can outlast a fixed 160-ms response delay.
+  let releaseInspection;
+  nextInspectionWait=new Promise(resolve=>{releaseInspection=resolve;});
+  let view;
+  try {
+    await evaluate(`document.getElementById('next-page').click()`);
+    const deadline=Date.now()+2500;
+    while(inspections===0&&Date.now()<deadline)await pause(10);
+    assert.equal(inspections,1,'the first inspection reaches the held IPC handler');
+    view=await inspectView();
+    assert.equal(view.shown,true);assert.equal(view.label,'所选对话');assert.equal(view.feedback,'读取中…');
+    assert.equal(settings.mode,'conversation','the first cycle after quota selects and saves the second conversation page');
+    assert.equal(view.busy,'true','page entry shows its loading state immediately');
+    assert.equal(view.compaction,'--','compaction counts share the immediate loading state');
+    assert.equal(view.project,'项目：读取中…');assert.equal(view.projectTitle,'');assert.equal(view.automaticLabel,'自动识别当前对话');
+    await click();
+    // A real preload round trip flushes the gesture's earlier IPC messages.
+    await evaluate(`window.maid.getState().then(()=>true)`);
+    assert.equal(inspections,1,'repeated clicks while loading must not overlap IPC reads');
+    assert.equal(conversationLists,1,'entering the second page lists conversations only once');
+    assert.equal((await inspectView()).busy,'true','the first response stays pending throughout the repeated gesture');
+  } finally { releaseInspection(); }
   await waitForResult();
   view=await inspectView();
   assert.equal(view.context,'25.6%');assert.equal(view.contextTitle,'51,200 / 200,000 tokens');

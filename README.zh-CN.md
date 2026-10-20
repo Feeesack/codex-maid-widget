@@ -20,22 +20,24 @@
 
 ## 下载与安装
 
-Windows 和 macOS 使用同一个版本号 **v0.3.48**。从下方下载对应安装包，或在 [Releases](https://github.com/Feeesack/codex-maid-widget/releases) 查看其他版本。
+当前 Windows 和 macOS 安装包版本为 **v0.3.51**。本版本保留 0.3.49/0.3.50 的中英双语界面，并加入 PR #1 的 macOS 窗口跟随、层级恢复和视口裁剪修复。从下方下载安装包，或在 [Releases](https://github.com/Feeesack/codex-maid-widget/releases) 查看其他版本。
 
 | 平台 | 安装包 |
 | --- | --- |
-| Windows x64 | [下载 Windows 安装包（.exe）](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.48/Codex-Maid-Widget-0.3.48-windows-x64-setup.exe) |
-| macOS 13 及以上，Apple 芯片与 Intel | [下载 Mac 通用安装包（.pkg）](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.48/Codex-Maid-Widget-0.3.48-macOS-universal.pkg) |
+| Windows x64 | [下载 Windows 安装包（.exe）](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.51/Codex-Maid-Widget-0.3.51-windows-x64-setup.exe) |
+| macOS 13 及以上，Apple 芯片与 Intel | [下载 Mac 通用安装包（.pkg）](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.51/Codex-Maid-Widget-0.3.51-macOS-universal.pkg) |
 
 更新说明和 SHA-256 校验值放在 [Releases](https://github.com/Feeesack/codex-maid-widget/releases)。安装包已带上运行环境和可选的本地 Codex 插件，不用另装 Node.js、npm，也不用下载源码。
 
 [0.3.48 发布说明](docs/releases/0.3.48.md)汇总了 0.3.21 以来的更新：按下／抬起两段互动，含「DSH 小黄鸭」的五套音色，多账号重置提醒，两种新小龙娘形象，对话上下文、压缩次数与 Git 状态，Motion 镜像动画，Hugeicons 图标，页面排序与显隐，外观及探头宽度实时预览，以及 Windows 安装路径修复。各音效来源与独立许可范围见[音频资料](docs/interaction-audio.md)。
 
+[0.3.51 发布说明](docs/releases/0.3.51.md)记录了 macOS 原生窗口修复：更可靠的 Codex 窗口识别、有界显隐恢复、平滑跟随、焦点切换后的层级恢复，以及防止聚焦后气泡内容残留裁剪的 `overflow: clip`。Windows 行为、设置、导入形象和原始素材均保留。Mac 安装包由原生 runner 构建并检查；Spaces、全屏、多屏、Retina、声音和登录会话仍需另行人工体验。
+
 1. 先安装官方 Codex 桌面应用并登录，挂件才有真实账号额度可读。
 2. 运行安装包，从 Windows 开始菜单或 macOS“应用程序”中打开挂件。
 3. 点击齿轮、右键角色，或使用系统托盘／菜单栏菜单调整设置。
 
-软件界面目前是简体中文；中英文 README 对应同一个版本。
+0.3.49 起可在设置顶部的 **界面语言** 中选择 **简体中文 / English**，立即生效并在下次启动时保留。默认保持中文；英文针对长单词和说明文字调整排版，自定义名称、台词及项目名称保留原文。
 
 目前的安装包没有开发者分发证书。Mac 应用使用 ad-hoc 签名，安装包尚未经过 Apple 公证，安装时系统可能会要求确认来源。请从本仓库的 Releases 下载，并核对附带的校验值。
 
@@ -137,7 +139,7 @@ npm run build:installer
 
 ## 验证范围
 
-Windows 0.3.48 已有本机主程序、助手版本、非演示额度、本地控制与 MCP 的运行证据。自动回归覆盖双端源码的渲染、设置、数据解析、交互与路径兼容。macOS 通用安装包由原生 runner 构建，并在 Apple 芯片与 Intel runner 上完成安装、启动、MCP、原生窗口与 launchd 助手检查。
+Windows 0.3.51 已有本机主程序、助手版本、非演示额度、本地控制与 MCP 的运行证据。自动回归覆盖双端源码的渲染、设置、数据解析、交互与路径兼容。macOS 通用安装包由原生 runner 构建，并在 Apple 芯片与 Intel runner 上完成安装、启动、MCP、原生窗口与 launchd 助手检查。
 
 CI 不代替 Mac 多屏、Spaces、全屏、Retina、声音及登录会话的人工体验。主观音量、动画手感、真实五小时提醒和 Windows 注销重登也仍需人工验收。
 

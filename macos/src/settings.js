@@ -1,5 +1,36 @@
 'use strict';
 const $ = id => document.getElementById(id);
+const i18n = window.MaidI18n;
+const t = (source, params = {}) => i18n ? i18n.t(source, params) : String(source ?? '').replace(/\{(\w+)\}/g, (match, key) => Object.hasOwn(params, key) ? params[key] : match);
+const messageText = value => typeof value === 'function' ? value() : t(value);
+const characterName = character => i18n?.characterName ? i18n.characterName(character) : character?.name || t('默认形象');
+let renderedLanguage, languageSaving = false, pendingLanguage = null, languageMessage = '', languageError = false;
+let refreshing = false, importing = false, phrasesMessage = '', characterFeedbackState = null;
+function translatedText(node, source) {
+  node.setAttribute('data-i18n', source);
+  node.textContent = t(source);
+}
+function renderLanguage(settings) {
+  const language = pendingLanguage || settings.language || 'zh-CN';
+  if (language !== renderedLanguage) {
+    renderedLanguage = language;
+    i18n?.setLocale(language);
+    i18n?.translateDocument(document);
+    if (characterFeedbackState) drawCharacterFeedback();
+  }
+  $('refresh').textContent = t(refreshing ? '刷新中…' : '刷新 ↻');
+  $('import-characters').textContent = t(importing ? '正在导入…' : '＋ 导入形象');
+  $('saved').textContent = t(phrasesMessage);
+  if ($('language')) {
+    $('language').value = language;
+    $('language').disabled = languageSaving;
+  }
+  if ($('language-feedback')) {
+    $('language-feedback').textContent = t(languageMessage);
+    $('language-feedback').hidden = !languageMessage;
+    $('language-feedback').classList.toggle('has-error', languageError);
+  }
+}
 const booleans = ['showBubble','alwaysOnTop','clickThrough','sound','accountResetAlerts','followCodex','stayInCodexWindow','peekAtCorners'];
 const numbers = ['scale','opacity','refreshSeconds','autoHideSeconds'];
 const peekPercentages = ['peekBottomPercent','peekSidePercent'];
@@ -17,17 +48,21 @@ function renderInteractionSounds() {
   select.value = id;
   const preset = interactionCatalog.presets.find(preset => preset.id === id);
   const available = interactionSoundAvailable(preset);
-  $('interaction-sound-description').textContent = available ? (preset.description || '') : '此音效尚未在本机安装。';
+  $('interaction-sound-description').textContent = t(available ? (preset.description || '') : '此音效尚未在本机安装。');
+  for (const option of select.children) {
+    const item = interactionCatalog.presets.find(preset => preset.id === option.value);
+    if (item) option.textContent = t(item.label);
+  }
   const busy = soundSaving || soundToggleSaving || soundPreviewing;
   select.disabled = busy;
   $('sound').disabled = busy;
   const enabled = current?.settings.sound === true && $('sound').checked;
   $('preview-interaction-sound').disabled = busy || !enabled || !available || soundPreviewBlocked;
-  $('interaction-sound-note').textContent = enabled
+  $('interaction-sound-note').textContent = t(enabled
     ? '按下与抬起分别发声；试听会让挂件弹跳。挂件隐藏时请先手动显示。'
-    : '弹跳音效已关闭；开启后可试听。所选音色仍会保留。';
+    : '弹跳音效已关闭；开启后可试听。所选音色仍会保留。');
   const feedback = $('interaction-sound-feedback');
-  feedback.textContent = soundFeedbackMessage;
+  feedback.textContent = t(soundFeedbackMessage);
   feedback.hidden = !soundFeedbackMessage;
   feedback.classList.toggle('has-error', soundFeedbackError);
 }
@@ -137,7 +172,7 @@ function createRangePreview(ids, defaults, feedbackId, api, toggleId) {
         const value = this.drafts.get(id) ?? (this.pending?.id === id ? this.pending.value : this.saved(id));
         $(id).value = value; this.label(id,value); $(id).disabled = rangeSaving || !enabled;
       }
-      const feedback = $(feedbackId); feedback.textContent = this.message; feedback.hidden = !this.message; feedback.classList.toggle('has-error',this.error);
+      const feedback = $(feedbackId); feedback.textContent = t(this.message); feedback.hidden = !this.message; feedback.classList.toggle('has-error',this.error);
     },
     async save(id,next) {
       if (rangeSaving || !current) return;
@@ -208,7 +243,7 @@ function renderBubblePages() {
     $('page-handle-'+id).disabled=saving || (!!draggingBubblePage && draggingBubblePage.id!==id);
   }
   $('reset-page-order').disabled=busy;
-  const feedback=$('bubble-pages-feedback');feedback.textContent=bubblePageMessage;feedback.hidden=!bubblePageMessage;feedback.classList.toggle('has-error',bubblePageError);
+  const feedback=$('bubble-pages-feedback');feedback.textContent=messageText(bubblePageMessage);feedback.hidden=!bubblePageMessage;feedback.classList.toggle('has-error',bubblePageError);
 }
 async function saveBubblePages(config,message='气泡页面已保存。',orderOnly=false) {
   if(bubblePageSaving||rangeSaving||draggingBubblePage){renderBubblePages();return false;}
@@ -247,14 +282,14 @@ function setupBubblePages() {
       if(hidden.size===bubblePageIds.length){bubblePageMessage='至少保留一个可见页面。';bubblePageError=true;renderBubblePages();return;}
       config.bubbleHiddenPages=config.bubblePageOrder.filter(page=>hidden.has(page));
       let message='气泡页面已保存。';
-      if(hidden.has(config.defaultBubblePage)){config.defaultBubblePage=config.bubblePageOrder.find(page=>!hidden.has(page));message='原默认页已隐藏，启动默认页改为「'+bubblePageNames[config.defaultBubblePage]+'」。';}
+      if(hidden.has(config.defaultBubblePage)){config.defaultBubblePage=config.bubblePageOrder.find(page=>!hidden.has(page));message=()=>t('原默认页已隐藏，启动默认页改为「{name}」。',{name:t(bubblePageNames[config.defaultBubblePage])});}
       return saveBubblePages(config,message);
     });
     $('page-default-'+id).addEventListener('change',() => {
       if(bubblePageSaving||rangeSaving||draggingBubblePage){renderBubblePages();return;}
       const config=bubblePageConfig();
       if(config.bubbleHiddenPages.includes(id)){renderBubblePages();return;}
-      config.defaultBubblePage=id;return saveBubblePages(config,'启动默认页已设为「'+bubblePageNames[id]+'」。');
+      config.defaultBubblePage=id;return saveBubblePages(config,()=>t('启动默认页已设为「{name}」。',{name:t(bubblePageNames[id])}));
     });
     const handle=$('page-handle-'+id);
     handle.addEventListener('keydown',event=>{if(event.altKey&&['ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();return moveBubblePage(id,bubblePageConfig().bubblePageOrder.indexOf(id)+(event.key==='ArrowUp'?-1:1));}});
@@ -297,15 +332,25 @@ function element(tag, className, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
+function translatedElement(tag, className, source) {
+  const node = element(tag, className, t(source));
+  node.setAttribute('data-i18n', source);
+  return node;
+}
 function characterFeedback(message, errors = []) {
+  characterFeedbackState = {message, errors};
+  drawCharacterFeedback();
+}
+function drawCharacterFeedback() {
+  const {message, errors} = characterFeedbackState;
   const container = $('character-feedback');
   container.replaceChildren();
   container.classList.toggle('has-error', errors.length > 0);
   container.hidden = !message && !errors.length;
-  if (message) container.append(element('p', '', message));
+  if (message) container.append(element('p', '', messageText(message)));
   if (errors.length) {
     const list = element('ul');
-    for (const error of errors) list.append(element('li', '', `${error.name || '图片'}：${error.message || '导入失败'}`));
+    for (const error of errors) list.append(element('li', '', t('{name}：{message}', {name:error.name || t('图片'), message:t(error.message || '导入失败')})));
     container.append(list);
   }
 }
@@ -324,7 +369,7 @@ async function characterAction(entry, action) {
     if (state) render(state);
     return true;
   } catch (error) {
-    entry.error.textContent = error?.message || '操作未完成，请再试一次。';
+    translatedText(entry.error, error?.message || '操作未完成，请再试一次。');
     entry.error.hidden = false;
     return false;
   } finally {
@@ -346,7 +391,7 @@ function createCharacterCard(character) {
   const imageFrame = element('span', 'character-image-frame');
   const image = element('img', 'character-image');
   image.alt = '';
-  const missing = element('span', 'character-missing', '图片无法读取');
+  const missing = translatedElement('span', 'character-missing', '图片无法读取');
   missing.hidden = true;
   imageFrame.append(image, missing);
   const caption = element('span', 'character-caption');
@@ -356,25 +401,26 @@ function createCharacterCard(character) {
   select.append(imageFrame, caption);
   const meta = element('div', 'character-meta');
   const kind = element('span', 'character-kind');
-  const availability = element('span', 'character-availability', '文件损坏或丢失');
+  const availability = translatedElement('span', 'character-availability', '文件损坏或丢失');
   availability.hidden = true;
   meta.append(kind, availability);
   const actions = element('div', 'character-actions');
-  const rename = element('button', 'secondary', '重命名');
+  const rename = translatedElement('button', 'secondary', '重命名');
   rename.type = 'button'; rename.dataset.action = 'rename';
-  const remove = element('button', 'character-remove', '删除');
+  const remove = translatedElement('button', 'character-remove', '删除');
   remove.type = 'button'; remove.dataset.action = 'remove';
   actions.append(rename, remove);
   const renameForm = element('form', 'character-rename-form');
   renameForm.hidden = true;
-  const label = element('label', '', '形象名称');
+  const label = element('label');
+  label.append(translatedElement('span', '', '形象名称'));
   const input = element('input', 'character-name-input');
   input.type = 'text'; input.maxLength = 40; input.required = true;
   label.append(input);
   const renameActions = element('div', 'character-editor-actions');
-  const save = element('button', '', '保存');
+  const save = translatedElement('button', '', '保存');
   save.type = 'submit'; save.dataset.action = 'save-name';
-  const cancelRename = element('button', 'secondary', '取消');
+  const cancelRename = translatedElement('button', 'secondary', '取消');
   cancelRename.type = 'button'; cancelRename.dataset.action = 'cancel-rename';
   renameActions.append(save, cancelRename);
   renameForm.append(label, renameActions);
@@ -382,9 +428,9 @@ function createCharacterCard(character) {
   removeConfirm.hidden = true;
   const removeMessage = element('p');
   const confirmActions = element('div', 'character-editor-actions');
-  const confirmRemove = element('button', 'danger', '确认删除');
+  const confirmRemove = translatedElement('button', 'danger', '确认删除');
   confirmRemove.type = 'button'; confirmRemove.dataset.action = 'confirm-remove';
-  const cancelRemove = element('button', 'secondary', '取消');
+  const cancelRemove = translatedElement('button', 'secondary', '取消');
   cancelRemove.type = 'button'; cancelRemove.dataset.action = 'cancel-remove';
   confirmActions.append(confirmRemove, cancelRemove);
   removeConfirm.append(removeMessage, confirmActions);
@@ -408,7 +454,7 @@ function createCharacterCard(character) {
     event.preventDefault();
     const nextName = input.value.trim();
     if (!nextName) {
-      error.textContent = '请填写形象名称。'; error.hidden = false; input.focus(); return;
+      translatedText(error, '请填写形象名称。'); error.hidden = false; input.focus(); return;
     }
     if (await characterAction(entry, () => window.maid.renameCharacter(entry.character.id, nextName))) {
       closeCharacterEditor(entry); rename.focus();
@@ -421,7 +467,7 @@ function createCharacterCard(character) {
     closeCharacterEditor(entry);
     actions.hidden = true;
     removeConfirm.hidden = false;
-    removeMessage.textContent = `删除「${entry.character.name}」？已保存的图片也会一并删除。`;
+    removeMessage.textContent = t('删除「{name}」？已保存的图片也会一并删除。', {name:characterName(entry.character)});
     cancelRemove.focus();
   });
   cancelRemove.addEventListener('click', () => { closeCharacterEditor(entry); remove.focus(); });
@@ -438,11 +484,11 @@ function createCharacterCard(character) {
 function renderCharacters(value) {
   const characters = value.characters || [];
   const active = characters.find(character => character.id === value.activeCharacterId);
-  const activeName = value.characterName || active?.name || '默认形象';
+  const activeName = active ? characterName(active) : value.characterName || t('默认形象');
   if ($('preview').getAttribute('src') !== value.characterUrl) $('preview').src = value.characterUrl;
-  $('preview').alt = `当前使用：${activeName}`;
+  $('preview').alt = t('当前使用：{name}', {name:activeName});
   $('current-character-name').textContent = activeName;
-  $('character-count').textContent = `已保存 ${characters.length} 个形象`;
+  $('character-count').textContent = t('已保存 {n} 个形象', {n:characters.length});
   const ids = new Set(characters.map(character => character.id));
   for (const [id, entry] of characterCards) {
     if (!ids.has(id)) { entry.card.remove(); characterCards.delete(id); }
@@ -455,12 +501,12 @@ function renderCharacters(value) {
     entry.card.classList.toggle('selected', selected);
     entry.card.classList.toggle('unavailable', !character.available);
     entry.select.setAttribute('aria-pressed', String(selected));
-    entry.select.setAttribute('aria-label', selected ? `当前使用：${character.name}` : `选用 ${character.name}`);
+    entry.select.setAttribute('aria-label', t(selected ? '当前使用：{name}' : '选用 {name}', {name:characterName(character)}));
     entry.select.disabled = entry.busy || !character.available;
-    entry.name.textContent = character.name;
-    entry.name.title = character.name;
-    entry.badge.textContent = selected ? '使用中 ✓' : '选用';
-    entry.kind.textContent = character.builtIn ? '内置形象' : '已保存到本机';
+    entry.name.textContent = characterName(character);
+    entry.name.title = characterName(character);
+    entry.badge.textContent = t(selected ? '使用中 ✓' : '选用');
+    entry.kind.textContent = t(character.builtIn ? '内置形象' : '已保存到本机');
     entry.remove.hidden = character.builtIn;
     entry.availability.hidden = character.available;
     if (entry.image.getAttribute('src') !== character.url) {
@@ -468,7 +514,7 @@ function renderCharacters(value) {
       else entry.image.removeAttribute('src');
     }
     if (!character.available) { entry.image.hidden = true; entry.missing.hidden = false; }
-    if (!entry.removeConfirm.hidden) entry.removeMessage.textContent = `删除「${character.name}」？已保存的图片也会一并删除。`;
+    if (!entry.removeConfirm.hidden) entry.removeMessage.textContent = t('删除「{name}」？已保存的图片也会一并删除。', {name:characterName(character)});
     // Do not detach/reappend an unchanged card: that would disturb focused inputs in Chromium.
     const currentNode = $('character-grid').children[index];
     if (currentNode !== entry.card) $('character-grid').insertBefore(entry.card, currentNode || null);
@@ -477,6 +523,7 @@ function renderCharacters(value) {
 function render(value) {
   if (Number.isFinite(value.settingsRevision) && Number.isFinite(current?.settingsRevision) && value.settingsRevision < current.settingsRevision) return;
   current=value;
+  renderLanguage(value.settings);
   if (!value.settings.peekAtCorners && cornerRange.drafts.size) void cancelRangePreviews();
   $('version').textContent = 'v'+value.version;
   for(const id of booleans) $(id).checked = value.settings[id];
@@ -485,53 +532,72 @@ function render(value) {
   $('alwaysOnTop').disabled = value.settings.stayInCodexWindow === true;
   const windowMode = value.windowContainment;
   const topmost = windowMode?.topmost;
-  $('topmost-note').textContent = value.settings.stayInCodexWindow ? '窗口内模式不使用全局置顶。'
+  $('topmost-note').textContent = t(value.settings.stayInCodexWindow ? '窗口内模式不使用全局置顶。'
     : topmost?.reason === 'pending' ? '正在应用置顶设置…'
       : topmost?.reason === 'topmost-unavailable' ? '暂时无法确认置顶状态，可重新显示挂件重试。'
-        : topmost?.verified ? (topmost.desired ? '已启用置顶。' : '已关闭置顶。') : '独立显示时按此开关控制置顶。';
+        : topmost?.verified ? (topmost.desired ? '已启用置顶。' : '已关闭置顶。') : '独立显示时按此开关控制置顶。');
   $('stayInCodexWindow').disabled = windowMode?.supported === false && !value.settings.stayInCodexWindow;
-  $('window-mode-note').textContent = !value.settings.stayInCodexWindow ? '默认关闭；开启后人物固定在窗口内部，随窗口移动、收起和展开。'
+  $('window-mode-note').textContent = t(!value.settings.stayInCodexWindow ? '默认关闭；开启后人物固定在窗口内部，随窗口移动、收起和展开。'
     : ({ contained: '已限制在 Codex 窗口内；关闭后恢复独立位置和置顶设置。', 'host-too-small': 'Codex 窗口空间不足，已暂时隐藏；可放大窗口或调小挂件。',
       'manual-hidden': '已手动隐藏；可从托盘或快捷键恢复。', 'other-foreground': '切换到了其他应用，挂件暂时隐藏。', 'host-hidden': 'Codex 窗口已最小化或隐藏，挂件随之隐藏。' })[windowMode?.reason]
-      || '正在等待可见的 Codex 窗口；窗口内模式不使用全局置顶。';
+      || '正在等待可见的 Codex 窗口；窗口内模式不使用全局置顶。');
   for(const id of numbers.filter(id=>!['scale','opacity'].includes(id))) $(id).value = value.settings[id];
   renderBubblePages();
   $('bucketId').replaceChildren();
-  for(const item of [{id:'',name:'自动选择'},...(value.snapshot.buckets || [])]) { const option=document.createElement('option'); option.value=item.id; option.textContent=item.name||item.id; $('bucketId').append(option); }
+  for(const item of [{id:'',name:t('自动选择')},...(value.snapshot.buckets || [])]) { const option=document.createElement('option'); option.value=item.id; option.textContent=item.id==='demo'&&item.name==='演示额度'?t('演示额度'):item.name||item.id; $('bucketId').append(option); }
   $('bucketId').value=value.settings.bucketId;
-  if(!phrasesEdited) $('phrases').value=value.settings.phrases.join('\n');
+  if(!phrasesEdited) $('phrases').value=(i18n?.isDefaultPhrases?.(value.settings.phrases) ? value.settings.phrases.map(phrase=>t(phrase)) : value.settings.phrases).join('\n');
   renderCharacters(value);
   const status=value.snapshot.status;
   $('status-dot').classList.toggle('live',['live','demo'].includes(status));
-  $('status-text').textContent=({live:'已连接本机 Codex',partial:'部分数据可用',offline:'暂时无法连接 Codex',connecting:'正在连接 Codex',demo:'正在预览演示数据'})[status]||status;
-  $('error').textContent=value.snapshot.error||''; $('error').hidden=!value.snapshot.error;
-  $('data-detail').textContent=value.snapshot.account?.planType ? `当前套餐：${value.snapshot.account.planType} · 额度来自 Codex app-server` : '额度来自本机 Codex app-server；不需要填写密钥。';
-  $('demo-note').textContent=value.demo?'· 当前为演示模式':'';
-  $('autostart-note').textContent=value.followError || (value.followSupported === false ? 'Windows 可携版支持自动跟随，演示或源码模式不修改系统启动项。' : '打开客户端时启动，退出客户端后自动退出；启动助手在后台等待下次打开。');
+  $('status-text').textContent=t(({live:'已连接本机 Codex',partial:'部分数据可用',offline:'暂时无法连接 Codex',connecting:'正在连接 Codex',demo:'正在预览演示数据'})[status]||status);
+  $('error').textContent=t(value.snapshot.error||''); $('error').hidden=!value.snapshot.error;
+  $('data-detail').textContent=value.snapshot.account?.planType ? t('当前套餐：{plan} · 额度来自 Codex app-server', {plan:t(value.snapshot.account.planType)}) : t('额度来自本机 Codex app-server；不需要填写密钥。');
+  $('demo-note').textContent=value.demo?t('· 当前为演示模式'):'';
+  $('autostart-note').textContent=t(value.followError || (value.followSupported === false ? 'Windows 可携版支持自动跟随，演示或源码模式不修改系统启动项。' : '打开客户端时启动，退出客户端后自动退出；启动助手在后台等待下次打开。'));
 }
+if ($('language')) $('language').addEventListener('change', async () => {
+  if (!current || languageSaving) return;
+  const previous = current.settings.language || 'zh-CN', next = $('language').value;
+  if (!['zh-CN', 'en'].includes(next)) return;
+  languageSaving = true; pendingLanguage = next; languageMessage = '正在保存…'; languageError = false;
+  render(current);
+  try {
+    const value = await window.maid.setSettings({language:next});
+    if (value?.settings?.language !== next) throw new Error('语言未能保存，请重试。');
+    render(value); languageMessage = '语言已保存。';
+  } catch {
+    languageMessage = '语言未能保存，请重试。'; languageError = true;
+    current = {...current, settings:{...current.settings, language:previous}};
+  } finally {
+    languageSaving = false; pendingLanguage = null; render(current);
+  }
+});
 for(const id of booleans.filter(id => id !== 'sound' && id !== 'peekAtCorners')) $(id).addEventListener('change',()=>window.maid.setSettings({[id]:$(id).checked}));
 for(const id of [...numbers.filter(id=>!['scale','opacity'].includes(id)),'bucketId']) {
   $(id).addEventListener('change',()=>window.maid.setSettings({[id]:numbers.includes(id)?Number($(id).value):$(id).value}));
 }
-$('phrases').addEventListener('input',()=>{phrasesEdited=true;$('saved').textContent='';});
-$('save-phrases').addEventListener('click',async()=>{const phrases=$('phrases').value.split('\n').map(x=>x.trim()).filter(Boolean);if(!phrases.length){$('saved').textContent='请至少写一句台词';return;}await window.maid.setSettings({phrases});phrasesEdited=false;$('saved').textContent='已保存';});
-$('refresh').addEventListener('click',async()=>{$('refresh').disabled=true;$('refresh').textContent='刷新中…';try{await window.maid.refresh();}finally{$('refresh').disabled=false;$('refresh').textContent='刷新 ↻';}});
+$('phrases').addEventListener('input',()=>{phrasesEdited=true;phrasesMessage='';$('saved').textContent='';});
+$('save-phrases').addEventListener('click',async()=>{const phrases=!phrasesEdited&&i18n?.isDefaultPhrases?.(current?.settings.phrases)?current.settings.phrases:$('phrases').value.split('\n').map(x=>x.trim()).filter(Boolean);if(!phrases.length){phrasesMessage='请至少写一句台词';$('saved').textContent=t(phrasesMessage);return;}await window.maid.setSettings({phrases});phrasesEdited=false;phrasesMessage='已保存';$('saved').textContent=t(phrasesMessage);});
+$('refresh').addEventListener('click',async()=>{refreshing=true;$('refresh').disabled=true;$('refresh').textContent=t('刷新中…');try{await window.maid.refresh();}finally{refreshing=false;$('refresh').disabled=false;$('refresh').textContent=t('刷新 ↻');}});
 $('import-characters').addEventListener('click', async () => {
   const button = $('import-characters');
-  button.disabled = true; button.textContent = '正在导入…';
+  importing = true; button.disabled = true; button.textContent = t('正在导入…');
   try {
     const result = await window.maid.importCharacters();
     if (result.state) render(result.state);
     const imported = result.importedCount || 0, existing = result.existingCount || 0, errors = result.errors || [];
-    const messages = [];
-    if (imported) messages.push(`已导入 ${imported} 个形象`);
-    if (existing) messages.push(`${existing} 张图片已在形象库中`);
-    if (errors.length) messages.push(`${errors.length} 张未能导入`);
-    if (messages.length) characterFeedback(messages.join('，') + '。', errors);
+    if (imported || existing || errors.length) characterFeedback(() => {
+      const messages = [];
+      if (imported) messages.push(t('已导入 {n} 个形象', {n:imported}));
+      if (existing) messages.push(t('{n} 张图片已在形象库中', {n:existing}));
+      if (errors.length) messages.push(t('{n} 张未能导入', {n:errors.length}));
+      return messages.join(t('，')) + t('。');
+    }, errors);
   } catch (error) {
-    characterFeedback('导入未完成。', [{name: '图片', message: error?.message || '请重新选择本地图片。'}]);
+    characterFeedback('导入未完成。', [{message: error?.message || '请重新选择本地图片。'}]);
   } finally {
-    button.disabled = false; button.textContent = '＋ 导入形象';
+    importing = false; button.disabled = false; button.textContent = t('＋ 导入形象');
   }
 });
 setupInteractionSounds();

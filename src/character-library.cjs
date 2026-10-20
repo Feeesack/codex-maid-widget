@@ -175,6 +175,7 @@ class CharacterLibrary {
     return {
       id: record.id,
       name: builtIn ? this.nameOverrides[record.id] || record.name : record.name,
+      nameCustomized: builtIn && Object.hasOwn(this.nameOverrides, record.id),
       url: pathToFileURL(file).href,
       builtIn,
       available: this._available(file, builtIn),

@@ -171,3 +171,28 @@ footer button:hover:not(:disabled){background:var(--theme-pill-hover);color:var(
   .hidden-bubble .quota-shimmer .quota-value{animation-play-state:paused}
 }
 @keyframes quotaShimmer{from{background-position:200% 0,0% 0}to{background-position:-100% 0,200% 0}}
+
+/* English has longer labels. Keep the original Chinese metrics untouched and
+   reserve room for translated words inside the existing fixed bubble shape. */
+html:lang(en) header{font-size:18px;gap:6px;white-space:nowrap}
+html:lang(en) .quota-details{gap:12px;font-size:12px}
+html:lang(en) .reset-tag{font-size:10px;padding:0 5px}
+html:lang(en) .eyebrow{font-size:13px;letter-spacing:.55px;line-height:20px}
+html:lang(en) .alternate>span:last-child{font-size:13px;line-height:18px;max-width:100%;text-wrap:balance}
+html:lang(en) .conversation-metric{font-size:13px;gap:6px}
+html:lang(en) .conversation-metric>span{min-width:0}
+html:lang(en) .conversation-metric strong.unavailable{font-size:16px}
+html:lang(en) .conversation-summary{column-gap:8px}
+html:lang(en) .conversation-feedback{font-size:11px;line-height:16px;min-height:16px;max-width:100%;overflow-wrap:break-word}
+html:lang(en) .conversation-compaction{font-size:11px;line-height:16px;gap:4px}
+html:lang(en) .conversation-compaction strong{font-size:12px}
+html:lang(en) .account-heading{gap:3px}
+html:lang(en) .account-name{font-size:14px}
+html:lang(en) .account-badge{font-size:10px;padding:0 3px}
+html:lang(en) .account-card button{font-size:11px;padding:1px 3px}
+html:lang(en) .account-countdown{font-size:13px;line-height:19px;overflow-wrap:break-word}
+html:lang(en) .account-detail{font-size:11px;line-height:16px;white-space:normal;overflow-wrap:break-word}
+html:lang(en) .account-editor-hint{font-size:10px;line-height:13px}
+html:lang(en) .accounts-feedback{font-size:10px;line-height:13px;text-wrap:balance}
+html:lang(en) .accounts-empty{font-size:12px;line-height:18px;text-wrap:balance}
+html:lang(en) .notice{overflow-wrap:break-word}

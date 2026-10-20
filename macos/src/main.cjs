@@ -5,6 +5,8 @@ const path = require('node:path');
 const http = require('node:http');
 const crypto = require('node:crypto');
 const os = require('node:os');
+const i18n = require('./i18n.js');
+const { t } = i18n;
 const { execFile } = require('node:child_process');
 const { readSettings, writeSettings, sanitize, widgetDimensions, constrainPosition, snapBounds, mirrorForBounds, bottomCorner, cornerPeekOffset, projectVisualBounds } = require('./settings.cjs');
 const { CharacterLibrary } = require('./character-library.cjs');
@@ -26,6 +28,7 @@ fs.mkdirSync(dataDir,{recursive:true});
 app.setPath('userData',dataDir);
 const settingsFile = path.join(dataDir, 'settings.json');
 let settings = readSettings(settingsFile);
+i18n.setLocale(settings.language);
 let settingsRevision = 0;
 let accountRegistry, accountAlarm, accountStorageError = false;
 function accountManagement() {
@@ -34,8 +37,9 @@ function accountManagement() {
 }
 function notifyAccountReset(event) {
   if (quitting) return;
+  const account = accountManagement().accounts.find(value => value.id === event.id);
   if (widget && !widget.isDestroyed()) widget.webContents.send('account-reset', {
-    id: event.id, label: event.label, resetsAt: event.resetsAt, estimated: event.estimated,
+    id: event.id, label: account ? i18n.accountLabel(account) : event.label, resetsAt: event.resetsAt, estimated: event.estimated,
   });
   broadcast();
 }
@@ -57,8 +61,8 @@ function state() {
   const characters = library.list();
   const active = characters.find(item => item.id === settings.activeCharacterId && item.available) || characters.find(item => item.id === library.defaultId);
   const dock = cornerDockState();
-  return { settings, settingsRevision, snapshot, demo: demoMode, version: app.getVersion(), platform: process.platform, characters, followSupported, followError, windowContainment: windowModeState(), cornerDock: dock, visualPose: visualPoseState(dock),
-    activeCharacterId: active.id, characterUrl: active.url, characterName: active.name, accountManagement: accountManagement() };
+  return { settings, settingsRevision, snapshot, demo: demoMode, version: app.getVersion(), platform: process.platform, characters, followSupported, followError: t(followError), windowContainment: windowModeState(), cornerDock: dock, visualPose: visualPoseState(dock),
+    activeCharacterId: active.id, characterUrl: active.url, characterName: i18n.characterName(active), accountManagement: accountManagement() };
 }
 function broadcast() {
   for (const win of [widget, settingsWindow]) if (win && !win.isDestroyed()) win.webContents.send('state', state());
@@ -121,7 +125,7 @@ function previewAppearance(patch) {
   const keys = patch && typeof patch === 'object' && !Array.isArray(patch) ? Reflect.ownKeys(patch) : [];
   if (!keys.length || keys.some(key => !Object.hasOwn(limits, key) || typeof patch[key] !== 'number' ||
     !Number.isFinite(patch[key]) || patch[key] < limits[key][0] || patch[key] > limits[key][1])) {
-    throw new TypeError('无效的外观预览参数');
+    throw new TypeError(t('无效的外观预览参数'));
   }
   const before = dimensions();
   if (!appearancePreviewOrigin) appearancePreviewOrigin = captureAppearanceOrigin();
@@ -136,7 +140,7 @@ function previewCornerPeek(patch) {
     const keys = patch && typeof patch === 'object' && !Array.isArray(patch) ? Reflect.ownKeys(patch) : [];
     if (!keys.length || keys.some(key => !['peekSidePercent', 'peekBottomPercent'].includes(key) ||
       typeof patch[key] !== 'number' || !Number.isFinite(patch[key]) || !Number.isInteger(patch[key]) || patch[key] < 0 || patch[key] > 200)) {
-      throw new TypeError('无效的底角预览参数');
+      throw new TypeError(t('无效的底角预览参数'));
     }
   }
   // This synchronous overlay never changes preferences, native bounds or timers.
@@ -397,26 +401,29 @@ function updateSettings(patch) {
     if (appearanceOrigin) applyAppearanceGeometry(appearanceOrigin);
     broadcast(); throw error;
   }
+  i18n.setLocale(settings.language);
   if (appearanceOrigin) applyAppearanceGeometry(appearanceOrigin);
   applyWindowSettings(); schedule(); broadcast();
   return state();
 }
 function updateTray() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.setTitle(t('Codex 女仆 · 设置'));
   if (!tray) return;
+  tray.setToolTip(t('Codex 女仆 · 额度与陪伴'));
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: '显示女仆 · Ctrl+Alt+M', click: show },
-    { label: '刷新额度', click: () => refresh() },
-    { label: '切换形象', submenu: characterMenuItems() },
-    { label: '设置', click: openSettings },
-    ...(process.platform === 'darwin' ? [{ label: '连接 Codex 工具…', click: connectCodexPlugin }] : []),
+    { label: t('显示女仆 · Ctrl+Alt+M'), click: show },
+    { label: t('刷新额度'), click: () => refresh() },
+    { label: t('切换形象'), submenu: characterMenuItems() },
+    { label: t('设置'), click: openSettings },
+    ...(process.platform === 'darwin' ? [{ label: t('连接 Codex 工具…'), click: connectCodexPlugin }] : []),
     { type: 'separator' },
-    { label: '鼠标穿透 · Ctrl+Alt+Shift+M', type: 'checkbox', checked: settings.clickThrough, click: i => updateSettings({ clickThrough: i.checked }) },
-    { label: '始终置顶', type: 'checkbox', checked: settings.alwaysOnTop, click: i => updateSettings({ alwaysOnTop: i.checked }) },
-    { label: '仅在 Codex 窗口内显示', type: 'checkbox', checked: settings.stayInCodexWindow, click: i => updateSettings({ stayInCodexWindow: i.checked }) },
-    { label: '重置位置', click: resetPosition },
-    { label: '隐藏挂件', click: hide },
+    { label: t('鼠标穿透 · Ctrl+Alt+Shift+M'), type: 'checkbox', checked: settings.clickThrough, click: i => updateSettings({ clickThrough: i.checked }) },
+    { label: t('始终置顶'), type: 'checkbox', checked: settings.alwaysOnTop, click: i => updateSettings({ alwaysOnTop: i.checked }) },
+    { label: t('仅在 Codex 窗口内显示'), type: 'checkbox', checked: settings.stayInCodexWindow, click: i => updateSettings({ stayInCodexWindow: i.checked }) },
+    { label: t('重置位置'), click: resetPosition },
+    { label: t('隐藏挂件'), click: hide },
     { type: 'separator' },
-    { label: '退出', click: () => app.quit() },
+    { label: t('退出'), click: () => app.quit() },
   ]));
 }
 async function connectCodexPlugin() {
@@ -425,12 +432,12 @@ async function connectCodexPlugin() {
   try {
     const connector = path.join(process.resourcesPath, 'integration', 'connect.cjs');
     if (!fs.existsSync(connector)) {
-      await dialog.showMessageBox({ type: 'info', message: '连接工具随 Mac 安装包提供。', detail: '请安装完整应用后，从菜单栏选择“连接 Codex 工具”。' });
+      await dialog.showMessageBox({ type: 'info', message: t('连接工具随 Mac 安装包提供。'), detail: t('请安装完整应用后，从菜单栏选择“连接 Codex 工具”。') });
       return;
     }
-    const answer = await dialog.showMessageBox({ type: 'question', message: '将女仆挂件连接到 Codex？',
-      detail: '这会在本机注册并安装女仆插件，让 Codex 对话可以读取挂件状态、刷新额度和互动。完成后请重启 Codex 并新建聊天。',
-      buttons: ['连接', '取消'], defaultId: 0, cancelId: 1 });
+    const answer = await dialog.showMessageBox({ type: 'question', message: t('将女仆挂件连接到 Codex？'),
+      detail: t('这会在本机注册并安装女仆插件，让 Codex 对话可以读取挂件状态、刷新额度和互动。完成后请重启 Codex 并新建聊天。'),
+      buttons: [t('连接'), t('取消')], defaultId: 0, cancelId: 1 });
     if (answer.response !== 0) return;
     const result = await new Promise(resolve => {
       execFile(process.execPath, [connector, '--install'], {
@@ -440,32 +447,32 @@ async function connectCodexPlugin() {
         try {
           const value = JSON.parse(stdout);
           resolve({ ok: !error && value.ok === true, message: typeof value.message === 'string' ? value.message.slice(0, 2000) : '' });
-        } catch { resolve({ ok: false, message: '连接未完成。请确认已安装最新 Codex，然后从菜单栏重试。' }); }
+        } catch { resolve({ ok: false, message: t('连接未完成。请确认已安装最新 Codex，然后从菜单栏重试。') }); }
       });
     });
-    await dialog.showMessageBox({ type: result.ok ? 'info' : 'error', message: result.ok ? 'Codex 工具已连接' : 'Codex 工具连接未完成', detail: result.message });
+    await dialog.showMessageBox({ type: result.ok ? 'info' : 'error', message: result.ok ? t('Codex 工具已连接') : t('Codex 工具连接未完成'), detail: i18n.connectorMessage(result.message) });
   } finally { connectingPlugin = false; }
 }
 function characterMenuItems() {
   const activeId = state().activeCharacterId;
   return [
-    ...library.list().map(item => ({ label: item.name.replace(/&/g,'&&'), type: 'radio', checked: item.id === activeId, enabled: item.available, click: () => selectCharacter(item.id) })),
+    ...library.list().map(item => ({ label: i18n.characterName(item).replace(/&/g,'&&'), type: 'radio', checked: item.id === activeId, enabled: item.available, click: () => selectCharacter(item.id) })),
     { type: 'separator' },
-    { label: '管理形象…', click: openSettings },
+    { label: t('管理形象…'), click: openSettings },
   ];
 }
 function selectCharacter(id) {
   const item = library.get(id);
-  if (!item || !item.available) throw new Error('该形象不存在或图片已损坏，请重新导入。');
+  if (!item || !item.available) throw new Error(t('该形象不存在或图片已损坏，请重新导入。'));
   settings.activeCharacterId = item.id;
   settings.characterPath = '';
   save(); updateTray(); broadcast();
   return state();
 }
 async function validateBrowserImage(file) {
-  if (typeof file !== 'string' || !path.isAbsolute(file)) throw new Error('请选择本地图片。');
+  if (typeof file !== 'string' || !path.isAbsolute(file)) throw new Error(t('请选择本地图片。'));
   const info = fs.statSync(file);
-  if (!info.isFile() || info.size > 15 * 1024 * 1024) throw new Error('请选择小于 15 MB 的图片。');
+  if (!info.isFile() || info.size > 15 * 1024 * 1024) throw new Error(t('请选择小于 15 MB 的图片。'));
   // Windows nativeImage decodes PNG/JPEG but not GIF/WebP; validate those in Chromium.
   if (!/\.(gif|webp)$/i.test(file)) return;
   const url = require('node:url').pathToFileURL(file).href;
@@ -477,8 +484,8 @@ async function validateBrowserImage(file) {
     img.onerror = () => done(null);
     img.src = ${JSON.stringify(url)};
   })`);
-  if (!decoded?.width || !decoded?.height) throw new Error('无法读取这张图片，请重新导出后导入。');
-  if (decoded.width > 16384 || decoded.height > 16384 || decoded.width * decoded.height > 64000000) throw new Error('图片尺寸过大，请先缩小图片后导入。');
+  if (!decoded?.width || !decoded?.height) throw new Error(t('无法读取这张图片，请重新导出后导入。'));
+  if (decoded.width > 16384 || decoded.height > 16384 || decoded.width * decoded.height > 64000000) throw new Error(t('图片尺寸过大，请先缩小图片后导入。'));
 }
 async function importCharacterFiles(paths) {
   const result = {imported:[],existing:[],errors:[]};
@@ -488,7 +495,7 @@ async function importCharacterFiles(paths) {
       const next = library.importFiles([file]);
       for (const key of Object.keys(result)) result[key].push(...next[key]);
     } catch(error) {
-      result.errors.push({name:typeof file==='string'?path.basename(file):'图片',message:error.code==='ENOENT'?'图片不存在或已移动。':error.message});
+      result.errors.push({name:typeof file==='string'?path.basename(file):t('图片'),message:error.code==='ENOENT'?t('图片不存在或已移动。'):error.message});
     }
   }
   return result;
@@ -555,7 +562,7 @@ function openSettings() {
   if (settingsWindow && !settingsWindow.isDestroyed()) { settingsWindow.show(); settingsWindow.focus(); return; }
   const created = new BrowserWindow({ width: 550, height: 760, minWidth: 470, minHeight: 520,
     icon: windowIcon,
-    title: 'Codex 女仆 · 设置', backgroundColor: '#f5faf8', autoHideMenuBar: true,
+    title: t('Codex 女仆 · 设置'), backgroundColor: '#f5faf8', autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   settingsWindow = created;
   secureWindow(created);
@@ -611,7 +618,7 @@ function action(name) {
     case 'refresh': return refresh();
     case 'bounce': widget.webContents.send('bounce'); break;
     case 'settings': openSettings(); break;
-    default: throw new Error('未知操作');
+    default: throw new Error(t('未知操作'));
   }
 }
 let conversationServices;
@@ -658,8 +665,15 @@ function passiveConversationServices() {
 function setupIpc() {
   const trusted = event => event.sender === widget?.webContents || event.sender === settingsWindow?.webContents;
   const handle = (name, callback) => ipcMain.handle(name, (event, ...args) => {
-    if (!trusted(event)) throw new Error('无效窗口');
-    return callback(event, ...args);
+    if (!trusted(event)) throw new Error(t('无效窗口'));
+    const localizedError = error => {
+      if (error && typeof error.message === 'string') error.message = t(error.message);
+      throw error;
+    };
+    try {
+      const result = callback(event, ...args);
+      return result && typeof result.then === 'function' ? result.catch(localizedError) : result;
+    } catch (error) { return localizedError(error); }
   });
   handle('state', () => state());
   handle('refresh', () => refresh());
@@ -684,26 +698,26 @@ function setupIpc() {
     accountAlarm?.check(); broadcast(); return accountManagement();
   });
   handle('settings', (event, patch) => {
-    if (event.sender !== settingsWindow?.webContents && event.sender !== widget.webContents) throw new Error('无效窗口');
+    if (event.sender !== settingsWindow?.webContents && event.sender !== widget.webContents) throw new Error(t('无效窗口'));
     return updateSettings(patch);
   });
   handle('preview-appearance', (event, patch) => {
     if (!settingsWindow || settingsWindow.isDestroyed() || event.sender !== settingsWindow.webContents ||
-      (!event.senderFrame || event.senderFrame !== settingsWindow.webContents.mainFrame)) throw new Error('无效窗口');
+      (!event.senderFrame || event.senderFrame !== settingsWindow.webContents.mainFrame)) throw new Error(t('无效窗口'));
     return previewAppearance(patch);
   });
   handle('preview-corner-peek', (event, patch) => {
     if (!settingsWindow || settingsWindow.isDestroyed() || event.sender !== settingsWindow.webContents ||
-      (!event.senderFrame || event.senderFrame !== settingsWindow.webContents.mainFrame)) throw new Error('无效窗口');
+      (!event.senderFrame || event.senderFrame !== settingsWindow.webContents.mainFrame)) throw new Error(t('无效窗口'));
     return previewCornerPeek(patch);
   });
   handle('action', (_event, name) => action(name));
   handle('import-characters', async () => {
-    const result = await dialog.showOpenDialog(settingsWindow || widget, { title: '导入形象（可多选，推荐透明 PNG）', properties: ['openFile','multiSelections'], filters: [{ name: '图片', extensions: ['png','webp','jpg','jpeg','gif'] }] });
+    const result = await dialog.showOpenDialog(settingsWindow || widget, { title: t('导入形象（可多选，推荐透明 PNG）'), properties: ['openFile','multiSelections'], filters: [{ name: t('图片'), extensions: ['png','webp','jpg','jpeg','gif'] }] });
     if (result.canceled) return { state: state(), importedCount: 0, existingCount: 0, errors: [] };
     const imported = await importCharacterFiles(result.filePaths);
     updateTray(); broadcast();
-    return { state: state(), importedCount: imported.imported.length, existingCount: imported.existing.length, errors: imported.errors };
+    return { state: state(), importedCount: imported.imported.length, existingCount: imported.existing.length, errors: imported.errors.map(error => ({ ...error, message: t(error.message) })) };
   });
   handle('select-character', (_event,id) => selectCharacter(id));
   handle('rename-character', (_event,id,name) => { library.rename(id,name); updateTray(); broadcast(); return state(); });
@@ -791,9 +805,9 @@ else {
     library = new CharacterLibrary({ dataDir, assetRoot: path.join(root,'assets'), validateImage: file => {
       if (/\.(gif|webp)$/i.test(file)) return; // Decoded by validateBrowserImage before import/migration.
       const decoded = nativeImage.createFromPath(file);
-      if (decoded.isEmpty()) throw new Error('无法读取这张图片，请选择有效的 PNG、WebP、GIF 或 JPEG。');
+      if (decoded.isEmpty()) throw new Error(t('无法读取这张图片，请选择有效的 PNG、WebP、GIF 或 JPEG。'));
       const size = decoded.getSize();
-      if (size.width > 16384 || size.height > 16384 || size.width * size.height > 64000000) throw new Error('图片尺寸过大，请先缩小图片后导入。');
+      if (size.width > 16384 || size.height > 16384 || size.width * size.height > 64000000) throw new Error(t('图片尺寸过大，请先缩小图片后导入。'));
     } });
     if (!library.get(settings.activeCharacterId)?.available) settings.activeCharacterId = library.defaultId;
     // The user explicitly authorized this local read-only profile lookup.
@@ -822,13 +836,13 @@ else {
     // A composed PNG NativeImage uses its 1x bitmap in this Electron version,
     // which Windows then enlarges and blurs on high-DPI displays.
     tray = new Tray(trayImage({ root, nativeImage }));
-    tray.setToolTip('Codex 女仆 · 额度与陪伴'); tray.on('click', show); updateTray();
+    tray.setToolTip(t('Codex 女仆 · 额度与陪伴')); tray.on('click', show); updateTray();
     screen.on('display-removed', () => resetPosition());
     globalShortcut.register('Control+Alt+M', () => widget.isVisible() ? hide() : show());
     globalShortcut.register('Control+Alt+Q', () => action('bounce'));
     globalShortcut.register('Control+Alt+Shift+M', () => updateSettings({ clickThrough: !settings.clickThrough }));
     await startControl(); show(); schedule(); refresh(); accountAlarm?.start();
-  }).catch(error => { dialog.showErrorBox('Codex 女仆启动失败', error.message); app.quit(); });
+  }).catch(error => { dialog.showErrorBox(t('Codex 女仆启动失败'), t(error.message)); app.quit(); });
 }
 app.on('window-all-closed', () => {});
 app.on('activate', () => { if (widget && !widget.isDestroyed()) show(); });

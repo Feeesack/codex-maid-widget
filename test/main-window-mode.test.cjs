@@ -63,7 +63,8 @@ function controller(variant, options = {}) {
     vm.runInNewContext(fs.readFileSync(path.join(variant.root, 'src', file), 'utf8'), context, { filename: file });
     return context.module.exports;
   }
-  const geometry = loadModule('settings.cjs', { 'node:fs': isolatedFilesystem, 'node:path': path,
+  const i18n = loadModule('i18n.js');
+  const geometry = loadModule('settings.cjs', { './i18n.js': i18n, 'node:fs': isolatedFilesystem, 'node:path': path,
     './interaction-sound-catalog.js': loadModule('interaction-sound-catalog.js') });
   const containment = loadModule('window-containment.cjs');
   const visibility = loadModule('window-visibility.cjs');
@@ -112,10 +113,11 @@ function controller(variant, options = {}) {
       });
       settingsWindow = this;
     }
+    setTitle(value) { this.title = value; }
     isDestroyed() { return this.destroyed; }
     show() {} focus() {} loadFile() {}
   }
-  const tray = { setContextMenu(value) { trayTemplate = value; } };
+  const tray = { setToolTip(value) { this.tooltip = value; }, setContextMenu(value) { trayTemplate = value; } };
   const ipcMain = new EventEmitter(), handlers = new Map();
   ipcMain.handle = (name, callback) => handlers.set(name, callback);
   const app = new EventEmitter();
@@ -133,7 +135,7 @@ function controller(variant, options = {}) {
       route = callback;
       return { once() {}, listen(_port, host, ready) { assert.equal(host, '127.0.0.1'); ready(); }, address: () => ({ port: 12345 }), close() {} };
     } },
-    './settings.cjs': geometry, './window-mode.cjs': { CodexWindowMode: IntegratedMode },
+    './i18n.js': i18n, './settings.cjs': geometry, './window-mode.cjs': { CodexWindowMode: IntegratedMode },
     './data-home.cjs': { prepareDataHome: () => fakeHome },
     './character-library.cjs': {}, './codex-data.cjs': {}, './codex-desktop.cjs': {}, './auth-change-watch.cjs': {},
     './windows-launch.cjs': {}, './macos-launch.cjs': {}, './desktop-observation.cjs': {},
@@ -181,6 +183,7 @@ function controller(variant, options = {}) {
     reopenSettings: () => api.action('settings'),
     oldSettingsClosed(window) { window.emit('closed'); },
     get settingsWindow() { return settingsWindow; },
+    get trayTooltip() { return tray.tooltip; },
     failNextCommit() { failCommit = true; },
     action: name => handlers.get('action')({ sender: widget.webContents }, name),
     hide: api.hide, show: api.show,
@@ -204,6 +207,34 @@ function controller(variant, options = {}) {
 }
 
 for (const variant of variants) {
+  test(variant.name + ': changing language persists only the preference and immediately updates native menu and settings title', t => {
+    const control = controller(variant, {settings:{phrases:['用户台词，不可翻译'],activeCharacterId:'custom-kept'}});
+    t.after(() => control.close());
+    assert.equal(control.state().settings.language, 'zh-CN');
+    assert.equal(control.settingsWindow.title, 'Codex 女仆 · 设置');
+    assert.equal(control.menu('设置').label, '设置');
+    const initial = control.state().settings;
+    control.patch({language:'en'});
+    assert.deepEqual(control.persisted, {...initial,language:'en'});
+    assert.equal(control.settingsWindow.title, 'Codex Maid · Settings');
+    assert.equal(control.menu('Settings').label, 'Settings');
+    assert.equal(control.menu('Change character').submenu[0].label, 'Isolated pet');
+    assert.equal(control.trayTooltip, 'Codex Maid · Quota & company');
+    assert.deepEqual(control.state().settings.phrases, initial.phrases);
+    control.failNextCommit();
+    assert.throws(() => control.patch({language:'zh-CN'}), /isolated settings commit failure/);
+    assert.equal(control.state().settings.language, 'en');
+    assert.equal(control.settingsWindow.title, 'Codex Maid · Settings');
+    assert.equal(control.menu('Settings').label, 'Settings');
+    control.patch({language:'invalid'});
+    assert.equal(control.state().settings.language, 'zh-CN');
+    assert.equal(control.settingsWindow.title, 'Codex 女仆 · 设置');
+    assert.equal(control.trayTooltip, 'Codex 女仆 · 额度与陪伴');
+    const reopened = controller(variant, {settings:control.persisted});
+    t.after(() => reopened.close());
+    assert.equal(reopened.state().settings.language, 'zh-CN');
+    assert.deepEqual(reopened.state().settings.phrases, initial.phrases);
+  });
   function dragTo(control, x, y, release = true) {
     const before = control.bounds;
     const offset = control.state().visualPose.offset;

@@ -59,6 +59,7 @@ function harness(source, file, win, scale, dataDir, display, position, peekAtCor
     electron: { app: isolatedApp, ipcMain: events, screen: { getCursorScreenPoint: () => cursor, getDisplayMatching: () => display } },
     'node:fs': { mkdirSync(dir, options) { assert.equal(path.resolve(dir), path.resolve(dataDir)); return fs.mkdirSync(dir, options); } },
     'node:path': path, 'node:http': {}, 'node:crypto': {}, 'node:os': { homedir: () => profile },
+    './i18n.js': {setLocale() {}, t: value => value, characterName: value => value?.name || ''},
     './settings.cjs': isolatedSettings, './data-home.cjs': { prepareDataHome: () => dataDir },
     './character-library.cjs': {}, './codex-data.cjs': {}, './codex-desktop.cjs': {}, './auth-change-watch.cjs': {},
     './windows-launch.cjs': {}, './desktop-observation.cjs': {},

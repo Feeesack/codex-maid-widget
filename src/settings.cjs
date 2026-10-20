@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
+const { normalizeLocale } = require('./i18n.js');
 const { defaultId: defaultInteractionSound, presets: interactionSounds } = require('./interaction-sound-catalog.js');
 const interactionSoundIds = new Set(interactionSounds.map(preset => preset.id));
 const LEGACY_DEFAULT_PHRASES = ['主人，今天也一起把想法变成代码吧。', '额度我来照看，你只管专心创造。', '写累了记得喝水，休息一下也很好。', '每一个小进展，都值得开心一下。'];
@@ -19,6 +20,7 @@ const PREVIOUS_DEFAULT_PHRASES = [
   '别急着重构宇宙，眼前这只史莱姆还卡着编译呢。',
 ];
 const DEFAULTS = Object.freeze({
+  language: 'zh-CN',
   sizeBaseline: 2,
   scale: 1, opacity: 1, alwaysOnTop: true, clickThrough: false, sound: true, interactionSound: defaultInteractionSound, accountResetAlerts: true,
   autoStart: false, followCodex: true, stayInCodexWindow: false, peekAtCorners: false, showBubble: true, autoHideSeconds: 5, refreshSeconds: 60,
@@ -43,6 +45,7 @@ function clamp(value, min, max, fallback) {
 }
 function sanitize(input = {}) {
   const s = { ...DEFAULTS };
+  s.language = normalizeLocale(input.language);
   for (const key of ['alwaysOnTop','clickThrough','sound','accountResetAlerts','autoStart','followCodex','stayInCodexWindow','peekAtCorners','showBubble','mirror']) {
     if (typeof input[key] === 'boolean') s[key] = input[key];
   }

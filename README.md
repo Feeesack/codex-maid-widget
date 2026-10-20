@@ -20,22 +20,24 @@ Screenshots show the current Windows interface with **synthetic demo data**. Acc
 
 ## Download and install
 
-Windows and macOS share release version **v0.3.48**. Download the matching installer below, or visit [Releases](https://github.com/Feeesack/codex-maid-widget/releases) for other versions.
+The latest Windows and macOS installers are **v0.3.51**. This release keeps the bilingual interface from 0.3.49/0.3.50 and adds the macOS window-following, stacking-recovery and viewport-clipping fixes from PR #1. Download the installers below, or visit [Releases](https://github.com/Feeesack/codex-maid-widget/releases) for other versions.
 
 | Platform | Installer |
 | --- | --- |
-| Windows x64 | [Download Windows installer (.exe)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.48/Codex-Maid-Widget-0.3.48-windows-x64-setup.exe) |
-| macOS 13+, Apple Silicon and Intel | [Download universal Mac installer (.pkg)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.48/Codex-Maid-Widget-0.3.48-macOS-universal.pkg) |
+| Windows x64 | [Download Windows installer (.exe)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.51/Codex-Maid-Widget-0.3.51-windows-x64-setup.exe) |
+| macOS 13+, Apple Silicon and Intel | [Download universal Mac installer (.pkg)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.51/Codex-Maid-Widget-0.3.51-macOS-universal.pkg) |
 
 Release notes and SHA-256 checksums are on the [Releases](https://github.com/Feeesack/codex-maid-widget/releases) page. The installers include the runtime and optional local Codex plugin, so you don't need to install Node.js or npm, or download the source.
 
 The [0.3.48 release notes](docs/releases/0.3.48.md) bring together the changes since 0.3.21: paired press/release interactions; five sound choices including DSH Duck; multi-account reset reminders; two new dragon-girl poses; conversation context, compaction and Git status; Motion mirroring; Hugeicons controls; page ordering and visibility; live appearance and corner-hiding previews; and Windows installation-path fixes. Sound sources and their separate license scopes are documented in [audio provenance](docs/interaction-audio.md).
 
+The [0.3.51 release notes](docs/releases/0.3.51.md) cover the macOS native-window fixes: more reliable Codex window identification, bounded visibility recovery, smoother following, corrected stacking after focus changes and `overflow: clip` for focused bubble content. Windows behavior, settings, imported characters and original assets are preserved. The Mac package is built and checked on native runners; hands-on acceptance for Spaces, full screen, multiple displays, Retina, audio and login sessions remains separate.
+
 1. Install and sign in to the official Codex desktop app to see real account quota.
 2. Run the installer, then open Codex Maid Widget from the Windows Start menu or macOS Applications folder.
 3. Use the gear button, right-click the character, or open the system tray/menu bar menu to adjust settings.
 
-The app's interface is currently in Simplified Chinese. The English and Chinese READMEs cover the same release.
+From 0.3.49, choose **简体中文 / English** under **Interface language** at the top of Settings. Changes apply immediately and persist across restarts. Chinese remains the default; English has layouts adapted for longer labels. Custom phrases, names and project titles stay as written.
 
 The installers don't yet have developer distribution certificates. The Mac app is ad-hoc signed, and the package has not been notarized by Apple. Your operating system may ask you to confirm its source. Use the downloads from this repository's Releases page and check the supplied checksum.
 
@@ -137,7 +139,7 @@ Windows and macOS use the same release version. The build stops if their manifes
 
 ## Testing
 
-Windows 0.3.48 has local runtime evidence for main-app and helper versions, non-demo quota, local controls and MCP. Automated regression covers both source trees, including rendering, settings, data parsing, interactions and path compatibility. The universal Mac installer is built on a native runner, with installation, launch, MCP, native window and launchd-helper checks on Apple Silicon and Intel runners.
+Windows 0.3.51 has local runtime evidence for main-app and helper versions, non-demo quota, local controls and MCP. Automated regression covers both source trees, including rendering, settings, data parsing, interactions and path compatibility. The universal Mac installer is built on a native runner, with installation, launch, MCP, native window and launchd-helper checks on Apple Silicon and Intel runners.
 
 CI does not replace hands-on Mac acceptance for multiple monitors, Spaces, full screen, Retina, audio and login sessions. Subjective sound and animation feel, real five-hour reset reminders and Windows sign-out/sign-in also need hands-on acceptance.
 
