@@ -2,7 +2,7 @@
 
 [English documentation](../README.md) · [简体中文文档](../README.zh-CN.md)
 
-The Mac source shares version **0.3.50** with Windows, refining English phrases, interface copy and connection-result dialogs. Settings offers an immediate Simplified Chinese / English choice. Chinese remains the default; custom names, phrases and project names stay as written. The latest published universal installer is still **0.3.48** and targets Apple Silicon and Intel on macOS 13 or newer. This local update does not create a new installer; see the [0.3.50 local update notes](../docs/releases/0.3.50.md).
+Windows and macOS share release version **0.3.51**. The universal installer targets Apple Silicon and Intel on macOS 13 or newer. This release adds Simplified Chinese / English settings, reviewed English copy and the [PR #1](https://github.com/Feeesack/codex-maid-widget/pull/1) window-identification, smooth-following, stacking-recovery and focus-clipping fixes. Chinese remains the default; custom names, phrases and project names stay as written. See the [0.3.51 release notes](../docs/releases/0.3.51.md).
 
 Shared features include conversation context/Git status, compaction totals, local account reset countdowns, paired press/release interactions and five sound choices including DSH Duck. The built-in list starts with 小龙娘-托腮 and 小龙娘-端庄, followed by the original mint maid and lilac dragon maid; 小龙娘-托腮 is the default for fresh settings and the fallback after removing the selected custom character. Existing valid selections and user-defined names are retained. See the [bilingual release notes](../docs/releases/0.3.48.md) and [audio source/license scope](docs/interaction-audio.md).
 
@@ -10,7 +10,7 @@ Settings hide the corner-hiding sliders until peeking is enabled, preview change
 
 The renderer also supports live size/opacity previews, Motion-powered mirroring, Hugeicons controls, previous/next arrows and a page editor with SortableJS ordering, visibility and default selection. The universal package is built on a native Mac runner, with installation, launch, MCP, native window and launchd-helper checks on Apple Silicon and Intel runners. These checks do not establish hands-on Mac acceptance.
 
-- [Download the Mac installer](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.48/Codex-Maid-Widget-0.3.48-macOS-universal.pkg)
+- [Download the Mac installer](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.51/Codex-Maid-Widget-0.3.51-macOS-universal.pkg)
 - [Installation and plugin connection](../docs/INSTALLATION.md)
 - [Build and validation details](../docs/BUILDING.md)
 - [Artwork sources](docs/asset-provenance.md) and [artwork license](ARTWORK_LICENSE.md)

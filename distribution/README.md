@@ -1,6 +1,6 @@
 # Installers and local integration
 
-The Windows and macOS installers share version **0.3.48** and include the application runtime and optional Codex plugin connector. End users do not need Node.js, npm, a source checkout, or an API key. Real quota requires an installed, signed-in Codex desktop app.
+The Windows and macOS installers share version **0.3.51** and include the application runtime and optional Codex plugin connector. End users do not need Node.js, npm, a source checkout, or an API key. Real quota requires an installed, signed-in Codex desktop app.
 
 - [Download and installation](../docs/INSTALLATION.md)
 - [Build commands and verification](../docs/BUILDING.md)
