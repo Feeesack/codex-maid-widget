@@ -599,7 +599,7 @@ async function checkBubbleMotion(capture) {
 async function checkCornerPeeking(capture) {
   const initialSettings={...settings},initialSize=win.getSize(),evidence=[];
   const viewport = () => evaluate(`({width:innerWidth,height:innerHeight,htmlOverflow:getComputedStyle(document.documentElement).overflow,bodyOverflow:getComputedStyle(document.body).overflow,peeking:document.getElementById('widget').classList.contains('is-corner-peeking'),moving:document.getElementById('widget').classList.contains('is-moving'),imageScale:getComputedStyle(document.getElementById('maid-image')).scale,translateAnimations:['character','bubble-motion'].reduce((count,id)=>count+document.getElementById(id).getAnimations().filter(animation=>animation instanceof CSSTransition&&animation.transitionProperty==='translate').length,0),bodyAnimations:document.getElementById('maid-image').getAnimations().length,characterTransition:getComputedStyle(document.getElementById('character')).transitionProperty,bubbleTransition:getComputedStyle(document.getElementById('bubble-motion')).transitionProperty})`);
-  const pose = async (offset,moving=false,corner=null,peeking=false) => {cornerDock={corner,peeking};visualPose={offset,moving};await publish();};
+  const pose = async (offset,moving=false,corner=null,peeking=false,patch={}) => {cornerDock={corner,peeking};visualPose={offset,moving};await publish(patch);};
   const assertPosition = (actual,full,offset,label) => {
     for(const id of ['character','bubble','dot-one','dot-two']) {
       assert.ok(Math.abs(actual[id].y-full[id].y-offset.y)<.2,`${label}: ${id} tracks the supplied vertical pose without a CSS lag`);
@@ -624,12 +624,25 @@ async function checkCornerPeeking(capture) {
         assert.equal(after.peeking,true,'bottom-corner state enables the peeking renderer');
         assert.deepEqual(win.getSize(),nativeSize,'peeking never resizes the native window');
         assert.equal(after.width,before.width);assert.equal(after.height,before.height);
-        assert.equal(after.htmlOverflow,'hidden');assert.equal(after.bodyOverflow,'hidden');
+        assert.equal(after.htmlOverflow,'clip');assert.equal(after.bodyOverflow,'clip');
         assert.ok(peek.character.y+peek.character.height>after.height+target.y-4,'the lower body extends beyond the clipped viewport');
         assert.ok(mirror?peek.character.x<-45*unit:peek.character.x+peek.character.width>after.width+45*unit,'the side of the character is clipped at the docked corner');
         assert.ok(peek.character.y<after.height-80*unit,'the head remains visible and draggable');
         assert.ok(peek.toolbar.y>=0&&peek.toolbar.y+peek.toolbar.height<=after.height,'toolbar remains inside the viewport');
         assert.equal(await readable(),true,'peeking keeps bubble text and controls readable in both orientations');
+        // overflow:hidden can scroll a focused, translated character into view.
+        // That scroll survives disabling peeking and clips the bubble's top.
+        for (const id of ['character','next-page','settings']) {
+          await evaluate(`document.getElementById(${JSON.stringify(id)}).focus()`);
+          await pose({x:0,y:0},false,null,false,{peekAtCorners:false});
+          const restored=await rects();
+          const scroll=await evaluate(`({root:document.scrollingElement.scrollTop,body:document.body.scrollTop})`);
+          assert.deepEqual(scroll,{root:0,body:0},'focus must not scroll the fixed widget viewport');
+          assert.ok(Math.abs(restored.bubble.y-full.bubble.y)<.2,'disabling peeking restores the full bubble top');
+          assert.deepEqual(win.getSize(),nativeSize,'focus and unfolding preserve native dimensions');
+          await evaluate(`document.activeElement.blur()`);
+          await pose(target,false,corner,true,{peekAtCorners:true});
+        }
         if(await evaluate(`document.getElementById('maid-image').parentElement!==document.getElementById('character')`)) {
           await pause(340);
           const orientation=await evaluate(`({scale:getComputedStyle(document.getElementById('maid-image')).scale,x:new DOMMatrix(getComputedStyle(document.getElementById('maid-image').parentElement).transform).m11})`);
