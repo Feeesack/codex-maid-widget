@@ -1,5 +1,7 @@
 *{box-sizing:border-box}
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;user-select:none;font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:#23433f}
+/* Clip corner poses without making the viewport a programmatically scrollable
+   container. Focusing a peeking character must not scroll the bubble upward. */
+html,body{margin:0;width:100%;height:100%;overflow:clip;background:transparent;user-select:none;font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:#23433f}
 button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
 /* Window motion belongs to the native parent compositor, as in DSH's page.
    Never add a second scale/fade to the character during minimize/restore. */

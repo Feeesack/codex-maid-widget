@@ -59,6 +59,20 @@ test('an inventory without Codex candidates starts no lsof and is a confirmed em
   assert.equal(calls, 1);
 });
 
+test('privileged processes in a real-UID ps selection do not invalidate current-user roots', async () => {
+  const mixed = '0 90 1 PrivilegedHelper\n502 100 1 Codex\n' + metadata;
+  assert.deepEqual(parseProcessMetadata(mixed, uid).map(item => item.pid), [100, 101]);
+  const result = await queryCodexDesktop({ platform: 'darwin', uid, readBundle, execFile(file, args, _options, done) {
+    if (file === '/bin/ps') done(null, mixed, '');
+    else {
+      assert.equal(args[5], '100,101');
+      done(null, textEntry(100) + textEntry(101), '');
+    }
+  } });
+  assert.deepEqual(result, { known: true, roots: [{ pid: 100, parentPid: 1, path: desktop, uid, ...bundleIdentity }] });
+  assert.throws(() => parseProcessMetadata(mixed + '501 100 1 Codex\n', uid));
+});
+
 test('missing ownership, permissions, malformed or partial inventories stay unknown', async () => {
   for (const output of ['', 'pid invalid', '502 100 1 Codex\n', '501 100 1 Codex\n501 100 1 Codex\n']) {
     assert.throws(() => parseProcessMetadata(output, uid));

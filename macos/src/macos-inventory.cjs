@@ -13,8 +13,11 @@ function parseProcessMetadata(output, uid, names = new Set(['Codex', 'ChatGPT'])
     const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line);
     if (!match) throw new Error('Invalid process metadata');
     const [, owner, id, parent, name] = match;
+    // ps may include a privileged helper whose effective UID differs.
+    // Ignore other owners while retaining identity validation for this user.
+    if (Number(owner) !== uid) continue;
     const pid = Number(id), parentPid = Number(parent);
-    if (Number(owner) !== uid || !Number.isSafeInteger(pid) || pid <= 0 || !Number.isSafeInteger(parentPid) || ids.has(pid)) throw new Error('Invalid process identity');
+    if (!Number.isSafeInteger(pid) || pid <= 0 || !Number.isSafeInteger(parentPid) || ids.has(pid)) throw new Error('Invalid process identity');
     ids.add(pid);
     if (names.has(name)) candidates.push({ uid, pid, parentPid, name });
   }

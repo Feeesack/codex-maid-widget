@@ -4,7 +4,7 @@ const { CodexWindowProvider, nativeHandleId } = require('./codex-window.cjs');
 const { createVisibilityController } = require('./window-visibility.cjs');
 const { WindowTopmostController } = require('./window-topmost.cjs');
 
-function normalizedSnapshot(value, { screen, previousHost, widgetPid = process.pid } = {}) {
+function normalizedSnapshot(value, { screen, previousHost, widgetPid = process.pid, inset = 2 } = {}) {
   if (value?.known !== true || !Array.isArray(value.windows)) return { known: false, supported: value?.supported !== false };
   const windows = value.windows.filter(item => item.mainWindow !== false && !item.toolWindow && !item.ownerId && item.windowClass !== '#32770');
   let host = windows.find(item => item.id === value.foregroundWindow)
@@ -29,9 +29,9 @@ function normalizedSnapshot(value, { screen, previousHost, widgetPid = process.p
   try {
     bounds = value.coordinateSpace === 'physical-pixels' ? screen.screenToDipRect(null, host.bounds) : { ...host.bounds };
   } catch { return { known: false, supported: value.supported !== false }; }
-  // Leave room for native enclosing-rectangle rounding at fractional DPI.
-  // The whole transparent widget, including its bubble, remains inside Codex.
-  const clientBounds = { x: bounds.x + 2, y: bounds.y + 2, width: bounds.width - 4, height: bounds.height - 4 };
+  // Leave room for rounding and a small movement margin on macOS. This is not
+  // native clipping: a separate Mac window can still lag a fast host drag.
+  const clientBounds = { x: bounds.x + inset, y: bounds.y + inset, width: bounds.width - inset * 2, height: bounds.height - inset * 2 };
   const foreground = value.foregroundPid === widgetPid ? 'widget'
     : host.foreground || value.foregroundWindow === host.id || value.foregroundRoot === host.id || value.foregroundPid === host.pid ? 'host' : 'other';
   return { known: true, supported: value.supported !== false, foreground,
@@ -41,16 +41,20 @@ function normalizedSnapshot(value, { screen, previousHost, widgetPid = process.p
 
 class CodexWindowMode {
   constructor({ widget, screen, getSize, onStatus = () => {}, onRecreate = () => {}, platform = process.platform,
-    providerFactory = () => new CodexWindowProvider({ widgetHandle: widget.getNativeWindowHandle() }),
+    providerFactory = () => new CodexWindowProvider({ widgetHandle: widget.getNativeWindowHandle(),
+      getWidgetWindowId: () => /^window:([1-9]\d*):/.exec(widget.getMediaSourceId())?.[1] }),
     topmostProviderFactory = () => new CodexWindowProvider({ widgetHandle: widget.getNativeWindowHandle() }),
-    intervalMs = platform === 'darwin' ? 500 : 100, staleAfterMs = platform === 'darwin' ? 2500 : 1800 } = {}) {
-    Object.assign(this, { widget, screen, getSize, platform, providerFactory, intervalMs, staleAfterMs, onStatus, onRecreate });
+    intervalMs = 100, activeIntervalMs = platform === 'darwin' ? 16 : intervalMs,
+    staleAfterMs = platform === 'darwin' ? 2500 : 1800 } = {}) {
+    Object.assign(this, { widget, screen, getSize, platform, providerFactory, intervalMs, activeIntervalMs, staleAfterMs, onStatus, onRecreate });
     this.provider = null; this.timer = null; this.staleTimers = new Set(); this.epoch = 0;
     this.hostId = null; this.statusKey = ''; this.closed = false; this.embedded = false;
     this.geometryReady = true; this.rendererLoaded = !widget.webContents?.on;
     this.nativeShown = false; this.lastProjected = null; this.raw = null; this.host = null;
     this.binding = Promise.resolve(); this.bindingRevision = 0; this.recreating = false;
     this.preferences = {};
+    this.lastHostGeometry = ''; this.fastTrackingUntil = 0;
+    this.lastPointer = null; this.lastNativeQueryAt = 0;
     this.topmost = new WindowTopmostController({ widget, platform, providerFactory: topmostProviderFactory, onStatus: () => this.publish() });
     this.surface = {
       isDestroyed: () => widget.isDestroyed?.() === true,
@@ -75,7 +79,13 @@ class CodexWindowMode {
     this.controller = new WindowContainmentController({
       getBounds: () => this.embedded && this.lastProjected ? { ...this.lastProjected } : widget.getBounds(), getSize,
       setBounds: bounds => {
-        if (this.embedded) this.project(bounds); else widget.setBounds(bounds);
+        if (this.embedded) this.project(bounds);
+        else if (this.platform === 'darwin') {
+          const current = widget.getBounds();
+          // A move must not reconfigure a transparent window's backing size.
+          if (current.width === bounds.width && current.height === bounds.height) widget.setPosition(bounds.x, bounds.y, false);
+          else widget.setBounds(bounds, false);
+        } else widget.setBounds(bounds);
       },
       show: () => {
         if (this.enabled) this.visibility.update();
@@ -218,6 +228,19 @@ class CodexWindowMode {
   }
   async tick(epoch, provider) {
     const started = Date.now();
+    if (this.platform === 'darwin' && this.controller.getState().reason === 'contained') {
+      const pointer = this.screen.getCursorScreenPoint?.();
+      const unchanged = pointer && this.lastPointer && pointer.x === this.lastPointer.x && pointer.y === this.lastPointer.y;
+      const age = started - this.lastNativeQueryAt;
+      // Detect the start of a mouse drag quickly without scanning every native
+      // window at display cadence while the pointer and host are stationary.
+      if (unchanged && age >= 0 && age < 120 && started >= this.fastTrackingUntil) {
+        if (!this.closed && this.enabled && epoch === this.epoch && provider === this.provider) this.timer = setTimeout(() => { void this.tick(epoch, provider); }, this.activeIntervalMs);
+        return;
+      }
+      this.lastPointer = pointer && { ...pointer };
+    }
+    this.lastNativeQueryAt = started;
     const stale = setTimeout(() => {
       if (!this.closed && this.enabled && epoch === this.epoch && provider === this.provider) {
         this.controller.update({ known: false }); this.publish();
@@ -233,18 +256,35 @@ class CodexWindowMode {
       if (this.embedded && value?.known === true && value.widgetParented === true && value.widgetStyleCached === false) {
         this.recreate(); return;
       }
-      const snapshot = normalizedSnapshot(value, { screen: this.screen, previousHost: this.controller.getState().hostId });
+      const snapshot = normalizedSnapshot(value, { screen: this.screen, previousHost: this.controller.getState().hostId,
+        inset: this.platform === 'darwin' ? 8 : 2 });
       if (this.host?.dpi !== snapshot.host?.dpi) this.controller.lastBounds = null;
       this.host = snapshot.host || null;
+      const geometry = this.host?.clientBounds ? JSON.stringify(this.host.clientBounds) : '';
+      if (geometry && this.lastHostGeometry && geometry !== this.lastHostGeometry) this.fastTrackingUntil = Date.now() + 250;
+      this.lastHostGeometry = geometry;
       snapshot.embedded = this.embedded;
+      if (this.platform === 'darwin') this.topmost.configure({ contained: true, ...this.preferences,
+        containedVisible: snapshot.known && ['host', 'widget', 'settings'].includes(snapshot.foreground) &&
+          this.host?.visible && !this.host.minimized && !this.host.cloaked && !this.controller.manualHidden });
       this.controller.update(snapshot); this.publish();
+      // Focusing or dragging another process's Mac window raises it above our
+      // ordinary window without changing isVisible(). Repair actual stacking.
+      if (this.platform === 'darwin' && this.controller.getState().reason === 'contained') {
+        // publish() observes native visibility with a settle period and bounded
+        // retries. A late snapshot from our own 40-ms remap must not start
+        // another remap after that surface has already been shown again.
+        if (value.widgetVisible !== false && this.host?.widgetAboveHost === false) this.widget.moveAbove('window:' + this.hostId + ':0');
+      }
       if (this.embedded && this.geometryReady && this.nativeShown && this.host?.visible &&
           !this.host.minimized && !this.host.cloaked && this.host.widgetAboveHost === false && this.lastProjected) this.project(this.lastProjected);
     } catch {
       if (!this.closed && this.enabled && epoch === this.epoch && provider === this.provider) { this.controller.update({ known: false }); this.publish(); }
     } finally {
       clearTimeout(stale); this.staleTimers.delete(stale);
-      if (!this.closed && this.enabled && epoch === this.epoch && provider === this.provider) this.timer = setTimeout(() => { void this.tick(epoch, provider); }, Math.max(20, this.intervalMs - (Date.now() - started)));
+      const active = this.platform === 'darwin' && this.controller.getState().reason === 'contained';
+      const interval = active ? this.activeIntervalMs : this.intervalMs;
+      if (!this.closed && this.enabled && epoch === this.epoch && provider === this.provider) this.timer = setTimeout(() => { void this.tick(epoch, provider); }, Math.max(active ? 8 : 20, interval - (Date.now() - started)));
     }
   }
   getArea() { return this.controller.getArea(); }

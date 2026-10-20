@@ -82,6 +82,7 @@ function controller(variant, options = {}) {
   });
   class IntegratedMode extends windowMode.CodexWindowMode {
     constructor(value) { super({ ...value, platform: variant.platform, providerFactory: () => provider,
+      activeIntervalMs: 100, // Keep provider polls separate from the <=40 ms animation/remap fixture timers.
       topmostProviderFactory: () => ({ async setTopmost(_handle, value) { return { known: true, ok: true, topmost: value }; }, close() {} }) }); mode = this; }
   }
   const widget = {
@@ -89,7 +90,10 @@ function controller(variant, options = {}) {
     webContents: { send(name, value) { if (name === 'state') broadcasts.push(plain(value)); } }, isDestroyed: () => false,
     getPosition: () => [bounds.x, bounds.y], getBounds: () => ({ ...bounds }),
     setBounds(value) { calls.push({ kind: 'bounds', ...plain(value) }); bounds = { ...bounds, ...value }; },
-    setPosition() { throw new Error('Position-only updates must not bypass fixed dimensions'); },
+    setPosition(x, y) {
+      assert.equal(variant.platform, 'darwin', 'Windows still reapplies preferred dimensions');
+      bounds = { ...bounds, x, y }; calls.push({ kind: 'position', ...bounds });
+    },
     setIgnoreMouseEvents() {}, setOpacity(value) { opacity = value; calls.push({ kind: 'opacity', value }); },
     setAlwaysOnTop(value) { top = value; calls.push({ kind: 'top', value }); },
     show() { visible = true; calls.push({ kind: 'show' }); },
@@ -323,9 +327,9 @@ for (const variant of variants) {
           assert.equal(control.schedules, schedules);
           assert.equal(control.provider.queries, queries, 'preview does not restart the host/quota watcher');
         }
-        const geometryCalls = control.calls.filter(call => call.kind === 'bounds' || call.kind === 'native-child').length;
+        const geometryCalls = control.calls.filter(call => ['bounds', 'position', 'native-child'].includes(call.kind)).length;
         control.appearance({ opacity: 0.8 });
-        assert.equal(control.calls.filter(call => call.kind === 'bounds' || call.kind === 'native-child').length, geometryCalls,
+        assert.equal(control.calls.filter(call => ['bounds', 'position', 'native-child'].includes(call.kind)).length, geometryCalls,
           'opacity alone does not request native geometry');
         control.appearance(null);
         assert.deepEqual(control.bounds, parked);
@@ -952,8 +956,9 @@ for (const variant of variants) {
     assert.equal(control.persisted.stayInCodexWindow, true);
     await flush();
     assert.equal(control.state().windowContainment.reason, 'contained');
-    assert.equal(control.visible, true); assert.equal(control.top, false);
-    assert.deepEqual(control.bounds, { x: 470, y: 310, width: 228, height: 288 });
+    assert.equal(control.visible, true); assert.equal(control.top, variant.platform === 'darwin');
+    const inset = variant.platform === 'darwin' ? 8 : 2;
+    assert.deepEqual(control.bounds, { x: 472 - inset, y: 312 - inset, width: 228, height: 288 });
     for (const cursor of [{ x: -5000, y: -5000 }, { x: 5000, y: 5000 }]) {
       control.drag('start'); control.moveCursor(cursor.x, cursor.y); control.drag('move'); control.drag('end');
       const bounds = control.bounds;

@@ -73,6 +73,18 @@ test('onscreen data retains point coordinates, carries foreground state, and pro
   assert.deepEqual((await request(fixture, { known: true, windows: [], foregroundWindow: '0', foregroundPid: 100 })).windows, []);
 });
 
+test('widget identity is sent separately and stacking fields remain optional boolean metadata', async t => {
+  const fixture = harness({ getWidgetWindowId: () => '55', widgetPid: 200 });
+  t.after(() => fixture.provider.close());
+  const result = await request(fixture, { ...answer, widgetVisible: true, windows: [{ ...host, widgetAboveHost: false }] });
+  assert.deepEqual(fixture.children[0].writes, [{ op: 'query', pids: [100], widgetWindowId: '55', widgetPid: 200 }]);
+  assert.equal(result.widgetVisible, true);
+  assert.equal(result.windows[0].widgetAboveHost, false);
+  for (const extra of [{ widgetVisible: 'true' }, { windows: [{ ...host, widgetAboveHost: 1 }] }]) {
+    assert.equal((await request(fixture, { ...answer, ...extra })).known, false);
+  }
+});
+
 test('invalid host IDs, forged PIDs, partial foreground and malformed bounds remain unknown', async t => {
   for (const value of [null, { known: false, windows: [] }, { ...answer, foregroundWindow: '42' },
     { ...answer, windows: [{ ...host, pid: 999 }] }, { ...answer, windows: [{ ...host, id: '0' }] },
@@ -132,8 +144,8 @@ test('unsupported platforms spawn nothing and native handle conversion rejects i
 // Execute the actual JXA source against an isolated bridge model. The native
 // dictionaries throw if any field outside the geometry/status allowlist is
 // requested. This verifies projection and protocol, not macOS native behavior.
-function runJxa(script, { windows = [], applications = {}, frontPid = 100, opaque = true, fail = false } = {}) {
-  const output = [], requested = [], released = [], input = [JSON.stringify({ op: 'query', pids: [100] }) + '\n'];
+function runJxa(script, { windows = [], applications = {}, frontPid = 100, opaque = true, fail = false, request = { op: 'query', pids: [100] } } = {}) {
+  const output = [], requested = [], released = [], input = [JSON.stringify(request) + '\n'];
   let advancedRunLoop = false;
   const box = value => ({ isNil: () => value === undefined, value });
   const dictionary = (value, allowed) => ({ isNil: () => false, objectForKey(key) {
@@ -151,7 +163,9 @@ function runJxa(script, { windows = [], applications = {}, frontPid = 100, opaqu
     CGWindowListCopyWindowInfo(option, relative) { assert.equal(option, 17); assert.equal(relative, 0); if (fail) throw new Error('private failure'); return ref; },
     CFRelease(value) { released.push(value); },
   };
-  for (const name of ['kCGWindowOwnerPID', 'kCGWindowLayer', 'kCGWindowAlpha', 'kCGWindowIsOnscreen', 'kCGWindowNumber', 'kCGWindowBounds']) $[name] = name;
+  // On recent JXA bridges the CFString constants are opaque references, not
+  // usable NSString dictionary keys. The allowlist above accepts string keys.
+  for (const name of ['kCGWindowOwnerPID', 'kCGWindowLayer', 'kCGWindowAlpha', 'kCGWindowIsOnscreen', 'kCGWindowNumber', 'kCGWindowBounds']) $[name] = {};
   const context = { $, ObjC: { import() {}, unwrap: value => value.value, castRefToObject(value) { assert.equal(value, ref); return list; } } };
   vm.runInNewContext(script, context); context.run();
   return { result: JSON.parse(output[0]), requested, released };
@@ -168,10 +182,29 @@ test('JXA reads geometry only, rechecks Codex bundle, filters offscreen/overlay 
     const { result, released } = runJxa(script, { opaque, applications: { 100: { bundleId: 'com.openai.codex' } }, windows: [
       { ...native, kCGWindowOwnerPID: 200 }, { ...native, kCGWindowLayer: 20 }, { ...native, kCGWindowIsOnscreen: false }, native,
     ] });
-    assert.deepEqual(result, answer); assert.equal(released.length, 1);
+    assert.deepEqual(result, answer); assert.equal(released.length, 0, 'the bridge owns the converted object');
   }
   for (const bundleId of ['com.openai.chat', undefined]) {
     assert.deepEqual(runJxa(script, { applications: { 100: { bundleId } }, windows: [native] }).result.windows, []);
   }
   assert.equal(runJxa(script, { fail: true }).result.known, false);
+});
+
+test('JXA compares widget order only after matching both its window ID and PID', async t => {
+  const fixture = harness(); t.after(() => fixture.provider.close());
+  await request(fixture);
+  const script = fixture.children[0].script;
+  const native = { kCGWindowOwnerPID: 100, kCGWindowNumber: 41, kCGWindowLayer: 0, kCGWindowAlpha: 1, kCGWindowIsOnscreen: true,
+    kCGWindowBounds: { X: 100, Y: 100, Width: 900, Height: 700 } };
+  const widget = { kCGWindowOwnerPID: 200, kCGWindowNumber: 55, kCGWindowAlpha: 1 };
+  const query = windows => runJxa(script, { windows, applications: { 100: { bundleId: 'com.openai.codex' } },
+    request: { op: 'query', pids: [100], widgetWindowId: '55', widgetPid: 200 } }).result;
+  assert.equal(query([widget, native]).windows[0].widgetAboveHost, true);
+  assert.equal(query([native, widget]).windows[0].widgetAboveHost, false);
+  for (const value of [{ ...widget, kCGWindowOwnerPID: 300 }, { ...widget, kCGWindowNumber: 56 }, { ...widget, kCGWindowAlpha: 0 }]) {
+    const result = query([value, native]);
+    assert.equal(result.widgetVisible, false);
+    assert.equal(result.windows[0].widgetAboveHost, false);
+  }
+  assert.equal(query([native]).widgetVisible, false);
 });
