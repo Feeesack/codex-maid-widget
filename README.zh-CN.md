@@ -2,6 +2,8 @@
 
 [English](README.md) | **简体中文**
 
+联系邮箱：[feeesack9449@gmail.com](mailto:feeesack9449@gmail.com)
+
 给 Codex 配一个桌面小伙伴，看看剩余额度和本机 token 用量。检测到一轮任务完成时，角色会“duang”地跳一下，提醒你放下手机，回来看看结果。
 
 <img src="assets/icons/app-128.png" width="72" alt="Codex 女仆额度挂件应用图标">

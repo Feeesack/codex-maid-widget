@@ -2,6 +2,8 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
+Contact: [feeesack9449@gmail.com](mailto:feeesack9449@gmail.com)
+
 A small desktop companion for Codex. It shows your remaining quota and local token usage, and gives a little “duang” when a turn finishes. If you've wandered off to your phone, that might be your cue to come back.
 
 <img src="assets/icons/app-128.png" width="72" alt="Codex Maid Widget application icon">
@@ -80,11 +82,11 @@ If another app uses the same shortcut, you can use the tray/menu bar instead. Ho
 
 ### Window display and corner peeking
 
-Both options are off by default. On Windows, enable **固定在 Codex 窗口内** in settings to keep the character inside Codex. It follows the main window's movement and system minimize/restore animation. Other apps and dialogs cover it according to normal window ordering, and it does not float above them. Turning the option off restores the saved desktop position and always-on-top preference.
+Both options are off by default. On Windows, enable **Stay inside the Codex window** (**固定在 Codex 窗口内**) in settings to keep the character inside Codex. It follows the main window's movement and system minimize/restore animation. Other apps and dialogs cover it according to normal window ordering, and it does not float above them. Turning the option off restores the saved desktop position and always-on-top preference.
 
-On macOS, the equivalent option is labelled **仅在 Codex 窗口内显示**. It uses a separate window, hides when another app is active or Codex is minimized, and does not use Windows native child-window attachment. Mac Spaces and full-screen behavior still need hands-on validation.
+On macOS, the equivalent option is labelled **Show only inside the Codex window** (**仅在 Codex 窗口内显示**). It uses a separate window, hides when another app is active or Codex is minimized, and does not use Windows native child-window attachment. Mac Spaces and full-screen behavior still need hands-on validation.
 
-Enable **底角吸附时只露头部** to tuck the character behind the side and bottom edges at either bottom corner. Dragging inward gradually brings the full character into view; dragging outward keeps it following the pointer. Releasing near a bottom corner snaps it back with a short settling animation. Other edges do not attract the widget. This works in desktop mode and inside Codex.
+Enable **Peek from a bottom corner** (**底角吸附时只露头部**) to tuck the character behind the side and bottom edges at either bottom corner. Dragging inward gradually brings the full character into view; dragging outward keeps it following the pointer. Releasing near a bottom corner snaps it back with a short settling animation. Other edges do not attract the widget. This works in desktop mode and inside Codex.
 
 ### Automatic startup
 
@@ -95,7 +97,7 @@ Turning off the follow setting removes the helper's login registration. If the o
 ### Optional Codex tools
 
 - **Windows:** select “Connect Codex plugin” at the end of installation, or use its Start menu shortcut.
-- **macOS:** choose **连接 Codex 工具…** from the widget's menu bar menu, or use the installed connection launcher.
+- **macOS:** choose **Connect Codex tools…** (**连接 Codex 工具…**) from the widget's menu bar menu, or use the installed connection launcher.
 
 This registers a local plugin through the official Codex CLI. After connecting, restart Codex and start a new chat. Keep the widget running while using its tools. The connector uses the installer's bundled runtime, so no separate Node.js installation is needed. It only changes the connection setup when you choose to run it.
 

@@ -2,6 +2,8 @@
 
 [English documentation](../README.md) · [简体中文文档](../README.zh-CN.md)
 
+Contact: [feeesack9449@gmail.com](mailto:feeesack9449@gmail.com)
+
 Windows and macOS share release version **0.3.51**. The universal installer targets Apple Silicon and Intel on macOS 13 or newer. This release adds Simplified Chinese / English settings, reviewed English copy and the [PR #1](https://github.com/Feeesack/codex-maid-widget/pull/1) window-identification, smooth-following, stacking-recovery and focus-clipping fixes. Chinese remains the default; custom names, phrases and project names stay as written. See the [0.3.51 release notes](../docs/releases/0.3.51.md).
 
 Shared features include conversation context/Git status, compaction totals, local account reset countdowns, paired press/release interactions and five sound choices including DSH Duck. The built-in list starts with 小龙娘-托腮 and 小龙娘-端庄, followed by the original mint maid and lilac dragon maid; 小龙娘-托腮 is the default for fresh settings and the fallback after removing the selected custom character. Existing valid selections and user-defined names are retained. See the [bilingual release notes](../docs/releases/0.3.48.md) and [audio source/license scope](docs/interaction-audio.md).

@@ -29,7 +29,7 @@ Use Windows **Installed apps** to uninstall. If you connected the local plugin, 
 1. Download and open the universal `.pkg`.
 2. Follow the installer to install the app in `/Applications`; macOS may request administrator authentication.
 3. Open **Codex-Maid-Widget** from Applications.
-4. To enable chat tools, choose **连接 Codex 工具…** from the widget's menu bar menu, or open the installed connection launcher.
+4. To enable chat tools, choose **Connect Codex tools…** (**连接 Codex 工具…**) from the widget's menu bar menu, or open the installed connection launcher.
 
 Before removing a connected Mac app, run **Codex-Maid-Widget-断开 Codex.command** from Applications and restart Codex. Then disable **跟随 Codex 桌面端** in the widget settings to remove the login helper and quit the widget. Move the app and its connection/disconnection launchers from Applications to the Trash. Personal settings and imported images remain in the widget data directory.
 
@@ -39,9 +39,9 @@ Open the installed widget once to register its current-user helper. The default 
 
 Use the gear, right-click, or tray/menu bar for settings. Turn off the follow setting to remove its login registration. If system policy blocks startup, the settings page shows the issue; review Windows Startup Apps or macOS Login Items & Extensions.
 
-The separate window display option is off by default. On Windows, **固定在 Codex 窗口内** attaches the character to the Codex main window so it moves and minimizes/restores with it; other windows cover the character normally. On Mac, **仅在 Codex 窗口内显示** keeps a separate widget window inside Codex's bounds and hides it when another app is active or Codex is minimized. Turning the option off restores the saved desktop position and always-on-top preference.
+The separate window display option is off by default. On Windows, **Stay inside the Codex window** (**固定在 Codex 窗口内**) attaches the character to the Codex main window so it moves and minimizes/restores with it; other windows cover the character normally. On Mac, **Show only inside the Codex window** (**仅在 Codex 窗口内显示**) keeps a separate widget window inside Codex's bounds and hides it when another app is active or Codex is minimized. Turning the option off restores the saved desktop position and always-on-top preference.
 
-**底角吸附时只露头部** is also off by default. It tucks the character behind the side and bottom edges when it snaps to either bottom corner. Drag inward to reveal the whole character; release near a bottom corner to settle back. Bubble auto-collapse supports 3, 5, 10, 30 and 60 seconds, or always visible. The default is 5 seconds, and upgrades retain any saved timeout.
+**Peek from a bottom corner** (**底角吸附时只露头部**) is also off by default. It tucks the character behind the side and bottom edges when it snaps to either bottom corner. Drag inward to reveal the whole character; release near a bottom corner to settle back. Bubble auto-collapse supports 3, 5, 10, 30 and 60 seconds, or always visible. The default is 5 seconds, and upgrades retain any saved timeout.
 
 ## Optional Codex tools
 
