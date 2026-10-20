@@ -271,8 +271,10 @@ class CodexWindowMode {
       // Focusing or dragging another process's Mac window raises it above our
       // ordinary window without changing isVisible(). Repair actual stacking.
       if (this.platform === 'darwin' && this.controller.getState().reason === 'contained') {
-        if (value.widgetVisible === false) this.visibility.requestRecovery();
-        else if (this.host?.widgetAboveHost === false) this.widget.moveAbove('window:' + this.hostId + ':0');
+        // publish() observes native visibility with a settle period and bounded
+        // retries. A late snapshot from our own 40-ms remap must not start
+        // another remap after that surface has already been shown again.
+        if (value.widgetVisible !== false && this.host?.widgetAboveHost === false) this.widget.moveAbove('window:' + this.hostId + ':0');
       }
       if (this.embedded && this.geometryReady && this.nativeShown && this.host?.visible &&
           !this.host.minimized && !this.host.cloaked && this.host.widgetAboveHost === false && this.lastProjected) this.project(this.lastProjected);
