@@ -52,7 +52,12 @@ test('integration is staged outside ASAR before signing with portable runtime pa
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'maid-installer-stage-'));
   try {
     const app = path.join(temporary, 'Contents', 'Resources', 'app'); fs.mkdirSync(app, { recursive: true });
-    for (const hook of buildOptions({ root, hostPlatform: 'darwin', arch: 'arm64' }).afterCopy) await hook({ buildPath: app, platform: 'darwin' });
+    let stagedResources=false;
+    const stageResources=({root:source,resources,platform,arch})=>{assert.equal(source,root);assert.equal(resources,path.dirname(app));assert.equal(platform,'darwin');assert.equal(arch,'arm64');stagedResources=true;};
+    // Native resources are independently tested by chat-runtime-resources; this
+    // isolated fixture tests the integration layout and packaging hook order.
+    for (const hook of buildOptions({ root, hostPlatform: 'darwin', arch: 'arm64', stageResources }).afterCopy) await hook({ buildPath: app, platform: 'darwin' });
+    assert.equal(stagedResources,true);
     const integration = path.join(path.dirname(app), 'integration');
     const runtime = JSON.parse(fs.readFileSync(path.join(integration, 'runtime.json'), 'utf8'));
     assert.equal(runtime.platform, 'darwin'); assert.equal(runtime.version, require('../package.json').version);

@@ -2,6 +2,14 @@
 (function (root) {
   'use strict';
   const messages = {
+    '常规设置':'General settings','外观设置':'Appearance settings','气泡与显示':'Bubble & display','聊天设置':'Chat settings','交互与声音':'Interaction & sound','设置分类':'Settings categories',
+    '聊天入口':'Chat entry','开启后，桌宠气泡会追加聊天入口；完整记录和记忆仍在聊天面板中管理。':'Adds a chat entry to the companion bubble. Full history and memory stay in the chat panel.',
+    '控制挂件的基础运行方式和后台刷新行为。':'Controls the companion startup behavior and background refresh.',
+    '聊天模型':'Chat model','模型':'Model','推理强度':'Reasoning effort','读取可用模型':'Refresh available models','保存模型设置':'Save model settings',
+    '同一设备的账号共用记忆；模型选择从下一次请求生效。':'Accounts on this device share memory. Model changes apply to the next request.',
+    '开启桌宠聊天页': 'Enable companion chat page',
+    '默认关闭，保留原有八页；开启后追加聊天页。': 'Off by default. Existing eight pages are preserved; enabling appends a chat page.',
+    '打开聊天与记忆面板': 'Open chat and memory',
     'Codex 女仆 · 设置': 'Codex Maid · Settings',
     '紫晶龙女仆图标': 'Amethyst Dragon Maid icon',
     '让她陪你写代码': 'A little company as you code',
@@ -31,6 +39,8 @@
     '本周用量': 'This week',
     '最近一轮': 'Last turn',
     '女仆台词': 'Phrases',
+    '重置预测': 'Reset forecast',
+    '第三方概率与 Tibo 公告信号': 'Third-party probabilities and Tibo alerts',
     '剩余额度与重置倒计时': 'Remaining limits and reset countdowns',
     '项目、上下文与 Git 状态': 'Project, context and Git status',
     '本机记录与五小时重置进度': 'Local accounts and five-hour reset progress',
@@ -86,7 +96,7 @@
     '弹跳': 'Bounce',
     '切换鼠标穿透': 'Toggle click-through',
     '订阅额度显示剩余百分比。Token 是用量，不是账单金额。本周按本地时间周一至今统计；本机日志汇总包含此设备各账号，不能代表当前账号的跨设备用量。没有数据时显示 --。': 'Subscription limits show the percentage remaining. Tokens measure usage, not billing. This week starts on Monday in local time. Local log totals include all accounts on this device and do not represent one account across devices. Missing data appears as --.',
-    '本地运行 · 不上传聊天 · 不发起模型请求': 'Runs locally · Never uploads chats · No model requests',
+    '额度读取在本地；桌宠对话由已登录的ChatGPT处理。': 'Quota is read locally. Companion chats are processed by your signed-in ChatGPT account.',
     '此音效尚未在本机安装。': 'This sound is not installed on this device.',
     '气泡轻弹': 'Bubble pop', '轻柔弹簧': 'Soft spring', '经典啾啾': 'Classic chirp', '木质轻敲': 'Wood tap', 'DSH 小黄鸭': 'DSH rubber duck',
     '当前默认：圆润短促的气泡声，轻巧活泼。': 'The default: a soft, rounded pop with a playful feel.',
@@ -148,7 +158,7 @@
     '导入未完成。': 'Import could not be completed.', '请重新选择本地图片。': 'Select local images and try again.',
     '，': ', ', '。': '.',
   };
-  const pages = { '额度': 'Usage limits', '对话状态': 'Conversation', '账号管理': 'Accounts', '今日用量': 'Today', '本周用量': 'This week', '最近一轮': 'Last turn', '女仆台词': 'Phrases' };
+  const pages = { '额度': 'Usage limits', '对话状态': 'Conversation', '账号管理': 'Accounts', '今日用量': 'Today', '本周用量': 'This week', '最近一轮': 'Last turn', '女仆台词': 'Phrases', '重置预测': 'Reset forecast' };
   for (const [name, english] of Object.entries(pages)) {
     messages['拖动调整' + name + '顺序，或按 Alt 加上下方向键'] = 'Drag to reorder ' + english.toLowerCase() + ', or press Alt + Up/Down';
     messages['显示' + name] = 'Show ' + english.toLowerCase();

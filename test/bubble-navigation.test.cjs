@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const ids = ['quota', 'conversation', 'accounts', 'today', 'week', 'lastTurn', 'phrase'];
+const ids = ['quota', 'conversation', 'accounts', 'today', 'week', 'lastTurn', 'phrase', 'resetForecast'];
 function harness(folder, settings = {}) {
   const source = fs.readFileSync(path.join(__dirname, '..', folder, 'src/widget.js'), 'utf8');
   const translations = {module:{exports:{}}};
@@ -28,7 +28,7 @@ function harness(folder, settings = {}) {
     setSettings(patch) { writes.push(patch); return Promise.resolve({ settingsRevision: writes.length }); },
     drag(phase) { drags.push(phase); },
   } }, document: { addEventListener() {} }, fitTokenLabels() {}, nextPhrase() {}, renderConversation() {},
-    reveal() {}, updateAccountTimers() {}, notice() {}, clearTimeout() {},
+    reveal() {}, updateAccountTimers() {}, renderResetForecast() {}, refreshResetForecast() { reads.push('resetForecast'); }, notice() {}, clearTimeout() {},
     inspectConversation() { reads.push('conversation'); }, refreshAccounts() { reads.push('accounts'); },
     doRefresh() { refreshes++; },
   };
@@ -47,8 +47,16 @@ function harness(folder, settings = {}) {
 
 for (const folder of ['', 'macos']) {
   const platform = folder || 'Windows';
+  test(`${platform}: the appended forecast page participates in both directions without changing the startup page`, () => {
+    const h=harness(folder);h.setMode('quota',false);
+    for(const page of [...ids.slice(1),'quota']){h.click('next-page');assert.equal(h.mode(),page);}
+    for(const page of [...ids.slice(1).reverse(),'quota']){h.click('previous-page');assert.equal(h.mode(),page);}
+    assert.equal(h.settings().defaultBubblePage,'week');
+    assert.equal(h.reads.filter(page=>page==='resetForecast').length,2);
+    assert.equal(h.nodes.get('resetForecast-view').hidden,true);
+  });
   test(`${platform}: previous and next follow visible order, wrap and never rewrite the independent startup default`, () => {
-    const h = harness(folder, { bubblePageOrder: ['week', 'phrase', 'quota', 'conversation', 'accounts', 'today', 'lastTurn'], bubbleHiddenPages: ['accounts', 'today', 'lastTurn'] });
+    const h = harness(folder, { bubblePageOrder: ['week', 'phrase', 'quota', 'conversation', 'accounts', 'today', 'lastTurn'], bubbleHiddenPages: ['accounts', 'today', 'lastTurn', 'resetForecast'] });
     h.setMode('week', false);
     assert.deepEqual(h.reads, []);
     for (const page of ['phrase', 'quota', 'conversation', 'week']) { h.click('next-page'); assert.equal(h.mode(), page); }

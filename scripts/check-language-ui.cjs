@@ -104,18 +104,34 @@ if (!process.versions.electron) {
     f.settings=f.schema.readSettings(f.settingsFile);f.revision++;await win.loadFile(path.join(f.base,'src/settings.html'));await until(win,`document.documentElement.lang==='en'&&document.querySelectorAll('.character-card').length===4`);
     assert.equal(f.settings.language,'en');
     f.library.rename('mint-maid','A thoughtfully named custom companion');f.revision++;f.publish();
-    for(const width of [660,440,320]){
-      phase=f.label+' settings '+width;win.setContentSize(width,1100);await settle(win);
-      const geometry=await evaluate(win,`({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,bodyWidth:document.body.scrollWidth})`);
-      assert.ok(geometry.scrollWidth<=geometry.width+1&&geometry.bodyWidth<=geometry.width+1,'Settings horizontal overflow '+JSON.stringify(geometry));
-      assert.deepEqual(await cjkText(win),[],'English settings contain no built-in Chinese');
-      const sections=await evaluate(win,`[...document.querySelectorAll('main>section')].map((section,index)=>({index,height:Math.ceil(section.getBoundingClientRect().height)}))`);
-      for(const {index,height} of sections){
-        win.setContentSize(width,Math.max(1100,height+70));await settle(win);
-        const rect=await evaluate(win,`(()=>{const el=document.querySelectorAll('main>section')[${index}];el.scrollIntoView({block:'start'});window.scrollBy(0,-12);const r=el.getBoundingClientRect();return {x:Math.max(0,Math.floor(r.x-8)),y:Math.max(0,Math.floor(r.y-6)),width:Math.ceil(r.width+16),height:Math.ceil(r.height+12)};})()`);
-        await capture(win,f.label+'-settings-en-'+width+'-'+index+'.png',rect);
+    const categoryControls={general:['language','accountResetAlerts','refreshSeconds','followCodex'],appearance:['import-characters','scale','opacity','alwaysOnTop','stayInCodexWindow','peekAtCorners','peekBottomPercent','peekSidePercent'],display:['bucketId','reset-page-order','page-visible-quota','page-default-quota','showBubble','autoHideSeconds'],chat:['chatPageEnabled','open-chat-manager','chat-config-model','chat-config-effort','chat-config-refresh','chat-config-save','phrases','save-phrases'],interaction:['clickThrough','sound','interactionSound','preview-interaction-sound']};
+    for(const language of ['en','zh-CN']){
+      await evaluate(win,`document.getElementById('settings-tab-general').click();void 0`);await changeLanguage(win,f,language);
+      for(const width of [660,440,320])for(const [category,controlIds] of Object.entries(categoryControls)){
+        phase=f.label+' settings '+language+' '+width+' '+category;win.setContentSize(width,1100);
+        await evaluate(win,`document.getElementById(${JSON.stringify('settings-tab-'+category)}).click();window.scrollTo(0,0);void 0`);await settle(win);
+        const visible=await evaluate(win,`[...document.querySelectorAll('.settings-panel')].filter(panel=>!panel.hidden&&panel.getClientRects().length).map(panel=>panel.id)`);
+        assert.deepEqual(visible,['settings-panel-'+category],'Exactly the selected settings category is rendered');
+        assert.equal(await evaluate(win,`document.getElementById(${JSON.stringify('settings-tab-'+category)}).getAttribute('aria-selected')`),'true');
+        const geometry=await evaluate(win,`({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,bodyWidth:document.body.scrollWidth})`);
+        assert.ok(geometry.scrollWidth<=geometry.width+1&&geometry.bodyWidth<=geometry.width+1,'Settings horizontal overflow '+JSON.stringify({category,language,...geometry}));
+        const controls=await evaluate(win,`(${JSON.stringify(controlIds)}).map(id=>{const node=document.getElementById(id),r=node?.getBoundingClientRect();return {id,visible:!!node&&!!node.getClientRects().length&&r.width>0&&r.height>0,inside:!!r&&r.left>=-1&&r.right<=innerWidth+1};})`);
+        assert.deepEqual(controls.filter(control=>!control.visible||!control.inside),[],'Selected category controls remain visible and inside the page');
+        if(language==='en')assert.deepEqual(await cjkText(win),[],'English settings contain no built-in Chinese');
+        const pageHeight=await evaluate(win,`Math.ceil(document.body.scrollHeight)+20`);win.setContentSize(width,Math.max(760,pageHeight));await settle(win);
+        await evaluate(win,`window.scrollTo(0,0);void 0`);await capture(win,f.label+'-settings-'+language+'-'+width+'-'+category+'.png');
+        cases.push({platform:f.label,kind:'settings-category',category,language,width,...geometry,controlIds,languageSaveRollback:true,draftPreserved:true,reopenPersisted:true});
+        if(category==='interaction'){
+          await evaluate(win,`document.querySelector('details.help').open=true;void 0`);await settle(win);
+          const guide=await evaluate(win,`(()=>{const help=document.querySelector('details.help'),content=help.querySelector('.help-content');return {open:help.open,text:content.textContent.trim(),paragraphs:content.querySelectorAll('p').length,shortcuts:[...content.querySelectorAll('dd')].map(node=>node.textContent.trim()),visible:!!content.getClientRects().length};})()`);
+          assert.equal(guide.open,true);assert.equal(guide.visible,true);assert.ok(guide.text.length>80&&guide.paragraphs>=2,'Expanded help keeps the interaction and usage explanations');assert.deepEqual(guide.shortcuts,['Ctrl + Alt + M','Ctrl + Alt + Q','Ctrl + Alt + Shift + M']);
+          if(language==='en')assert.deepEqual(await cjkText(win),[],'Expanded English help contains no built-in Chinese');
+          const helpGeometry=await evaluate(win,`({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,bodyWidth:document.body.scrollWidth})`);assert.ok(helpGeometry.scrollWidth<=helpGeometry.width+1&&helpGeometry.bodyWidth<=helpGeometry.width+1,'Expanded help fits the page');
+          await evaluate(win,`document.querySelector('details.help').scrollIntoView({block:'end'});void 0`);await capture(win,f.label+'-settings-'+language+'-'+width+'-help.png');
+          cases.push({platform:f.label,kind:'settings-help',language,width,shortcuts:guide.shortcuts,paragraphs:guide.paragraphs});
+          await evaluate(win,`document.querySelector('details.help').open=false;void 0`);
+        }
       }
-      cases.push({platform:f.label,kind:'settings',width,...geometry,languageSaveRollback:true,draftPreserved:true,reopenPersisted:true});
     }
     win.setContentSize(660,1100);await changeLanguage(win,f,'zh-CN');await evaluate(win,`window.scrollTo(0,0);void 0`);await capture(win,f.label+'-settings-zh-660.png');win.destroy();
   }
@@ -124,7 +140,7 @@ if (!process.versions.electron) {
     const win=createWindow(f,365,461,true);await win.loadFile(path.join(f.base,'src/index.html'));await until(win,`typeof current==='object'&&document.getElementById('maid-image').naturalWidth>0`);
     for(const scale of [.6,1,1.6])for(const mirror of [false,true]){
       const size=f.schema.widgetDimensions(scale);win.setContentSize(size.width,size.height);f.settings=f.schema.sanitize({...f.settings,scale,mirror});f.revision++;f.publish();
-      for(const page of ['quota','conversation','accounts','today','week','lastTurn','phrase']){
+      for(const page of ['quota','conversation','accounts','today','week','lastTurn','phrase','resetForecast']){
         phase=f.label+' widget '+page+' '+scale+' '+mirror;
         await evaluate(win,`setMode(${JSON.stringify(page)},false);if(${JSON.stringify(page)}==='conversation'){populateConversationChoices({threads:[{id:'fixture-thread',title:'Polish the desktop companion',workspaceLabel:'Companion workspace'}],selectedId:'fixture-thread',selectionMode:'auto'});renderConversation(${JSON.stringify(f.readyConversation)});}reveal();void 0`);
         await wait(330);

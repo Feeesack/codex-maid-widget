@@ -112,6 +112,8 @@ for (const source of ['../src/account-registry.cjs', '../macos/src/account-regis
     assert.equal(account.status, 'unknown');
     assert.equal(account.resetsAt, null);
     assert.equal(account.remainingPercent, null);
+    assert.equal(account.weeklyRemainingPercent, 50);
+    assert.equal(account.weeklyObservedAt, seconds(NOW));
     assert.equal(account.elapsedPercent, null);
     assert.equal(account.planType, null);
     assert.equal(registry.nextDueAt(), null);
@@ -126,12 +128,51 @@ for (const source of ['../src/account-registry.cjs', '../macos/src/account-regis
     ] });
     assert.equal(registry.snapshot().accounts[0].resetsAt, seconds(NOW) + 9000);
     assert.equal(registry.snapshot().accounts[0].remainingPercent, 60);
+    assert.equal(registry.snapshot().accounts[0].weeklyRemainingPercent, 1);
+    assert.equal(registry.snapshot().accounts[0].weeklyResetsAt, seconds(NOW) + 300000);
     registry.observe({ key: KEY_B, buckets: [
       { id: 'model-z', primary: { windowDurationMins: 300, usedPercent: 9, resetsAt: seconds(NOW) + 300 } },
       { id: 'model-a', primary: { windowDurationMins: 300, usedPercent: 80, resetsAt: seconds(NOW) + 600 } },
     ] });
     assert.equal(registry.snapshot().accounts[1].remainingPercent, 20);
     assert.equal(registry.snapshot().accounts[1].resetsAt, seconds(NOW) + 600);
+  });
+
+  test(`${title}: weekly observations persist per account and expire independently of five-hour quotas`, t => {
+    const { registry, file, setNow } = fixture(t), start = seconds(NOW);
+    registry.observe({ key: KEY_A, buckets: [{ ...bucket(start + 60, 0),
+      secondary: { windowDurationMins: 10080, usedPercent: 12.5, resetsAt: start + 120 } }] });
+    registry.observe({ key: KEY_B, buckets: [{ ...bucket(start + 180, 80),
+      secondary: { windowDurationMins: 10080, remainingPercent: 0, resetsAt: start + 30 } }] });
+    setNow(NOW + 10000);
+    registry.observe({ key: KEY_A, buckets: [bucket(start + 60, 5)] });
+    let accounts = new AccountRegistry({ file, now: () => NOW + 10000 }).snapshot().accounts;
+    assert.deepEqual(accounts.map(a => [a.remainingPercent,a.weeklyRemainingPercent,a.weeklyObservedAt]),
+      [[5,87.5,start],[80,0,start]], 'a missing weekly response retains only that account’s previous weekly observation');
+    accounts = registry.snapshot(null, NOW + 60000).accounts;
+    assert.deepEqual(accounts.map(a => [a.remainingPercent,a.weeklyRemainingPercent]), [[null,87.5],[80,null]]);
+    assert.equal(registry.snapshot(null, NOW + 120000).accounts[0].weeklyRemainingPercent, null);
+    assert.deepEqual(registry.due(NOW + 120000).map(a => a.id), ['account-1'], 'weekly expiry does not create five-hour alarms');
+    registry.observe({ key: KEY_A, buckets: [{ id:'codex', secondary:{windowDurationMins:10080,remainingPercent:100,resetsAt:start+604800} }] }, NOW + 121000);
+    assert.equal(registry.snapshot(null, NOW + 121000).accounts[0].weeklyRemainingPercent, 100);
+    assert.equal(registry.snapshot(null, NOW + 121000).accounts[0].remainingPercent, null, 'weekly refresh cannot refill five-hour quota');
+  });
+
+  test(`${title}: weekly data rejects invalid percentages and timestamps without borrowing other windows`, t => {
+    const { registry } = fixture(t), start = seconds(NOW);
+    for (const value of [-1,101,NaN,Infinity,'50',null]) {
+      registry.observe({ key: KEY_A, buckets: [{ ...bucket(start+60,90),
+        secondary:{windowDurationMins:10080,remainingPercent:value,resetsAt:NOW+60000} }] });
+      const account = registry.snapshot().accounts[0];
+      assert.equal(account.weeklyRemainingPercent, null);
+      assert.equal(account.weeklyResetsAt, null, 'millisecond deadline is not interpreted as seconds');
+      assert.equal(account.remainingPercent, 90);
+    }
+    registry.observe({ key: KEY_A, buckets: [{ id:'codex', secondary:{windowDurationMins:10080,remainingPercent:30,resetsAt:start+60} }] });
+    for (const extra of [{stale:true},{invalidated:true},{error:'offline'},{status:'partial'}]) {
+      assert.equal(registry.observe({key:KEY_A,buckets:[{id:'codex',secondary:{windowDurationMins:10080,remainingPercent:100}}],...extra}),false);
+    }
+    assert.equal(registry.snapshot().accounts[0].weeklyRemainingPercent, 30);
   });
 
   test(`${title}: reuses only recorded deadlines and does not manufacture recurring windows`, t => {
@@ -311,6 +352,9 @@ for (const source of ['../src/account-registry.cjs', '../macos/src/account-regis
     assert.equal(accounts[1].userEdited, true);
     assert.equal(accounts[1].labelSource, 'manual');
     assert.equal(accounts[0].remainingPercent, 20);
+    assert.equal(accounts[0].weeklyRemainingPercent, null);
+    assert.equal(accounts[0].weeklyResetsAt, null);
+    assert.equal(accounts[0].weeklyObservedAt, null);
     assert.equal(registry.nextDueAt(), NOW + 100000);
     registry.observe({ key: KEY_A, planType: 'pro', buckets: [], presentation: { key: KEY_A, profileNickname: 'Fixture Upgrade' } });
     registry.observe({ key: KEY_B, planType: 'pro', buckets: [], presentation: { key: KEY_B, profileNickname: 'Fixture Alias Candidate' } });

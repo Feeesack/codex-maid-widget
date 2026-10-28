@@ -1,6 +1,6 @@
 {
   "name": "codex-maid-widget",
-  "version": "0.3.51",
+  "version": "0.5.14",
   "description": "Codex 女仆额度桌面挂件 · 透明悬浮、真实额度与本地用量",
   "main": "src/entry.cjs",
   "private": true,
@@ -25,5 +25,8 @@
   "devDependencies": {
     "@electron/packager": "20.3.0",
     "electron": "44.7.2"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "3.8.1"
   }
 }

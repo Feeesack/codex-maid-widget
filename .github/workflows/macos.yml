@@ -29,6 +29,7 @@ jobs:
       - name: Verify version mismatch protection
         run: node --test ../distribution/test/version.test.cjs
       - run: npm ci
+      - run: node scripts/prepare-chat-semantic.cjs --download
       - run: npm test
       - run: npm run smoke
         env:
@@ -59,6 +60,9 @@ jobs:
       - name: Require matching Windows and macOS application versions
         run: node ../distribution/check-versions.cjs
       - run: npm ci
+      - name: Prepare locked native resources for both universal architectures
+        run: node scripts/prepare-universal-dependencies.cjs
+      - run: node scripts/prepare-chat-semantic.cjs --download
       - name: Build a complete ARM64 and Intel universal Apple Installer package
         run: npm run build:installer
       - uses: actions/upload-artifact@v4

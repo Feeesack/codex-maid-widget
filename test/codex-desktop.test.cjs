@@ -155,7 +155,8 @@ test('watcher uses an independent lock and hidden child, and disabling follow on
   assert.equal(record.pid, process.pid);
   assert.equal(record.loginStartupEnabled, true);
   assert.equal(record.loginStartupError, '');
-  assert.deepEqual(startupEntries.find(item => item.name === 'CodexMaidFollow').args, ['--watch-codex', '--maid-home=' + dir]);
+  assert.deepEqual(startupEntries.find(item => item.name === 'CodexMaidFollow').args,
+    require('../src/runtime-environment.cjs').runtimeEnvironmentArguments(['--watch-codex', '--maid-home=' + dir]));
   app.emit('second-instance', {}, ['widget.exe', '--follow-request=request-second-instance']);
   assert.equal(startupEntries.filter(item => item.name === 'CodexMaidFollow' && item.openAtLogin).length, 2);
   const acknowledgement = JSON.parse(fs.readFileSync(path.join(dir, 'follow-startup.json'), 'utf8'));

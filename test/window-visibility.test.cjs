@@ -14,7 +14,7 @@ function fixture(modulePath, overrides = {}) {
   const calls = [], timers = new Map();
   let time = 0, nextTimer = 1, windowSerial = 1, syncShow = null;
   const state = { ready: true, quitting: false, manuallyHidden: false, standalone: false,
-    host: { hostAlive: true, visible: true, attached: true, modal: false,
+    host: { hostAlive: true, visible: true, attached: true, embedded: true, modal: false,
       hostPid: 10, window: '123', visibilityRevision: 1, widgetVisible: true, widgetAboveHost: true }, ...overrides };
   const makeWindow = () => ({
     id: windowSerial++, visible: false, destroyed: false, failShow: false,

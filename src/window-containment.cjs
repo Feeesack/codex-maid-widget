@@ -48,11 +48,13 @@ function sameBounds(a, b) { return !!a && !!b && ['x', 'y', 'width', 'height'].e
 function ownerSucceeded(result) { return result !== false && !(result && (result.ok === false || result.known === false)); }
 
 class WindowContainmentController {
-  constructor({ getBounds, getSize, setBounds, show, hide, setAlwaysOnTop, onHostChanged, onVisibilityChanged } = {}) {
+  constructor({ getBounds, getSize, setBounds, show, hide, setAlwaysOnTop, onHostChanged, onVisibilityChanged,
+    visibilityFollowsHost = false } = {}) {
     for (const [name, callback] of Object.entries({ getBounds, getSize, setBounds, show, hide })) {
       if (typeof callback !== 'function') throw new TypeError(name + ' must be a function');
     }
     this.callbacks = { getBounds, getSize, setBounds, show, hide, setAlwaysOnTop, onHostChanged, onVisibilityChanged };
+    this.visibilityFollowsHost = visibilityFollowsHost === true;
     this.enabled = false;
     this.manualHidden = false;
     this.visible = null;
@@ -241,9 +243,9 @@ class WindowContainmentController {
       : !snapshot?.known ? 'unknown'
       : !host ? 'host-unavailable'
       : !host.visible || host.minimized || !host.onCurrentDesktop || host.cloaked ? 'host-hidden'
-      : host.modal && !snapshot.embedded ? 'host-modal'
+      : host.modal && !snapshot.embedded && !this.visibilityFollowsHost ? 'host-modal'
       : !fits(area, size) ? 'host-too-small'
-      : !snapshot.embedded && !['host', 'widget', 'settings'].includes(snapshot.foreground) ? 'other-foreground'
+      : !snapshot.embedded && !this.visibilityFollowsHost && !['host', 'widget', 'settings'].includes(snapshot.foreground) ? 'other-foreground'
       : this.ownerError ? 'owner-unavailable'
       : !this.ownerReady ? 'owner-pending' : 'contained';
     if (this.reason !== 'contained') { this.setVisible(false); return; }

@@ -12,13 +12,29 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 public static class MaidCodexWindow {
     static HashSet<uint> cachedRoots;
     static readonly List<IntPtr> cachedProcesses = new List<IntPtr>();
     static readonly Stopwatch cacheAge = Stopwatch.StartNew();
     [StructLayout(LayoutKind.Sequential)] struct Rect { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] struct Point { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] struct GuiThreadInfo {
+        public uint Size, Flags;
+        public IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+        public Rect CaretRect;
+    }
+    [StructLayout(LayoutKind.Sequential)] struct Message {
+        public IntPtr Window;
+        public uint Id;
+        public UIntPtr WParam;
+        public IntPtr LParam;
+        public uint Time;
+        public Point Position;
+        public uint Private;
+    }
     delegate bool EnumCallback(IntPtr hwnd, IntPtr data);
+    delegate void WinEventCallback(IntPtr hook, uint eventId, IntPtr hwnd, int objectId, int childId, uint eventThread, uint eventTime);
     [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
     [DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
@@ -33,6 +49,18 @@ public static class MaidCodexWindow {
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hwnd, uint command);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint threadId, ref GuiThreadInfo info);
+    [DllImport("user32.dll")] static extern IntPtr SetWinEventHook(uint firstEvent, uint lastEvent, IntPtr module,
+        WinEventCallback callback, uint processId, uint threadId, uint flags);
+    [DllImport("user32.dll")] static extern bool UnhookWinEvent(IntPtr hook);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool PeekMessage(out Message message, IntPtr window, uint first, uint last, uint flags);
+    [DllImport("user32.dll")] static extern bool TranslateMessage(ref Message message);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr DispatchMessage(ref Message message);
+    [DllImport("user32.dll")] static extern IntPtr GetFocus();
+    [DllImport("user32.dll")] static extern IntPtr SetFocus(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern IntPtr SetActiveWindow(IntPtr hwnd);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
     [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr hwnd);
     [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetParent(IntPtr hwnd, IntPtr parent);
@@ -63,6 +91,103 @@ public static class MaidCodexWindow {
         return GetAncestor(hwnd, 2) == hwnd && (GetLong(hwnd, -16).ToInt64() & 0x40000000L) == 0 &&
             GetWindow(hwnd, 4) == IntPtr.Zero && (style & 0x80) == 0 &&
             GetClassName(hwnd, name, name.Capacity) > 0 && name.ToString() != "#32770";
+    }
+    static bool BelongsToWindow(IntPtr window, IntPtr host) {
+        if (window == IntPtr.Zero || host == IntPtr.Zero) return false;
+        if (window == host) return true;
+        var seen = new HashSet<long>();
+        var pending = new Queue<IntPtr>(); pending.Enqueue(window);
+        for (int depth = 0; depth < 16 && pending.Count > 0; depth++) {
+            var current = pending.Dequeue();
+            if (current == IntPtr.Zero || !seen.Add(current.ToInt64())) continue;
+            if (current == host) return true;
+            var parent = GetParent(current); if (parent != IntPtr.Zero) pending.Enqueue(parent);
+            var owner = GetWindow(current, 4); if (owner != IntPtr.Zero) pending.Enqueue(owner);
+            var root = GetAncestor(current, 2); if (root != IntPtr.Zero) pending.Enqueue(root);
+            var rootOwner = GetAncestor(current, 3); if (rootOwner != IntPtr.Zero) pending.Enqueue(rootOwner);
+        }
+        return false;
+    }
+    static bool TopLevelAbove(IntPtr widget, IntPtr host) {
+        if (widget == IntPtr.Zero || host == IntPtr.Zero || widget == host ||
+            GetAncestor(widget, 2) != widget || GetAncestor(host, 2) != host) return false;
+        var seen = new HashSet<long>();
+        var current = GetWindow(host, 3); // GW_HWNDPREV, not the host's child list.
+        for (int count = 0; count < 4096 && current != IntPtr.Zero; count++) {
+            if (!seen.Add(current.ToInt64())) return false;
+            if (current == widget) return true;
+            current = GetWindow(current, 3);
+        }
+        return false;
+    }
+    static IntPtr layerHook, layerWidget, layerHost;
+    static uint layerWidgetPid, layerHostPid;
+    static bool handlingLayerEvent, inputQuit;
+    static readonly WinEventCallback layerCallback = LayerForegroundChanged;
+    static GCHandle layerCallbackHandle;
+    static bool LayerTracking(long widgetValue, uint widgetPid) {
+        return layerHook != IntPtr.Zero && layerWidget.ToInt64() == widgetValue && layerWidgetPid == widgetPid &&
+            OwnWidget(layerWidget, widgetPid) && IsWindow(layerHost) && Pid(layerHost) == layerHostPid && MainWindow(layerHost) &&
+            GetAncestor(layerWidget, 2) == layerWidget && (GetLong(layerWidget, -16).ToInt64() & 0x40000000L) == 0;
+    }
+    static void LayerForegroundChanged(IntPtr hook, uint eventId, IntPtr hwnd, int objectId, int childId, uint eventThread, uint eventTime) {
+        if (hook != layerHook || eventId != 3 || handlingLayerEvent || layerHost == IntPtr.Zero) return;
+        try {
+            if (!LayerTracking(layerWidget.ToInt64(), layerWidgetPid) || !BelongsToWindow(hwnd, layerHost)) return;
+            handlingLayerEvent = true;
+            // The callback and protocol commands use the same message-pumping
+            // worker thread, so native caches never cross concurrent threads.
+            StackAbove(layerWidget.ToInt64(), layerHost.ToInt64(), layerWidgetPid);
+        } catch { }
+        finally { handlingLayerEvent = false; }
+    }
+    public static void ReleaseLayerTracking() {
+        var hook = layerHook;
+        layerHook = IntPtr.Zero; layerWidget = IntPtr.Zero; layerHost = IntPtr.Zero;
+        layerWidgetPid = 0; layerHostPid = 0;
+        if (hook != IntPtr.Zero) UnhookWinEvent(hook);
+        if (layerCallbackHandle.IsAllocated) layerCallbackHandle.Free();
+    }
+    public static object TrackLayer(long widgetValue, long hostValue, uint widgetPid) {
+        var widget = new IntPtr(widgetValue); var host = new IntPtr(hostValue);
+        try {
+            if (host == IntPtr.Zero) {
+                if (layerWidget != IntPtr.Zero && layerWidget != widget) return Unknown();
+                ReleaseLayerTracking();
+                return new Dictionary<string, object> { { "known", true }, { "supported", true }, { "ok", true } };
+            }
+            if (!OwnWidget(widget, widgetPid) || widget == host || GetAncestor(widget, 2) != widget ||
+                (GetLong(widget, -16).ToInt64() & 0x40000000L) != 0 || !TrustedHost(host, ValidatedRoots(false))) return Unknown();
+            if (LayerTracking(widgetValue, widgetPid) && layerHost == host)
+                return new Dictionary<string, object> { { "known", true }, { "supported", true }, { "ok", true } };
+            ReleaseLayerTracking();
+            layerWidget = widget; layerHost = host; layerWidgetPid = widgetPid; layerHostPid = Pid(host);
+            layerCallbackHandle = GCHandle.Alloc(layerCallback);
+            // OUTOFCONTEXT (0) keeps this worker independent of both GUI input
+            // queues. Only foreground events are observed, never input text.
+            layerHook = SetWinEventHook(3, 3, IntPtr.Zero, layerCallback, 0, 0, 2);
+            bool ok = LayerTracking(widgetValue, widgetPid);
+            if (!ok) ReleaseLayerTracking();
+            return new Dictionary<string, object> { { "known", true }, { "supported", true }, { "ok", ok } };
+        } catch { ReleaseLayerTracking(); return Unknown(); }
+    }
+    static void PumpEvents() {
+        Message message;
+        for (int count = 0; count < 128 && PeekMessage(out message, IntPtr.Zero, 0, 0, 1); count++) {
+            if (message.Id == 0x0012) { inputQuit = true; ReleaseLayerTracking(); return; }
+            TranslateMessage(ref message); DispatchMessage(ref message);
+        }
+    }
+    public static string ReadRequest() {
+        if (inputQuit) return null;
+        if (layerHook == IntPtr.Zero) return Console.ReadLine();
+        // Only the pipe read runs on the pool. All native work and WinEvent
+        // callbacks stay on the original PowerShell worker thread.
+        Task<string> input = Task.Factory.StartNew<string>(() => Console.ReadLine(), System.Threading.CancellationToken.None,
+            TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
+        while (!input.Wait(5)) { PumpEvents(); if (inputQuit) return null; }
+        PumpEvents();
+        return inputQuit ? null : input.Result;
     }
     static Dictionary<string, object> Unknown() {
         InvalidateRoots();
@@ -124,7 +249,13 @@ public static class MaidCodexWindow {
             var parent = ownWidget ? GetParent(widget) : IntPtr.Zero;
             bool childStyle = ownWidget && (GetLong(widget, -16).ToInt64() & 0x40000000L) != 0;
             bool trustedParent = childStyle && parent != IntPtr.Zero && roots.Contains(Pid(parent)) && MainWindow(parent);
+            var owner = ownWidget && !childStyle && GetAncestor(widget, 2) == widget ? GetWindow(widget, 4) : IntPtr.Zero;
+            bool trustedOwner = TrustedHost(owner, roots);
+            if (!ownWidget) ownerBindings.Remove(widgetValue);
             var foreground = GetForegroundWindow();
+            var gui = new GuiThreadInfo { Size = (uint)Marshal.SizeOf(typeof(GuiThreadInfo)) };
+            bool focusKnown = GetGUIThreadInfo(0, ref gui);
+            IntPtr foregroundCodexHost = IntPtr.Zero;
             var windows = new List<Dictionary<string, object>>();
             bool enumerated = EnumWindows(delegate(IntPtr hwnd, IntPtr unused) {
                 uint pid = Pid(hwnd);
@@ -136,6 +267,7 @@ public static class MaidCodexWindow {
                 int cloaked;
                 // An unqueryable desktop state is unsafe to display over.
                 if (DwmGetWindowAttribute(hwnd, 14, out cloaked, 4) != 0) return true;
+                if (foregroundCodexHost == IntPtr.Zero && BelongsToWindow(foreground, hwnd)) foregroundCodexHost = hwnd;
                 windows.Add(new Dictionary<string, object> {
                     { "id", Id(hwnd) }, { "pid", (int)pid },
                     { "bounds", new Dictionary<string, object> { { "x", origin.X }, { "y", origin.Y },
@@ -144,7 +276,10 @@ public static class MaidCodexWindow {
                     { "cloaked", cloaked != 0 }, { "foreground", hwnd == foreground },
                     { "modal", !IsWindowEnabled(hwnd) }, { "mainWindow", true }, { "dpi", (int)GetDpiForWindow(hwnd) },
                     { "widgetParented", trustedParent && parent == hwnd },
-                    { "widgetAboveHost", trustedParent && parent == hwnd && GetWindow(hwnd, 5) == widget }
+                    { "widgetOwnedByHost", trustedOwner && owner == hwnd },
+                    { "widgetAboveHost", childStyle
+                        ? trustedParent && parent == hwnd && GetWindow(hwnd, 5) == widget
+                        : ownWidget && TopLevelAbove(widget, hwnd) }
                 });
                 return true;
             }, IntPtr.Zero);
@@ -152,8 +287,10 @@ public static class MaidCodexWindow {
             var answer = new Dictionary<string, object> {
                 { "known", true }, { "supported", true }, { "coordinateSpace", "physical-pixels" },
                 { "windows", windows }, { "foregroundWindow", Id(foreground) },
-                { "foregroundRoot", Id(GetAncestor(foreground, 3)) }, { "foregroundPid", (int)Pid(foreground) }
+                { "foregroundRoot", foregroundCodexHost != IntPtr.Zero ? Id(foregroundCodexHost) : Id(GetAncestor(foreground, 3)) },
+                { "foregroundPid", (int)Pid(foreground) }
             };
+            answer["keyboardFocusRoot"] = focusKnown ? Id(GetAncestor(gui.Focus, 2)) : "0";
             if (widgetValue != 0) {
                 answer["widgetVisible"] = ownWidget && IsWindowVisible(widget);
                 answer["widgetTopmost"] = ownWidget && (GetLong(widget, -20).ToInt64() & 0x00000008L) != 0;
@@ -161,6 +298,10 @@ public static class MaidCodexWindow {
                 answer["widgetParentId"] = Id(parent);
                 answer["widgetDpi"] = ownWidget ? (int)GetDpiForWindow(widget) : 0;
                 answer["widgetStyleCached"] = ownWidget && childBindings.ContainsKey(widgetValue);
+                answer["layerTracking"] = LayerTracking(widgetValue, widgetPid);
+                answer["widgetOwnedByHost"] = trustedOwner;
+                answer["ownerBindingCached"] = ownWidget && ownerBindings.ContainsKey(widgetValue);
+                answer["ownedHostId"] = trustedOwner ? Id(owner) : "0";
             }
             return answer;
         } catch { InvalidateRoots(); return Unknown(); }
@@ -184,10 +325,153 @@ public static class MaidCodexWindow {
             return new Dictionary<string, object> { { "known", true }, { "supported", true }, { "ok", actual == owner } };
         } catch { InvalidateRoots(); return Unknown(); }
     }
+    sealed class OwnerBinding {
+        public IntPtr OriginalOwner, Host;
+        public uint OriginalOwnerPid;
+    }
+    static readonly Dictionary<long, OwnerBinding> ownerBindings = new Dictionary<long, OwnerBinding>();
+    static bool OwnTopLevel(IntPtr widget, uint widgetPid) {
+        return OwnWidget(widget, widgetPid) && GetAncestor(widget, 2) == widget &&
+            (GetLong(widget, -16).ToInt64() & 0x40000000L) == 0;
+    }
+    static bool NonTopmost(IntPtr hwnd) { return (GetLong(hwnd, -20).ToInt64() & 8L) == 0; }
+    static IntPtr RestorableOwner(IntPtr owner, uint ownerPid) {
+        return owner != IntPtr.Zero && IsWindow(owner) && Pid(owner) == ownerPid ? owner : IntPtr.Zero;
+    }
+    static Dictionary<string, object> OwnerAnswer(IntPtr widget, uint widgetPid, HashSet<uint> roots, bool ok, string reason = null) {
+        bool ownWidget = OwnTopLevel(widget, widgetPid);
+        var owner = ownWidget ? GetWindow(widget, 4) : IntPtr.Zero;
+        bool trustedOwner = ownWidget && TrustedHost(owner, roots);
+        var answer = new Dictionary<string, object> {
+            { "known", true }, { "supported", true }, { "ok", ok },
+            { "widgetOwnedByHost", trustedOwner },
+            { "ownerBindingCached", ownWidget && ownerBindings.ContainsKey(widget.ToInt64()) },
+            { "ownedHostId", trustedOwner ? Id(owner) : "0" }
+        };
+        if (reason != null) answer["reason"] = reason;
+        return answer;
+    }
+    static bool WriteTopLevelOwner(IntPtr widget, IntPtr owner, uint widgetPid) {
+        if (!OwnTopLevel(widget, widgetPid)) return false;
+        SetLong(widget, -8, owner); // GWLP_HWNDPARENT changes the owner of this top-level window only.
+        // Commit cached window metadata without activating, moving, resizing,
+        // remapping or explicitly reordering either window.
+        bool committed = SetWindowPos(widget, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0200);
+        return committed && OwnTopLevel(widget, widgetPid) && GetWindow(widget, 4) == owner;
+    }
+    static bool PlaceOwnedLayer(IntPtr widget, IntPtr host, uint widgetPid) {
+        if (!OwnTopLevel(widget, widgetPid) || GetWindow(widget, 4) != host || !NonTopmost(host) || !NonTopmost(widget)) return false;
+        if (TopLevelAbove(widget, host)) return true;
+        // This runs once while binding, before the surface is shown. Later
+        // focus changes use the OS owner invariant and never repair z-order.
+        var after = GetWindow(host, 3);
+        if (after != IntPtr.Zero && !NonTopmost(after)) after = IntPtr.Zero;
+        bool moved = SetWindowPos(widget, after, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0200);
+        if (OwnTopLevel(widget, widgetPid) && !NonTopmost(widget)) {
+            SetWindowPos(widget, new IntPtr(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0200);
+            return false;
+        }
+        return moved && OwnTopLevel(widget, widgetPid) && GetWindow(widget, 4) == host && TopLevelAbove(widget, host);
+    }
+    public static object BindLayer(long widgetValue, long expectedWidgetValue, long hostValue, uint widgetPid) {
+        var widget = new IntPtr(widgetValue); var host = new IntPtr(hostValue);
+        try {
+            // The provider is bound to one exact widget HWND and process. A
+            // child window must never enter this owner-only path.
+            if (widgetValue <= 0 || widgetValue != expectedWidgetValue || !OwnTopLevel(widget, widgetPid) || widget == host)
+                return Unknown();
+            ReleaseLayerTracking();
+            var roots = ValidatedRoots(true);
+            OwnerBinding binding;
+            bool cached = ownerBindings.TryGetValue(widgetValue, out binding);
+            var previousOwner = GetWindow(widget, 4);
+            uint previousOwnerPid = previousOwner == IntPtr.Zero ? 0 : Pid(previousOwner);
+            if (!cached && TrustedHost(previousOwner, roots)) {
+                // A restarted worker has lost the exact original owner. The
+                // caller must recreate its own widget; clearing to zero would
+                // guess away a possible Electron-owned hidden window.
+                return OwnerAnswer(widget, widgetPid, roots, false, "owner-cache-lost");
+            }
+            if (host == IntPtr.Zero) {
+                if (!cached) return OwnerAnswer(widget, widgetPid, roots, true);
+                var original = RestorableOwner(binding.OriginalOwner, binding.OriginalOwnerPid);
+                bool restored = WriteTopLevelOwner(widget, original, widgetPid);
+                if (restored) ownerBindings.Remove(widgetValue);
+                return OwnerAnswer(widget, widgetPid, roots, restored, restored ? null : "owner-restore-failed");
+            }
+            if (!TrustedHost(host, roots)) return OwnerAnswer(widget, widgetPid, roots, false, "host-unavailable");
+            if (!NonTopmost(widget) || !NonTopmost(host)) return OwnerAnswer(widget, widgetPid, roots, false, "owner-topmost-unavailable");
+            if (cached && previousOwner == host && binding.Host == host && TopLevelAbove(widget, host))
+                return OwnerAnswer(widget, widgetPid, roots, true);
+            if (!cached) {
+                binding = new OwnerBinding { OriginalOwner = previousOwner, OriginalOwnerPid = previousOwnerPid, Host = IntPtr.Zero };
+                ownerBindings.Add(widgetValue, binding);
+            }
+            bool bound = false;
+            try {
+                // Ownership gives Windows a persistent z-order invariant.
+                // Keep both HWNDs top-level so each can activate normally.
+                bound = WriteTopLevelOwner(widget, host, widgetPid) && TrustedHost(host, roots) &&
+                    PlaceOwnedLayer(widget, host, widgetPid);
+            } finally {
+                if (!bound) {
+                    var rollbackOwner = RestorableOwner(previousOwner, previousOwnerPid);
+                    bool rolledBack = WriteTopLevelOwner(widget, rollbackOwner, widgetPid);
+                    // Preserve the exact original owner if rollback failed;
+                    // never replace it with the most recently selected host.
+                    if (!cached && rolledBack) ownerBindings.Remove(widgetValue);
+                }
+            }
+            if (bound) binding.Host = host;
+            return OwnerAnswer(widget, widgetPid, roots, bound, bound ? null : "owner-bind-failed");
+        } catch { return Unknown(); }
+    }
+    public static object StackAbove(long widgetValue, long hostValue, uint widgetPid) {
+        var widget = new IntPtr(widgetValue); var host = new IntPtr(hostValue);
+        try {
+            if (!OwnWidget(widget, widgetPid) || widget == host || GetAncestor(widget, 2) != widget ||
+                (GetLong(widget, -16).ToInt64() & 0x40000000L) != 0 ||
+                !TrustedHost(host, ValidatedRoots(false))) return Unknown();
+            bool ok = false;
+            var foreground = GetForegroundWindow();
+            int cloaked;
+            // Recheck foreground at the native write, rather than trusting a
+            // poll taken before Alt+Tab. No parent, owner or focus is changed.
+            if (IsWindowVisible(host) && !IsIconic(host) && IsWindowEnabled(host) && IsWindowVisible(widget) &&
+                DwmGetWindowAttribute(host, 14, out cloaked, 4) == 0 && cloaked == 0 &&
+                BelongsToWindow(foreground, host) && (GetLong(host, -20).ToInt64() & 8L) == 0 &&
+                (GetLong(widget, -20).ToInt64() & 8L) == 0) {
+                ok = TopLevelAbove(widget, host);
+                if (!ok) {
+                    var after = GetWindow(host, 3);
+                    // Inserting after a topmost HWND can promote our window.
+                    // HWND_TOP keeps it in the ordinary non-topmost group.
+                    if (after != IntPtr.Zero && (GetLong(after, -20).ToInt64() & 8L) != 0) after = IntPtr.Zero;
+                    bool moved = SetWindowPos(widget, after, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0200);
+                    // Another program can promote the insert-after window between our read
+                    // and the write. Never leave our surface globally topmost
+                    // even when that race makes this stacking attempt fail.
+                    if (OwnWidget(widget, widgetPid) && (GetLong(widget, -20).ToInt64() & 8L) != 0) {
+                        SetWindowPos(widget, new IntPtr(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0200);
+                        moved = false;
+                    }
+                    ok = moved && OwnWidget(widget, widgetPid) && TopLevelAbove(widget, host) &&
+                        (GetLong(widget, -20).ToInt64() & 8L) == 0;
+                }
+            }
+            return new Dictionary<string, object> { { "known", true }, { "supported", true }, { "ok", ok } };
+        } catch { return Unknown(); }
+    }
     sealed class ChildBinding {
         public IntPtr Host, Style, ExStyle, Owner;
     }
     static readonly Dictionary<long, ChildBinding> childBindings = new Dictionary<long, ChildBinding>();
+    sealed class FocusBinding {
+        public IntPtr Host;
+        public uint HostThread, WidgetThread, CurrentThread;
+        public bool AttachedHost, AttachedWidget;
+    }
+    static readonly Dictionary<long, FocusBinding> focusBindings = new Dictionary<long, FocusBinding>();
     static Dictionary<string, object> ChildAnswer(bool ok, bool parented, string reason = null) {
         var answer = new Dictionary<string, object> { { "known", true }, { "supported", true }, { "ok", ok }, { "parented", parented } };
         if (reason != null) answer["reason"] = reason;
@@ -195,6 +479,19 @@ public static class MaidCodexWindow {
     }
     static bool OwnWidget(IntPtr widget, uint widgetPid) {
         return widget != IntPtr.Zero && IsWindow(widget) && Pid(widget) == widgetPid;
+    }
+    static void ReleaseFocusBinding(long widgetValue) {
+        FocusBinding binding;
+        if (!focusBindings.TryGetValue(widgetValue, out binding)) return;
+        focusBindings.Remove(widgetValue);
+        try {
+            if (binding.AttachedWidget && binding.CurrentThread != binding.WidgetThread)
+                AttachThreadInput(binding.CurrentThread, binding.WidgetThread, false);
+        } catch { }
+        try {
+            if (binding.AttachedHost && binding.CurrentThread != binding.HostThread)
+                AttachThreadInput(binding.CurrentThread, binding.HostThread, false);
+        } catch { }
     }
     public static object SetTopmost(long widgetValue, long expectedWidgetValue, uint widgetPid, bool enabled) {
         var widget = new IntPtr(widgetValue);
@@ -214,6 +511,7 @@ public static class MaidCodexWindow {
     }
     static bool DetachSaved(IntPtr widget, ChildBinding binding, uint widgetPid) {
         if (!OwnWidget(widget, widgetPid)) { childBindings.Remove(widget.ToInt64()); return false; }
+        ReleaseFocusBinding(widget.ToInt64());
         Rect before;
         if (!GetWindowRect(widget, out before)) return false;
         SetParent(widget, IntPtr.Zero);
@@ -326,26 +624,103 @@ public static class MaidCodexWindow {
         } catch { return Unknown(); }
         finally { if (previous != IntPtr.Zero) SetThreadDpiAwarenessContext(previous); }
     }
+    public static object FocusChild(long widgetValue, long hostValue, uint widgetPid) {
+        var widget = new IntPtr(widgetValue); var host = new IntPtr(hostValue);
+        try {
+            ChildBinding binding;
+            if (!OwnWidget(widget, widgetPid) || !childBindings.TryGetValue(widgetValue, out binding) ||
+                binding.Host != host || GetParent(widget) != host ||
+                (GetLong(widget, -16).ToInt64() & 0xC0000000L) != 0x40000000L)
+                return ChildAnswer(false, false, "child-not-attached");
+            // Keep the Codex host and child HWND in one input queue for the
+            // entire editing lease. A short AttachThreadInput/SetFocus call
+            // can be undone by Chromium as soon as the native worker returns.
+            uint hostPid, widgetOwnerPid; uint hostThread = GetWindowThreadProcessId(host, out hostPid),
+                widgetThread = GetWindowThreadProcessId(widget, out widgetOwnerPid), currentThread = GetCurrentThreadId();
+            if (hostThread == 0 || widgetThread == 0) return Unknown();
+            FocusBinding existing;
+            if (focusBindings.TryGetValue(widgetValue, out existing) &&
+                (existing.Host != host || existing.HostThread != hostThread || existing.WidgetThread != widgetThread ||
+                 existing.CurrentThread != currentThread)) ReleaseFocusBinding(widgetValue);
+            if (focusBindings.TryGetValue(widgetValue, out existing)) {
+                SetActiveWindow(host);
+                SetFocus(widget);
+                bool focusedExisting = GetFocus() == widget && GetParent(widget) == host;
+                return ChildAnswer(focusedExisting, true, focusedExisting ? null : "child-focus-failed");
+            }
+            bool attachedHost = currentThread == hostThread || AttachThreadInput(currentThread, hostThread, true);
+            bool attachedWidget = currentThread == widgetThread || AttachThreadInput(currentThread, widgetThread, true);
+            if (!attachedHost || !attachedWidget) {
+                if (attachedWidget && currentThread != widgetThread) AttachThreadInput(currentThread, widgetThread, false);
+                if (attachedHost && currentThread != hostThread) AttachThreadInput(currentThread, hostThread, false);
+                return ChildAnswer(false, true, "child-focus-failed");
+            }
+            focusBindings[widgetValue] = new FocusBinding { Host = host, HostThread = hostThread, WidgetThread = widgetThread,
+                CurrentThread = currentThread, AttachedHost = currentThread != hostThread, AttachedWidget = currentThread != widgetThread };
+            try {
+                // WS_CHILD is not an active top-level window. Activate the
+                // verified Codex host, then place keyboard focus on the child.
+                SetActiveWindow(host);
+                SetFocus(widget);
+                bool focused = GetFocus() == widget && GetParent(widget) == host;
+                if (!focused) {
+                    SetFocus(widget);
+                    focused = GetFocus() == widget && GetParent(widget) == host;
+                }
+                if (!focused) {
+                    ReleaseFocusBinding(widgetValue);
+                    return ChildAnswer(false, true, "child-focus-failed");
+                }
+                return ChildAnswer(true, true);
+            } catch {
+                ReleaseFocusBinding(widgetValue);
+                return Unknown();
+            }
+        } catch { ReleaseFocusBinding(widgetValue); return Unknown(); }
+    }
+    public static object ReleaseChildFocus(long widgetValue, long hostValue, uint widgetPid) {
+        var widget = new IntPtr(widgetValue); var host = new IntPtr(hostValue);
+        try {
+            if (!OwnWidget(widget, widgetPid)) return Unknown();
+            FocusBinding binding;
+            if (focusBindings.TryGetValue(widgetValue, out binding) && binding.Host != host)
+                return ChildAnswer(false, GetParent(widget) == host, "child-focus-failed");
+            ReleaseFocusBinding(widgetValue);
+            return ChildAnswer(true, GetParent(widget) == host);
+        } catch { ReleaseFocusBinding(widgetValue); return Unknown(); }
+    }
 }
 }
 '@
-while ($null -ne ($request = [Console]::In.ReadLine())) {
+try {
+while ($null -ne ($request = [MaidWindowNative.MaidCodexWindow]::ReadRequest())) {
     if ($request -eq 'query') { $answer = [MaidWindowNative.MaidCodexWindow]::Query(__WIDGET_HWND__, __WIDGET_PID__) }
     elseif ($request -match '^topmost ([1-9][0-9]*) ([01])$') {
         $answer = [MaidWindowNative.MaidCodexWindow]::SetTopmost([long]$Matches[1], __WIDGET_HWND__, __WIDGET_PID__, $Matches[2] -eq '1')
     }
     elseif ($request -match '^owner ([1-9][0-9]*) (0|[1-9][0-9]*)$') {
         $answer = [MaidWindowNative.MaidCodexWindow]::SetOwner([long]$Matches[1], [long]$Matches[2], __WIDGET_PID__)
+    } elseif ($request -match '^bind-layer ([1-9][0-9]*) (0|[1-9][0-9]*)$') {
+        $answer = [MaidWindowNative.MaidCodexWindow]::BindLayer([long]$Matches[1], __WIDGET_HWND__, [long]$Matches[2], __WIDGET_PID__)
+    } elseif ($request -match '^stack ([1-9][0-9]*) ([1-9][0-9]*)$') {
+        $answer = [MaidWindowNative.MaidCodexWindow]::StackAbove([long]$Matches[1], [long]$Matches[2], __WIDGET_PID__)
+    } elseif ($request -match '^layer ([1-9][0-9]*) (0|[1-9][0-9]*)$') {
+        $answer = [MaidWindowNative.MaidCodexWindow]::TrackLayer([long]$Matches[1], [long]$Matches[2], __WIDGET_PID__)
     } elseif ($request -match '^attach ([1-9][0-9]*) ([1-9][0-9]*)$') {
         $answer = [MaidWindowNative.MaidCodexWindow]::AttachChild([long]$Matches[1], [long]$Matches[2], __WIDGET_PID__)
     } elseif ($request -match '^position ([1-9][0-9]*) ([1-9][0-9]*) (-?[0-9]{1,9}) (-?[0-9]{1,9}) ([1-9][0-9]{0,8}) ([1-9][0-9]{0,8})$') {
         $answer = [MaidWindowNative.MaidCodexWindow]::PositionChild([long]$Matches[1], [long]$Matches[2], __WIDGET_PID__, [int]$Matches[3], [int]$Matches[4], [int]$Matches[5], [int]$Matches[6])
     } elseif ($request -match '^detach ([1-9][0-9]*)$') {
         $answer = [MaidWindowNative.MaidCodexWindow]::DetachChild([long]$Matches[1], __WIDGET_PID__)
+    } elseif ($request -match '^focus ([1-9][0-9]*) ([1-9][0-9]*)$') {
+        $answer = [MaidWindowNative.MaidCodexWindow]::FocusChild([long]$Matches[1], [long]$Matches[2], __WIDGET_PID__)
+    } elseif ($request -match '^release-focus ([1-9][0-9]*) ([1-9][0-9]*)$') {
+        $answer = [MaidWindowNative.MaidCodexWindow]::ReleaseChildFocus([long]$Matches[1], [long]$Matches[2], __WIDGET_PID__)
     } else { exit 1 }
     [Console]::Out.WriteLine((ConvertTo-Json -InputObject $answer -Depth 6 -Compress))
     [Console]::Out.Flush()
 }
+} finally { [MaidWindowNative.MaidCodexWindow]::ReleaseLayerTracking() }
 `;
 
 function nativeHandleId(value) {
@@ -364,12 +739,15 @@ function nativeHandleId(value) {
 }
 function validId(value, zero = false) { return (zero && value === '0') || (typeof value === 'string' && nativeHandleId(value) === value); }
 const CHILD_FAILURE_REASONS = new Set(['dpi-context-mismatch', 'child-style-unavailable', 'child-not-attached',
-  'host-unavailable', 'child-attach-failed', 'child-position-failed', 'child-detach-failed', 'child-too-large']);
+  'host-unavailable', 'child-attach-failed', 'child-position-failed', 'child-detach-failed', 'child-too-large',
+  'child-focus-failed']);
+const OWNER_FAILURE_REASONS = new Set(['owner-cache-lost', 'host-unavailable', 'owner-topmost-unavailable',
+  'owner-bind-failed', 'owner-restore-failed']);
 function validWindow(item) {
   return item && validId(item.id) && Number.isInteger(item.pid) && item.pid > 0 && item.bounds &&
     ['x', 'y', 'width', 'height'].every(key => Number.isInteger(item.bounds[key]) && Math.abs(item.bounds[key]) <= 100000000) &&
     item.bounds.width >= 0 && item.bounds.height >= 0 &&
-    ['modal', 'mainWindow', 'widgetParented', 'widgetAboveHost'].every(key => item[key] === undefined || typeof item[key] === 'boolean') &&
+    ['modal', 'mainWindow', 'widgetParented', 'widgetAboveHost', 'widgetOwnedByHost'].every(key => item[key] === undefined || typeof item[key] === 'boolean') &&
     (item.dpi === undefined || Number.isInteger(item.dpi) && item.dpi >= 0 && item.dpi <= 10000) &&
     ['visible', 'minimized', 'cloaked', 'foreground'].every(key => typeof item[key] === 'boolean');
 }
@@ -380,33 +758,40 @@ class CodexWindowProvider extends WindowsInventoryWorker {
     const widgetId = widgetHandle === undefined ? '0' : nativeHandleId(widgetHandle);
     if (!widgetId) throw new TypeError('Invalid widget handle');
     const script = WINDOW_WORKER_SCRIPT.replaceAll('__WIDGET_PID__', String(widgetPid)).replaceAll('__WIDGET_HWND__', widgetId);
-    // EncodedCommand is UTF-16/base64 and would exceed CreateProcess's 32K
-    // command-line limit if the two C# types were embedded without compression.
+    // Carry the native source through the existing control pipe. Embedding
+    // compressed/base64 source inside UTF-16 EncodedCommand can still exceed
+    // Windows' command-line limit as the module grows.
     const compressed = gzipSync(Buffer.from(script, 'utf8')).toString('base64');
-    const bootstrap = `$bytes=[Convert]::FromBase64String('${compressed}'); ` +
+    const bootstrap = '$ErrorActionPreference = \'Stop\'; $bytes=[Convert]::FromBase64String([Console]::In.ReadLine()); ' +
       '$memory=New-Object IO.MemoryStream(,$bytes); ' +
       '$gzip=New-Object IO.Compression.GzipStream($memory,[IO.Compression.CompressionMode]::Decompress); ' +
       '$reader=New-Object IO.StreamReader($gzip); Invoke-Expression ($reader.ReadToEnd())';
     super({ platform, timeout, env, spawn: (file, args, options) => {
       const next = [...args];
       next[next.indexOf('-EncodedCommand') + 1] = Buffer.from(bootstrap, 'utf16le').toString('base64');
-      return spawn(file, next, options);
+      const child = spawn(file, next, options);
+      // This first line is consumed by the short bootstrap; subsequent lines
+      // retain the ordinary query/stack/layer command protocol.
+      try { child.stdin.write(compressed + '\n'); }
+      catch (error) { try { child.kill(); } catch {} throw error; }
+      return child;
     } });
     this.tail = Promise.resolve();
     this.queryPending = null;
     this.queuedPosition = null;
     this.widgetId = widgetId;
+    this.ownedLayerSupported = true;
   }
   unavailable(reason = 'window-unavailable') {
     return { known: false, supported: this.platform === 'win32', coordinateSpace: 'physical-pixels', windows: [], reason };
   }
-  request(command, kind, expectedParented) {
+  request(command, kind, expectedParented, expectedOwner) {
     const task = this.tail.then(() => {
       if (this.closed) return this.unavailable();
       if (this.platform !== 'win32') return this.unavailable('unsupported-platform');
       let resolve;
       const promise = new Promise(done => { resolve = done; });
-      this.pending = { promise, resolve, kind, expectedParented, timer: setTimeout(() => this.fail(), this.timeout) };
+      this.pending = { promise, resolve, kind, expectedParented, expectedOwner, timer: setTimeout(() => this.fail(), this.timeout) };
       try {
         if (!this.worker) this.start();
         const worker = this.worker;
@@ -439,6 +824,22 @@ class CodexWindowProvider extends WindowsInventoryWorker {
     const widget = nativeHandleId(widgetHandle);
     if (!widget) return Promise.resolve(this.unavailable('invalid-window-handle'));
     return this.request(`owner ${widget} 0`, 'owner');
+  }
+  stackAbove(widgetHandle, hostId) {
+    const widget = nativeHandleId(widgetHandle), host = nativeHandleId(hostId);
+    if (!widget || widget !== this.widgetId || !host || widget === host) return Promise.resolve(this.unavailable('invalid-window-handle'));
+    return this.request(`stack ${widget} ${host}`, 'stack');
+  }
+  trackLayer(widgetHandle, hostId) {
+    const widget = nativeHandleId(widgetHandle), host = hostId === null || hostId === undefined || hostId === '0' ? '0' : nativeHandleId(hostId);
+    if (!widget || widget !== this.widgetId || !host || widget === host) return Promise.resolve(this.unavailable('invalid-window-handle'));
+    return this.request(`layer ${widget} ${host}`, 'layer');
+  }
+  bindLayer(widgetHandle, hostId) {
+    this.queuedPosition = null;
+    const widget = nativeHandleId(widgetHandle), host = hostId === null || hostId === undefined || hostId === '0' ? '0' : nativeHandleId(hostId);
+    if (!widget || widget !== this.widgetId || !host || widget === host) return Promise.resolve(this.unavailable('invalid-window-handle'));
+    return this.request(`bind-layer ${widget} ${host}`, 'owned-layer', undefined, host);
   }
   attachChild(widgetHandle, hostId) {
     this.queuedPosition = null;
@@ -473,6 +874,16 @@ class CodexWindowProvider extends WindowsInventoryWorker {
     if (!widget) return Promise.resolve(this.unavailable('invalid-window-handle'));
     return this.request(`detach ${widget}`, 'child', false);
   }
+  focusChild(widgetHandle, hostId) {
+    const widget = nativeHandleId(widgetHandle), host = nativeHandleId(hostId);
+    if (!widget || !host || widget === host) return Promise.resolve(this.unavailable('invalid-window-handle'));
+    return this.request(`focus ${widget} ${host}`, 'child', true);
+  }
+  releaseChildFocus(widgetHandle, hostId) {
+    const widget = nativeHandleId(widgetHandle), host = nativeHandleId(hostId);
+    if (!widget || !host || widget === host) return Promise.resolve(this.unavailable('invalid-window-handle'));
+    return this.request(`release-focus ${widget} ${host}`, 'child', true);
+  }
   receive(worker, chunk) {
     if (this.worker !== worker) return;
     worker.bytes += Buffer.byteLength(chunk);
@@ -491,7 +902,18 @@ class CodexWindowProvider extends WindowsInventoryWorker {
       if (this.pending.kind === 'topmost') {
         if (typeof answer.ok !== 'boolean' || typeof answer.topmost !== 'boolean') { this.fail(); return; }
         this.settle({ known: true, supported: true, ok: answer.ok, topmost: answer.topmost });
-      } else if (this.pending.kind === 'owner' || this.pending.kind === 'child') {
+      } else if (this.pending.kind === 'owned-layer') {
+        if (typeof answer.ok !== 'boolean' || typeof answer.widgetOwnedByHost !== 'boolean' ||
+            typeof answer.ownerBindingCached !== 'boolean' || !validId(answer.ownedHostId, true) ||
+            answer.widgetOwnedByHost !== (answer.ownedHostId !== '0') ||
+            answer.ok && (this.pending.expectedOwner === '0'
+              ? answer.ownerBindingCached || answer.widgetOwnedByHost
+              : !answer.ownerBindingCached || answer.ownedHostId !== this.pending.expectedOwner) ||
+            answer.reason !== undefined && !OWNER_FAILURE_REASONS.has(answer.reason)) { this.fail(); return; }
+        this.settle({ known: true, supported: true, ok: answer.ok, widgetOwnedByHost: answer.widgetOwnedByHost,
+          ownerBindingCached: answer.ownerBindingCached, ownedHostId: answer.ownedHostId,
+          ...(answer.reason !== undefined ? { reason: answer.reason } : {}) });
+      } else if (this.pending.kind === 'owner' || this.pending.kind === 'child' || this.pending.kind === 'stack' || this.pending.kind === 'layer') {
         if (typeof answer.ok !== 'boolean') { this.fail(); return; }
         if (this.pending.kind === 'child' && typeof answer.parented !== 'boolean') { this.fail(); return; }
         if (this.pending.kind === 'child' && answer.ok && answer.parented !== this.pending.expectedParented) { this.fail(); return; }
@@ -503,19 +925,23 @@ class CodexWindowProvider extends WindowsInventoryWorker {
         if (answer.coordinateSpace !== 'physical-pixels' || !Array.isArray(answer.windows) || answer.windows.length > 512 ||
             !answer.windows.every(validWindow) || !validId(answer.foregroundWindow, true) || !validId(answer.foregroundRoot, true) ||
             !Number.isInteger(answer.foregroundPid) || answer.foregroundPid < 0 ||
-            ['widgetVisible', 'widgetParented', 'widgetStyleCached', 'widgetTopmost'].some(key => answer[key] !== undefined && typeof answer[key] !== 'boolean') ||
+            ['widgetVisible', 'widgetParented', 'widgetStyleCached', 'widgetTopmost', 'layerTracking', 'widgetOwnedByHost', 'ownerBindingCached'].some(key => answer[key] !== undefined && typeof answer[key] !== 'boolean') ||
             answer.widgetParentId !== undefined && !validId(answer.widgetParentId, true) ||
+            answer.ownedHostId !== undefined && !validId(answer.ownedHostId, true) ||
+            answer.keyboardFocusRoot !== undefined && !validId(answer.keyboardFocusRoot, true) ||
+            answer.ownedHostId !== undefined && answer.widgetOwnedByHost !== undefined && answer.widgetOwnedByHost !== (answer.ownedHostId !== '0') ||
             answer.widgetDpi !== undefined && !(Number.isInteger(answer.widgetDpi) && answer.widgetDpi >= 0 && answer.widgetDpi <= 10000)) { this.fail(); return; }
-        const windows = answer.windows.map(({ id, pid, bounds, visible, minimized, cloaked, foreground, modal, mainWindow, dpi, widgetParented, widgetAboveHost }) => ({
+        const windows = answer.windows.map(({ id, pid, bounds, visible, minimized, cloaked, foreground, modal, mainWindow, dpi, widgetParented, widgetAboveHost, widgetOwnedByHost }) => ({
           id, pid, bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
           visible, minimized, cloaked, foreground, ...(typeof modal === 'boolean' ? { modal } : {}),
           ...(typeof mainWindow === 'boolean' ? { mainWindow } : {}),
           ...(dpi !== undefined ? { dpi } : {}), ...(widgetParented !== undefined ? { widgetParented } : {}),
           ...(widgetAboveHost !== undefined ? { widgetAboveHost } : {}),
+          ...(widgetOwnedByHost !== undefined ? { widgetOwnedByHost } : {}),
         }));
         this.settle({ known: true, supported: true, coordinateSpace: 'physical-pixels', windows,
           foregroundWindow: answer.foregroundWindow, foregroundRoot: answer.foregroundRoot, foregroundPid: answer.foregroundPid,
-          ...Object.fromEntries(['widgetVisible', 'widgetParented', 'widgetParentId', 'widgetDpi', 'widgetStyleCached', 'widgetTopmost']
+          ...Object.fromEntries(['widgetVisible', 'widgetParented', 'widgetParentId', 'widgetDpi', 'widgetStyleCached', 'widgetTopmost', 'layerTracking', 'widgetOwnedByHost', 'ownerBindingCached', 'ownedHostId', 'keyboardFocusRoot']
             .filter(key => answer[key] !== undefined).map(key => [key, answer[key]])) });
       }
     }

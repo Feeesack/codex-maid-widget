@@ -65,9 +65,10 @@ async function build({ out, localInteractionSamples } = {}) {
     // Avoid an unnecessary online SHASUMS request when the runtime is already present.
     download: { checksums: require('electron/checksums.json') },
     ignore: file => !isRuntimePath(file),
-    afterCopy: localOverlay ? [async ({ buildPath }) => {
-      fs.writeFileSync(path.join(buildPath, 'src', 'local-interaction-samples.js'), localOverlay);
-    }] : [],
+    afterCopy: [async ({ buildPath }) => {
+      if (localOverlay) fs.writeFileSync(path.join(buildPath, 'src', 'local-interaction-samples.js'), localOverlay);
+      require('./chat-runtime-resources.cjs').stageRuntimeResources({root,resources:path.dirname(buildPath),platform:'win32',arch:'x64'});
+    }],
     appVersion: version, win32metadata: { ProductName: 'Codex Maid Widget', FileDescription: 'Codex 女仆额度挂件',
       'application-manifest': path.join(root, 'distribution/windows/application.manifest') } });
   const { extractFile } = await import('@electron/asar');

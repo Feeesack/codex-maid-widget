@@ -88,6 +88,15 @@ function createVisibilityController({ getWindow, getState, onShown = () => {}, o
     }
     if (desired === false && shown) recover = true;
     syncVisibility(true);
+    if (!state.standalone && state.host?.embedded === false) {
+      // Independent follow windows are ordinary composited surfaces. Focus,
+      // host activation and partial occlusion never justify an unmap/remap.
+      // Only show a genuinely hidden surface; keep visible ones untouched so
+      // another application's overlapping window stays naturally above it.
+      clear(); recover = false;
+      if (!shown || !window.isVisible() || state.host.widgetVisible === false && now() - shownAt >= settleMs) show(window, false);
+      return;
+    }
     if (pending !== null) return;
     if (shown && !window.isVisible()) recover = true;
     if (recover) {
@@ -112,7 +121,8 @@ function createVisibilityController({ getWindow, getState, onShown = () => {}, o
   function observeNativeVisibility() {
     if (disposed) return false;
     const state = getState() || {}, time = now();
-    const nativeHidden = state.host?.widgetVisible === false || state.host?.widgetAboveHost === false;
+    const nativeHidden = state.host?.widgetVisible === false ||
+      (state.host?.embedded === true && state.host?.widgetAboveHost === false);
     if (pending !== null || !shown || !desired || !wants(state) || state.standalone ||
         time - shownAt < settleMs || !nativeHidden) {
       hiddenSince = null;

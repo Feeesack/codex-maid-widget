@@ -6,6 +6,10 @@ const { spawnSync } = require('node:child_process');
 const { parseArgs } = require('node:util');
 const MARKETPLACE = 'codex-maid-installed';
 const PLUGIN = 'codex-maid-widget';
+const MAX_CLI_CANDIDATES = 6;
+const OPERATION_TIMEOUT_MS = 240000;
+const DISCOVERY_TIMEOUT_MS = 10000;
+const STARTUP_ERRORS = new Set(['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'ENOEXEC', 'EISDIR']);
 
 function publicError(message, code) {
   const error = new Error(message);
@@ -49,12 +53,12 @@ function runtimeModules(payloadRoot) {
   return { ...require(path.join(source, 'codex-data.cjs')), ...require(path.join(source, 'codex-cli.cjs')) };
 }
 async function locateCodex({ payloadRoot = __dirname, platform = process.platform, homeDir = os.homedir(), env = process.env, explicit,
-  fileSystem = fs, readBundle, queryDesktop, runtime } = {}) {
+  fileSystem = fs, readBundle, queryDesktop, runtime, excludedPaths, signal } = {}) {
   const modules = runtime || runtimeModules(payloadRoot);
   const selected = explicit || env.CODEX_CLI || env.CODEX_MAID_CODEX_PATH;
-  const options = {platform,env,homedir:homeDir,fileSystem,...(readBundle ? {readBundle} : {}),...(queryDesktop ? {queryDesktop} : {})};
+  const options = {platform,env,homedir:homeDir,fileSystem,excludedPaths,signal,...(readBundle ? {readBundle} : {}),...(queryDesktop ? {queryDesktop} : {})};
   try {
-    const cli = await modules.resolveCodexExecutable(selected, {...options,find: value => modules.findCodexExecutable(value,options)});
+    const cli = await modules.resolveCodexExecutable(selected, {...options,find: (value, exclusions) => modules.findCodexExecutable(value,{...options,...exclusions})});
     if (typeof cli !== 'string' || !cli || /[\0\r\n]/.test(cli) || !fileSystem.statSync(cli).isFile()) throw new Error('Unavailable CLI');
     if (platform !== 'win32') fileSystem.accessSync(cli,fs.constants.X_OK);
     return cli;
@@ -62,24 +66,87 @@ async function locateCodex({ payloadRoot = __dirname, platform = process.platfor
     throw publicError('未找到可运行的 Codex 命令行程序。请先打开已安装的 Codex 桌面版再重试；自定义位置可通过 CODEX_CLI 或 CODEX_MAID_CODEX_PATH 指定，无需安装 Node.js。', 'CODEX_CLI_MISSING');
   }
 }
-function runCodex(cli, args, {platform,env,run,runtime}) {
+function runCodex(cli, args, {platform,env,run,runtime,timeout}) {
   const invocation = runtime.codexCommandInvocation(cli,args,{platform,env});
-  return run(invocation.file,invocation.args,{env,encoding:'utf8',timeout:120000,maxBuffer:2*1024*1024,windowsHide:true,
-    ...(invocation.windowsVerbatimArguments ? {windowsVerbatimArguments:true} : {})});
+  try {
+    return run(invocation.file,invocation.args,{env,encoding:'utf8',timeout,maxBuffer:2*1024*1024,windowsHide:true,
+      ...(invocation.windowsVerbatimArguments ? {windowsVerbatimArguments:true} : {})});
+  } catch (error) { return { error, status: null }; }
+}
+function cliKey(file, platform) {
+  if (platform !== 'win32') return path.posix.normalize(file);
+  let value = file.replaceAll('/', '\\');
+  if (/^\\\\\?\\UNC\\/i.test(value)) value = '\\\\' + value.slice(8);
+  else if (/^\\\\\?\\[a-z]:\\/i.test(value)) value = value.slice(4);
+  return path.win32.normalize(value).toLowerCase();
+}
+function startupFailedBeforeCommand(result) {
+  const error = result?.error;
+  if (!STARTUP_ERRORS.has(error?.code)) return false;
+  // A nonzero exit, timeout, killed child or any output may mean a mutation
+  // already happened. Only an OS failure before the command started is safe
+  // to replay. Apply the same checks to synchronous spawn throws.
+  if (error.syscall !== undefined && !/^spawn(?:Sync)?(?:\s|$)/.test(String(error.syscall))) return false;
+  for (const value of [result, error]) {
+    if (value.pid > 0 || value.status != null || value.signal != null || value.killed === true || value.timedOut === true ||
+        value.stdout?.length || value.stderr?.length || value.output?.some?.(part => part?.length)) return false;
+  }
+  return true;
+}
+function commandTimeout() {
+  return { status: null, error: Object.assign(new Error('Codex command deadline exceeded'), { code: 'ETIMEDOUT' }) };
+}
+function commandRunner({ payloadRoot, platform, homeDir, env, explicit, runtime, fileSystem, queryDesktop, readBundle, run }) {
+  const selected = explicit || env.CODEX_CLI || env.CODEX_MAID_CODEX_PATH;
+  const cliEnv = { ...env }; delete cliEnv.ELECTRON_RUN_AS_NODE;
+  const excludedPaths = new Set(), excludedKeys = new Set();
+  const deadline = performance.now() + OPERATION_TIMEOUT_MS;
+  let cli = null, candidates = 0;
+  return async args => {
+    let lastStartupFailure;
+    while (performance.now() < deadline) {
+      if (!cli) {
+        if (candidates >= MAX_CLI_CANDIDATES) return lastStartupFailure;
+        const controller = new AbortController(); let timer;
+        try {
+          cli = await Promise.race([
+            locateCodex({payloadRoot,platform,homeDir,env,explicit,runtime,fileSystem,queryDesktop,readBundle,excludedPaths,signal:controller.signal}),
+            new Promise((_, reject) => { timer = setTimeout(() => {
+              reject(commandTimeout().error); controller.abort();
+            }, Math.max(1, Math.min(DISCOVERY_TIMEOUT_MS, Math.floor(deadline - performance.now())))); }),
+          ]);
+          if (excludedKeys.has(cliKey(cli, platform))) return lastStartupFailure;
+          candidates++;
+        } catch (error) {
+          if (error?.code === 'ETIMEDOUT') return commandTimeout();
+          if (lastStartupFailure) return lastStartupFailure;
+          throw error;
+        } finally { clearTimeout(timer); }
+      }
+      const remaining = Math.floor(deadline - performance.now());
+      if (remaining <= 0) return commandTimeout();
+      const result = runCodex(cli,args,{platform,env:cliEnv,run,runtime,timeout:Math.min(120000,remaining)});
+      if (selected || !startupFailedBeforeCommand(result) || candidates >= MAX_CLI_CANDIDATES) return result;
+      lastStartupFailure = result;
+      excludedPaths.add(cli); excludedKeys.add(cliKey(cli, platform)); cli = null;
+      // Retry this command only. A successful preceding registration/removal
+      // is never replayed when the next command needs a replacement CLI.
+    }
+    return commandTimeout();
+  };
 }
 async function connect({ payloadRoot = __dirname, executable = process.execPath, homeDir = os.homedir(), env = process.env, codexCli, run = spawnSync, prepareOnly = false,
   runtime, fileSystem = fs, queryDesktop, readBundle } = {}) {
   const prepared = preparePlugin({ payloadRoot, executable, homeDir, env });
   if (prepareOnly) return { ok: true, message: '连接文件已准备，尚未修改 Codex 设置。', integrationRoot: prepared.integrationRoot };
   const modules = runtime || runtimeModules(payloadRoot);
-  const cli = await locateCodex({payloadRoot,platform:prepared.platform,homeDir,env,explicit:codexCli,runtime:modules,fileSystem,queryDesktop,readBundle});
-  const cliEnv = { ...env }; delete cliEnv.ELECTRON_RUN_AS_NODE;
+  const execute = commandRunner({payloadRoot,platform:prepared.platform,homeDir,env,explicit:codexCli,runtime:modules,fileSystem,queryDesktop,readBundle,run});
   const commands = [
     { args: ['plugin', 'marketplace', 'add', prepared.integrationRoot, '--json'], label: '注册本地插件来源' },
     { args: ['plugin', 'add', PLUGIN + '@' + MARKETPLACE, '--json'], label: '安装本地挂件插件' }
   ];
   for (const command of commands) {
-    const result = runCodex(cli,command.args,{platform:prepared.platform,env:cliEnv,run,runtime:modules});
+    const result = await execute(command.args);
     if (result.error || result.status !== 0) {
       throw publicError(command.label + '失败。请更新 Codex 后重新连接；也可在 Codex 的插件目录中安装“Codex 女仆挂件 · 安装版”。' +
         (result.error?.code && /^[A-Z0-9_]+$/.test(result.error.code) ? '（' + result.error.code + '）' : '（退出码 ' + result.status + '）'));
@@ -96,9 +163,8 @@ async function disconnect({ payloadRoot = __dirname, homeDir = os.homedir(), env
   const runtime = JSON.parse(fs.readFileSync(path.join(payloadRoot, 'runtime.json'), 'utf8'));
   if (!['win32', 'darwin'].includes(runtime.platform)) throw publicError('安装包的系统信息无效，请重新安装挂件。');
   modules ||= runtimeModules(payloadRoot);
-  const cli = await locateCodex({payloadRoot,platform:runtime.platform,homeDir,env,explicit:codexCli,runtime:modules,fileSystem,queryDesktop,readBundle});
-  const cliEnv = { ...env }; delete cliEnv.ELECTRON_RUN_AS_NODE;
-  const result = runCodex(cli,['plugin','remove',PLUGIN+'@'+MARKETPLACE,'--json'],{platform:runtime.platform,env:cliEnv,run,runtime:modules});
+  const execute = commandRunner({payloadRoot,platform:runtime.platform,homeDir,env,explicit:codexCli,runtime:modules,fileSystem,queryDesktop,readBundle,run});
+  const result = await execute(['plugin','remove',PLUGIN+'@'+MARKETPLACE,'--json']);
   if (result.error || result.status !== 0) {
     throw publicError('未能断开本地挂件插件，尚未删除挂件文件。请更新 Codex 后重试；也可在 Codex 中手动卸载 codex-maid-widget@codex-maid-installed。' +
       (result.error?.code && /^[A-Z0-9_]+$/.test(result.error.code) ? '（' + result.error.code + '）' : '（退出码 ' + result.status + '）'));

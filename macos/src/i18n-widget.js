@@ -1,6 +1,7 @@
 (function () {
   'use strict';
   window.MaidI18n?.register({
+    '桌宠聊天':'Companion chat', '输入消息':'Message', '记忆与维护健康':'Memory and maintenance', '发送':'Send',
     'Codex 女仆':'Codex Maid',
     'Codex 额度气泡':'Codex quota bubble',
     '正在连接':'Connecting', '额度':'Quota', '剩余':'left', '额度读取中':'Loading quota', '周额度 --':'Weekly --', '重置':'Reset', '待刷新':'Refresh due',
@@ -44,8 +45,10 @@
     '账户资料名称：{name}':'Account profile name: {name}', '邮箱：{email}':'Email: {email}', '{name}五小时周期进度':'{name}: five-hour cycle progress',
     '本机账号记录暂不可用，原文件已保留。':'Local account records are unavailable. The original file has been preserved.',
     '五小时周期已过 {percent}%':'Five-hour cycle: {percent}% elapsed', '重置时间未知':'Reset time unknown', '五小时重置时间未知':'Five-hour reset time unknown',
+    '5h {primary} · 周 {weekly}':'5h {primary} · W {weekly}', '五小时额度剩余 {primary}；周额度剩余 {weekly}':'Five-hour quota remaining: {primary}; weekly quota remaining: {weekly}',
+    '5h 最近观察：{time}':'5h last checked: {time}', '周额度最近观察：{time}':'Weekly quota last checked: {time}', '尚无周额度观察记录':'No weekly quota checks recorded yet',
     '预计已重置，待登录确认':'Likely reset · sign in to verify', '距重置 {time}':'Resets in {time}', '预计 {time} 重置':'Expected reset: {time}',
-    '读取此账号额度后才能推算':'Check this account’s quota to estimate its reset', '上次剩余 {remaining} · {window}':'Last seen: {remaining} left · {window}',
+    '读取此账号额度后才能推算':'Check this account’s quota to estimate its reset', '上次剩余 {remaining} · {window}':'Last seen: {remaining} left · {window}', '上次剩余 {remaining}':'Last: {remaining}',
     '五小时周期':'5-hour cycle', '暂无五小时记录':'no 5-hour data', '最近观察：{time}':'Last checked: {time}', '尚无额度观察记录':'No quota checks recorded yet',
     '本机账号记录读取失败，请刷新重试。':'Could not load local account records. Refresh to retry.', '账号':'Account',
     '{name}的五小时额度预计已重置，请登录确认。':'{name}’s five-hour quota is expected to have reset. Sign in to verify.',
@@ -58,5 +61,22 @@
     '按本地时间周一零点至今，汇总这台设备上各账号的日志记录；切换账号不清零。':'Totals local logs for all accounts on this device since Monday at midnight, in local time. Switching accounts does not reset the total.',
     '本机最近一轮 · 非金额账单':'Latest local turn · token count only', '最近一轮消耗 {tokens} tokens':'Latest turn used {tokens} tokens',
     '台词页已隐藏，可在设置中开启':'The phrases page is hidden. Enable it in settings.',
+    '重置预测':'Reset forecast', '24 小时内':'Within 24h', '48 小时内':'Within 48h',
+    'Tibo 有重置信号':'Tibo reset signal', '暂无新信号':'No new signal', '信号待联网核实':'Signal needs an online check',
+    '公告窗口：{time}':'Alert window: {time}', '信号不代表额度已重置':'A signal does not confirm a quota reset',
+    '上次确认：{time}':'Last confirmed: {time}', '置信度：{level}':'Confidence: {level}', '低':'Low', '中':'Med', '高':'High', '未知':'Unknown',
+    '正在刷新…':'Refreshing…', '{time} 更新':'Updated {time}', '演示预测 · {time}':'Demo forecast · {time}',
+    '缓存 {time} · 请核实':'Cached {time} · verify', '离线 · 点击重试':'Offline · click to retry', '预测暂不可用':'Forecast unavailable',
+    '正在连接预测服务…':'Connecting to forecast…', '来源更新：{time}':'Source updated: {time}', '本机获取：{time}':'Fetched locally: {time}',
+    '第三方预测 · 非到账保证':'Third-party forecast · no guarantee', '点击气泡刷新预测；使用左右箭头翻页':'Click to refresh the forecast; use the arrows to change pages',
+    '查看 codex-reset.com 来源':'View the codex-reset.com source', '来源页面暂未打开，请重试':'Could not open the source. Please try again.',
+    'Tibo 承诺重置':'Tibo promises a reset', '重置正在路上':'Reset on its way', '缓存信号 · 待核实':'Cached signal · verify',
+    '时间待公布':'Time not announced', '公告时间 · 待确认':'Timing unconfirmed', '公告截止 · 待确认':'Announcement deadline · unconfirmed',
+    '已到公告时间 · 待确认':'Deadline reached · unconfirmed', '缓存截止 · 待核实':'Cached deadline · verify',
+    '没有可核实的公告截止时间':'No verified announcement deadline', '上次重置：{time}':'Last reset: {time}',
+    '承诺窗口已过':'Promise window passed', '承诺窗口已过 · 待确认':'Promise window passed · unconfirmed',
+    '观察窗口已过':'Observation window passed', '观察窗口已过 · 待确认':'Observation window passed · unconfirmed',
+    '观察截止 · 待确认':'Observation deadline · unconfirmed', '已到观察时间 · 待确认':'Observation time reached · unconfirmed', '观察窗口：{time}':'Observation window: {time}',
+    'Tibo 表示已重置':'Tibo reports a reset', '仍待核实':'Still unverified', 'Tibo 自述 · 待确认':'Tibo report · unconfirmed', '缓存消息 · 待联网核实':'Cached report · verify online',
   });
 })();

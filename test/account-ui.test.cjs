@@ -15,6 +15,7 @@ class Element {
   }
   append(...nodes) { for (const node of nodes) { node.parentElement = this; this.children.push(node); } }
   setAttribute(key, value) { this.attributes[key] = value; }
+  getAttribute(key) { return this.attributes[key] ?? null; }
   removeAttribute(key) { delete this.attributes[key]; }
   querySelectorAll(tag) { return this.children.flatMap(child => [...(child.tagName === tag ? [child] : []), ...child.querySelectorAll(tag)]); }
   addEventListener(name, listener) { this.listeners[name] = listener; }
@@ -27,39 +28,76 @@ function harness(folder = '') {
   const translations = {module:{exports:{}}};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', folder, 'src/i18n.js'), 'utf8'), translations);
   const i18n = translations.module.exports;
-  const nodes = new Map(['account-list', 'accounts-empty', 'accounts-feedback'].map(id => [id, new Element()]));
+  const nodes = new Map(['account-list', 'accounts-empty', 'accounts-feedback', 'notice', 'character', 'bubble-motion'].map(id => [id, new Element()]));
   let clock = 2000000000, pending;
   class Clock extends Date { static now() { return clock * 1000; } }
   const noises = [], notices = [];
+  const timers = new Map(); let nextTimer = 0, noticeText = '';
+  Object.defineProperty(nodes.get('notice'), 'textContent', {
+    get: () => noticeText, set: text => { noticeText = text; notices.push(text); },
+  });
   const context = { t:i18n.t, locale:i18n.getLocale, accountFeedbackSource:'',
-    document: { createElement: tag => new Element(tag) },
-    $: id => nodes.get(id), Date: Clock, setTimeout() {}, clearTimeout() {},
+    document: { hidden:false, createElement: tag => new Element(tag), createElementNS: (_ns,tag) => new Element(tag) },
+    $: id => nodes.get(id), Date: Clock, timerCallbacks:timers,
+    setTimeout(callback) { const id = ++nextTimer; timers.set(id, callback); return id; }, clearTimeout(id) { timers.delete(id); },
+    interactionHeld:false,
     current: {settings: {accountResetAlerts: true}}, window: {maid: {listAccounts: () => new Promise(resolve => { pending = resolve; })}},
-    accountAlarmBounce: () => noises.push('four-bounce-alarm'), notice: text => notices.push(text), reveal() {},
+    accountAlarmBounce: () => noises.push('four-bounce-alarm'), reveal() {},
   };
-  vm.runInNewContext(`const accountCards = new Map(), accountResetEvents = new Map(); let accountRequest = 0, accountFeedbackTimer, hideTimer;
+  vm.runInNewContext(`const accountCards = new Map(), accountResetEvents = new Map(); let accountRequest = 0, accountFeedbackTimer, hideTimer, noticeTimer;
     ${source.slice(source.indexOf('function accountElement('), source.indexOf('function reveal('))}
-    globalThis.subject = {renderAccounts, updateAccountTimers, refreshAccounts, handleAccountReset, accountCards};`, context);
+    ${source.slice(source.indexOf('function notice('), source.indexOf('let audio;'))}
+    globalThis.subject = {renderAccounts, updateAccountTimers, refreshAccounts, handleAccountReset, accountCards,
+      notice, cancelAccountResetNotices, dismissNotices, drainAccountResetNotices,
+      finishNotice() { const callback = timerCallbacks.get(noticeTimer); timerCallbacks.delete(noticeTimer); callback?.(); }};`, context);
   return {...context.subject, context, nodes, noises, notices, advance: seconds => {clock += seconds;}, reply: value => pending(value)};
 }
 for (const folder of ['', 'macos']) {
   const platform = folder || 'Windows';
   test(`${platform}: account timers distinguish cycle progress, observed quota and unknown deadlines`, () => {
     const h = harness(folder);
-    h.renderAccounts({accounts: [{id:'one',label:'账号 1',current:true,planType:'pro',planLabel:'Pro',scopeLabel:'个人',resetsAt:2000009000,remainingPercent:23,observedAt:1999999999}, {id:'two',label:'账号 2',planType:'team',planLabel:'Team',scopeLabel:'工作空间',resetsAt:null}]});
+    h.renderAccounts({accounts: [{id:'one',label:'账号 1',current:true,planType:'pro',planLabel:'Pro',scopeLabel:'个人',resetsAt:2000009000,remainingPercent:23,observedAt:1999999999,weeklyRemainingPercent:90,weeklyObservedAt:1999999998,weeklyResetsAt:2000020000}, {id:'two',label:'账号 2',planType:'team',planLabel:'Team',scopeLabel:'工作空间',resetsAt:null}]});
     const first = h.accountCards.get('one'), second = h.accountCards.get('two');
-    assert.equal(first.bar.style.width, '50%');
+    assert.equal(first.bar.style.strokeDashoffset, '50');
     assert.equal(first.track.attributes['aria-valuenow'], '50');
     assert.match(first.countdown.textContent, /02:30:00/);
-    assert.match(first.remaining.textContent, /上次剩余 23%/);
+    assert.equal(first.remaining.textContent, '5h 23% · 周 90%');
+    assert.match(first.remaining.title, /五小时额度剩余 23%；周额度剩余 90%/);
+    assert.match(first.remaining.title, /5h 最近观察/);
+    assert.match(first.remaining.title, /周额度最近观察/);
+    assert.equal(second.remaining.textContent, '5h -- · 周 --');
     assert.equal(first.plan.textContent, 'Pro · 个人');
     assert.equal(second.plan.textContent, 'Team · 工作空间');
     assert.equal(second.track.attributes['aria-valuenow'], undefined);
     assert.match(second.countdown.textContent, /未知/);
     h.advance(10000); h.updateAccountTimers();
-    assert.equal(first.bar.style.width, '100%');
+    assert.equal(first.bar.style.strokeDashoffset, '0');
     assert.equal(first.countdown.textContent, '预计已重置，待登录确认');
     assert.equal(first.account.remainingPercent, 23, 'local clock must not fabricate or overwrite observed quota');
+    assert.equal(first.remaining.textContent, '5h -- · 周 90%');
+    h.advance(10000); h.updateAccountTimers();
+    assert.equal(first.remaining.textContent, '5h -- · 周 --');
+    assert.equal(first.account.weeklyRemainingPercent, 90, 'expiry hides observations without fabricating a refill');
+  });
+  test(`${platform}: both quota labels preserve zero, fractional and absent observations independently`, () => {
+    const h = harness(folder);
+    for (const [primary, weekly, text] of [[0,100,'5h 0% · 周 100%'],[99.94,99.95,'5h 99.9% · 周 100%'],[null,0,'5h -- · 周 0%'],[100,null,'5h 100% · 周 --']]) {
+      h.renderAccounts({accounts:[{id:'one',label:'隔离账号',remainingPercent:primary,weeklyRemainingPercent:weekly}]});
+      assert.equal(h.accountCards.get('one').remaining.textContent, text);
+      assert.match(h.accountCards.get('one').remaining.attributes['aria-label'], /五小时额度剩余.*周额度剩余/);
+    }
+  });
+  test(`${platform}: accounts sort by time to reset, keep equal deadlines stable and put unknown times last`, () => {
+    const h=harness(folder);
+    const account=(id,resetsAt,current=false)=>({id,resetsAt,current,label:id,userEdited:true});
+    h.renderAccounts({accounts:[account('current-later',2000015000,true),account('unknown',null),account('soon',2000000060),account('due',1999999999),account('same-time',2000000060),account('invalid',0)]});
+    assert.deepEqual(h.nodes.get('account-list').children.map(card=>card.dataset.accountId),['due','soon','same-time','current-later','unknown','invalid']);
+    const entry=h.accountCards.get('current-later');entry.card.querySelectorAll('button')[0].listeners.click();entry.input.value='未完成的别名';
+    h.renderAccounts({accounts:[account('current-later',2000000001,true),account('unknown',null),account('soon',2000000060),account('due',1999999999),account('same-time',2000000060),account('invalid',0)]});
+    assert.deepEqual(h.nodes.get('account-list').children.map(card=>card.dataset.accountId),['due','current-later','soon','same-time','unknown','invalid']);
+    assert.equal(h.accountCards.get('current-later'),entry);assert.equal(entry.input.value,'未完成的别名');assert.equal(entry.editor.hidden,false);
+    assert.equal(h.accountCards.get('unknown').track.attributes['aria-valuenow'],undefined);
+    assert.equal(h.accountCards.get('unknown').cycle.textContent,'?');
   });
   test(`${platform}: keyed refreshes preserve unfinished alias edits and only render names as text`, () => {
     const h = harness(folder), account = {id:'one',label:'<img src=x>',labelSource:'manual',userEdited:true,resetsAt:2000009000};
@@ -133,17 +171,32 @@ for (const folder of ['', 'macos']) {
     h.renderAccounts({accounts:[{id:'one',label:email,labelSource:'manual',userEdited:true,email}]});
     assert.equal(h.accountCards.get('one').name.textContent,email,'an explicit manual alias remains the user’s choice');
   });
-  test(`${platform}: reset events deduplicate and run the dedicated widget alarm once`, () => {
+  test(`${platform}: reset events deduplicate, queue each account and run each dedicated alarm once`, () => {
     const h = harness(folder), event = {id:'one',label:'账号 1',resetsAt:2000000000};
     h.handleAccountReset(event); h.handleAccountReset(event);
     assert.equal(h.notices.length, 1);
     assert.deepEqual(h.noises, ['four-bounce-alarm']);
     assert.match(h.notices[0], /预计已重置.*登录确认/);
-    h.handleAccountReset({...event,resetsAt:2000018000});
+    h.handleAccountReset({...event,id:'two',label:'账号 2'});
+    assert.equal(h.notices.length, 1, 'a same-batch account must wait until the first message has been readable');
+    assert.deepEqual(h.noises, ['four-bounce-alarm']);
+    h.finishNotice();
     assert.deepEqual(h.noises, ['four-bounce-alarm','four-bounce-alarm']);
+    assert.match(h.notices[1], /账号 2/);
+    h.notice('普通操作反馈');
+    assert.equal(h.nodes.get('notice').textContent, '普通操作反馈');
+    h.finishNotice();
+    assert.match(h.nodes.get('notice').textContent, /账号 2/);
+    assert.equal(h.noises.length, 2, 'resuming interrupted text must not repeat its alarm');
+    h.handleAccountReset({...event,id:'three',label:'账号 3'});
     h.context.current.settings.accountResetAlerts = false;
+    h.cancelAccountResetNotices();
     h.handleAccountReset({...event,resetsAt:2000036000});
-    assert.equal(h.notices.length, 2);
+    h.context.current.settings.accountResetAlerts = true;
+    h.handleAccountReset({...event,resetsAt:2000036000});
+    h.drainAccountResetNotices();
+    assert.equal(h.nodes.get('notice').hidden, true);
+    assert.equal(h.noises.length, 2, 'cancelled and muted events must not replay after re-enabling reminders');
   });
   test(`${platform}: production alarm helpers separate four-bounce animation from one sound and honor interruption`, () => {
     const source = fs.readFileSync(path.join(__dirname, '..', folder, 'src/widget.js'), 'utf8');

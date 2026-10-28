@@ -144,12 +144,13 @@ app.whenReady().then(async () => {
     }
     await choose('soft-spring'); await saved('soft-spring');
     phase = 'keyboard selection and persistence across reload';
+    await click('settings-tab-interaction');
     await evaluate(`document.getElementById('interactionSound').scrollIntoView({block:'center'});document.getElementById('interactionSound').focus();void 0`);
     assert.equal((await ui()).focused, 'interactionSound'); await key('ArrowDown'); await saved('original');
     assert.equal((await ui()).id, 'original'); assert.match((await ui()).description, /最初|原|保留/); assert.equal(actions.length, 0, 'selection must not autoplay');
     assert.equal(JSON.parse(fs.readFileSync(fixtureSettingsFile, 'utf8')).interactionSound, 'original');
     settings = sanitize(JSON.parse(fs.readFileSync(fixtureSettingsFile, 'utf8'))); revision++;
-    await win.loadFile(path.join(runtimeRoot, 'src/settings.html')); await ready(); assert.equal((await ui()).id, 'original');
+    await win.loadFile(path.join(runtimeRoot, 'src/settings.html')); await ready(); assert.equal((await ui()).id, 'original'); await click('settings-tab-interaction');
     phase = 'pointer preview activation after reload';
     await click('preview-interaction-sound'); await until(() => actions.length === 1); await until(async () => !(await ui()).previewDisabled);
     assert.deepEqual(actions, ['bounce'], 'one pointer activation dispatches exactly one bounce');
@@ -168,7 +169,7 @@ app.whenReady().then(async () => {
     await choose('original'); await saved('original'); assert.equal(settings.sound, false); assert.equal((await ui()).muted, true);
     assert.equal(JSON.parse(fs.readFileSync(fixtureSettingsFile, 'utf8')).sound, false);
     settings = sanitize(JSON.parse(fs.readFileSync(fixtureSettingsFile, 'utf8'))); revision++;
-    await win.loadFile(path.join(runtimeRoot, 'src/settings.html')); await ready();
+    await win.loadFile(path.join(runtimeRoot, 'src/settings.html')); await ready(); await click('settings-tab-interaction');
     assert.equal((await ui()).id, 'original'); assert.equal((await ui()).muted, true); assert.equal((await ui()).previewDisabled, true);
     phase = 'save failure feedback, rollback and retry';
     saveMode = 'fail-once'; await choose('bubble-pop'); await until(async () => (await ui()).feedbackError && !(await ui()).selectDisabled);
@@ -209,6 +210,7 @@ app.whenReady().then(async () => {
       legacyAnimationSettingsMatrix.push({legacyValue,systemReduced,ignoredOnRead:true,animationOptionAbsent:true,soundAndOtherPreferencesPreserved:true});
     }
     phase = 'system motion changes leave settings and mute independent';
+    await click('settings-tab-interaction');
     await mediaMotion(false); await until(async () => !(await appearanceUi()).systemReduced);
     await mediaMotion(true); await until(async () => (await appearanceUi()).systemReduced);
     assert.equal(patches.length, savesBeforeMediaChange, 'system preference changes do not rewrite settings');
@@ -220,6 +222,7 @@ app.whenReady().then(async () => {
     }
     await click('sound');await until(async () => settings.sound===true&&!(await ui()).previewDisabled);
     phase = 'topmost native status and contained mode explanation';
+    await click('settings-tab-appearance');
     const topmostStates = [
       [{desired:true,verified:false,reason:'pending'}, /正在应用置顶设置/],
       [{desired:true,verified:true,reason:'verified'}, /已启用置顶/],
@@ -240,6 +243,7 @@ app.whenReady().then(async () => {
     await evaluate(`document.getElementById('alwaysOnTop').scrollIntoView({block:'center'});document.getElementById('alwaysOnTop').focus();void 0`);
     win.webContents.invalidate(); await pause(80); fs.writeFileSync(path.join(output, 'topmost-settings-ui.png'), (await win.webContents.capturePage()).toPNG());
     phase = 'capture and report';
+    await click('settings-tab-interaction');
     await evaluate(`document.getElementById('interactionSound').scrollIntoView({block:'center'});document.getElementById('interactionSound').focus();void 0`);
     win.webContents.invalidate(); await pause(80); fs.writeFileSync(path.join(output, 'sound-settings-ui.png'), (await win.webContents.capturePage()).toPNG());
     assert.deepEqual(errors, []); assert.equal(networkAttempts, 0); assert.equal(nativeWindowShown, false); assert.equal(actions.length, expectedPreviewActions);

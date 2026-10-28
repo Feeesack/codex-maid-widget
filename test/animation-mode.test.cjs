@@ -22,6 +22,7 @@ function harness(folder, animationMode, systemReduced, sound = true) {
   const context = {
     $:id => nodes.get(id),current:{settings:{animationMode,sound},snapshot:{buckets:[{id:'fixture',primary:{remainingPercent:82}}]}},
     matchMedia:() => media,performance:{now:() => now},reveal() {},
+    queueMicrotask:callback=>callback(),drainAccountResetNotices() {},
     requestAnimationFrame(callback) {const id = nextFrame++;frames.set(id,callback);return id;},
     cancelAnimationFrame(id) {frames.delete(id);},
     interactionSound:{press() {if(context.current.settings.sound) audio.push('press');},release() {if(context.current.settings.sound) audio.push('release');},stop() {audio.push('stop');}},

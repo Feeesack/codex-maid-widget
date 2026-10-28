@@ -21,6 +21,9 @@ const PREVIOUS_DEFAULT_PHRASES = [
 ];
 const DEFAULTS = Object.freeze({
   language: 'zh-CN',
+  chatPageEnabled: false,
+  chatModel: 'gpt-6.1-sol',
+  chatReasoningEffort: 'medium',
   sizeBaseline: 2,
   scale: 1, opacity: 1, alwaysOnTop: true, clickThrough: false, sound: true, interactionSound: defaultInteractionSound, accountResetAlerts: true,
   autoStart: false, followCodex: true, stayInCodexWindow: false, peekAtCorners: false, showBubble: true, autoHideSeconds: 5, refreshSeconds: 60,
@@ -39,13 +42,16 @@ const DEFAULTS = Object.freeze({
     '还不睡？睡前还得给 Codex 留作业是吧。',
   ],
 });
-const MODES = ['quota', 'conversation', 'accounts', 'today', 'week', 'lastTurn', 'phrase'];
+const MODES = ['quota', 'conversation', 'accounts', 'today', 'week', 'lastTurn', 'phrase', 'resetForecast'];
 function clamp(value, min, max, fallback) {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
 }
 function sanitize(input = {}) {
   const s = { ...DEFAULTS };
   s.language = normalizeLocale(input.language);
+  s.chatPageEnabled = input.chatPageEnabled === true;
+  if (typeof input.chatModel === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/.test(input.chatModel)) s.chatModel = input.chatModel;
+  if (['none','minimal','low','medium','high','xhigh','max','ultra'].includes(input.chatReasoningEffort)) s.chatReasoningEffort = input.chatReasoningEffort;
   for (const key of ['alwaysOnTop','clickThrough','sound','accountResetAlerts','autoStart','followCodex','stayInCodexWindow','peekAtCorners','showBubble','mirror']) {
     if (typeof input[key] === 'boolean') s[key] = input[key];
   }
@@ -56,7 +62,7 @@ function sanitize(input = {}) {
   s.refreshSeconds = clamp(input.refreshSeconds, 30, 600, DEFAULTS.refreshSeconds);
   s.autoHideSeconds = clamp(input.autoHideSeconds, 0, 300, DEFAULTS.autoHideSeconds);
   if (typeof input.bucketId === 'string') s.bucketId = input.bucketId.slice(0, 100);
-  if (MODES.includes(input.mode)) s.mode = input.mode;
+  if (MODES.includes(input.mode) || s.chatPageEnabled && input.mode === 'chat') s.mode = input.mode;
   s.bubblePageOrder = [...new Set((Array.isArray(input.bubblePageOrder) ? input.bubblePageOrder : []).filter(id => MODES.includes(id)))];
   s.bubblePageOrder.push(...MODES.filter(id => !s.bubblePageOrder.includes(id)));
   const hidden = new Set((Array.isArray(input.bubbleHiddenPages) ? input.bubbleHiddenPages : []).filter(id => MODES.includes(id)));
@@ -77,8 +83,15 @@ function sanitize(input = {}) {
   return s;
 }
 function readSettings(file) {
+  let contents;
+  try { contents = fs.readFileSync(file, 'utf8'); }
+  catch (error) {
+    if (error?.code === 'ENOENT') return sanitize();
+    throw Object.assign(new Error('无法读取设置，原文件已保留。请检查文件权限后重试。'), { code: error?.code });
+  }
   try {
-    const input = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const input = JSON.parse(contents);
+    if (input === null || typeof input !== 'object' || Array.isArray(input)) return sanitize();
     // 100% now means the former 60%. Preserve a saved visual size across upgrades.
     if (input.sizeBaseline !== 2 && typeof input.scale === 'number') input.scale /= 0.6;
     // Replace only untouched shipped presets; keep every custom line and selection.
@@ -92,6 +105,25 @@ function widgetDimensions(scale = DEFAULTS.scale) {
   return { width: Math.round(228 * value), height: Math.round(288 * value) };
 }
 function writeSettings(file, settings) {
+  let original;
+  try { original = fs.readFileSync(file); }
+  catch (error) {
+    if (error?.code !== 'ENOENT') throw Object.assign(new Error('无法读取设置，原文件已保留。请检查文件权限后重试。'), { code: error?.code });
+  }
+  if (original !== undefined) {
+    let valid = false;
+    try {
+      const input = JSON.parse(original.toString('utf8'));
+      // Unknown fields and older settings are valid objects. Only damaged JSON
+      // or a non-object root needs recovery; normalization remains in sanitize.
+      valid = input !== null && typeof input === 'object' && !Array.isArray(input);
+    } catch { /* Preserve the exact original bytes before replacing defaults. */ }
+    if (!valid) {
+      const backup = path.join(path.dirname(file), 'settings-recovery-' + require('node:crypto').randomUUID() + '.json');
+      try { fs.writeFileSync(backup, original, { flag: 'wx', mode: 0o600 }); }
+      catch (error) { throw Object.assign(new Error('无法备份损坏的设置，原文件尚未替换。请检查目录权限和磁盘空间后重试。'), { code: error?.code }); }
+    }
+  }
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file + '.tmp', JSON.stringify(sanitize(settings), null, 2));
   fs.renameSync(file + '.tmp', file);

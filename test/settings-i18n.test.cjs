@@ -64,6 +64,45 @@ async function settingsUi(directory, overrides = {}) {
 }
 
 for (const directory of ['src', 'macos/src']) {
+  test(directory + ': settings categories switch panels without changing control ids', async () => {
+    const h = await settingsUi(directory);
+    const categories = ['general', 'appearance', 'display', 'chat', 'interaction'];
+    assert.equal(h.nodes.get('settings-panel-general').hidden, false);
+    assert.equal(h.nodes.get('settings-tab-general').getAttribute('aria-selected'), 'true');
+    for (const id of categories.slice(1)) {
+      assert.equal(h.nodes.get('settings-panel-' + id).hidden, true);
+      assert.equal(h.nodes.get('settings-tab-' + id).getAttribute('aria-selected'), 'false');
+    }
+    h.nodes.get('settings-tab-chat').listeners.click();
+    assert.equal(h.nodes.get('settings-panel-chat').hidden, false);
+    assert.equal(h.nodes.get('settings-panel-general').hidden, true);
+    assert.equal(h.nodes.get('settings-tab-chat').getAttribute('aria-selected'), 'true');
+    h.nodes.get('settings-tab-chat').listeners.keydown({key:'ArrowRight',preventDefault(){}});
+    assert.equal(h.nodes.get('settings-panel-interaction').hidden, false);
+    assert.equal(h.nodes.get('settings-tab-interaction').getAttribute('aria-selected'), 'true');
+    h.nodes.get('settings-tab-interaction').listeners.keydown({key:'ArrowRight',preventDefault(){}});
+    assert.equal(h.nodes.get('settings-panel-general').hidden, false);
+    h.nodes.get('settings-tab-general').listeners.keydown({key:'End',preventDefault(){}});
+    assert.equal(h.nodes.get('settings-panel-interaction').hidden, false);
+    h.nodes.get('settings-tab-interaction').listeners.keydown({key:'Home',preventDefault(){}});
+    assert.equal(h.nodes.get('settings-panel-general').hidden, false);
+    h.nodes.get('settings-tab-chat').listeners.click();
+    h.nodes.get('phrases').value = '分类切换后的未保存台词'; h.nodes.get('phrases').listeners.input();
+    h.nodes.get('settings-tab-general').listeners.click(); await h.language('en');
+    h.nodes.get('settings-tab-chat').listeners.click();
+    assert.equal(h.nodes.get('phrases').value, '分类切换后的未保存台词');
+    h.broadcast({snapshot:{status:'live',buckets:[]}});
+    assert.equal(h.nodes.get('settings-panel-chat').hidden, false);
+    for (const id of ['language','scale','bubble-pages','chatPageEnabled','chat-config-model','phrases','sound']) assert.ok(h.nodes.has(id), id);
+  });
+  test(directory + ': collapsed help retains instructions, all shortcuts and usage notes', () => {
+    const html = fs.readFileSync(path.join(__dirname, '..', directory, 'settings.html'), 'utf8');
+    const help = html.match(/<div class="help-content">([\s\S]*?)<\/div>/)?.[1] || '';
+    assert.match(help, /拖动角色或气泡移动位置/);
+    for (const shortcut of ['Ctrl + Alt + M','Ctrl + Alt + Q','Ctrl + Alt + Shift + M']) assert.ok(help.includes(shortcut), shortcut);
+    assert.match(help, /Token 是用量/);
+    assert.match(html, /<details class="help">/);
+  });
   test(directory + ': every marked settings label has English copy and dynamic status wins over static defaults', async () => {
     const h = await settingsUi(directory, {language:'en'});
     for (const node of h.marked) for (const [attr, source] of Object.entries(node.attributes)) {

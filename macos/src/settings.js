@@ -6,6 +6,49 @@ const messageText = value => typeof value === 'function' ? value() : t(value);
 const characterName = character => i18n?.characterName ? i18n.characterName(character) : character?.name || t('默认形象');
 let renderedLanguage, languageSaving = false, pendingLanguage = null, languageMessage = '', languageError = false;
 let refreshing = false, importing = false, phrasesMessage = '', characterFeedbackState = null;
+const settingsCategories = ['general', 'appearance', 'display', 'chat', 'interaction'];
+let activeSettingsCategory = 'general';
+function selectSettingsCategory(category, focus = false) {
+  if (!settingsCategories.includes(category)) category = 'general';
+  const changed = category !== activeSettingsCategory;
+  const navigation = $('settings-tabs');
+  const wasPinned = changed && navigation?.getBoundingClientRect?.().top <= 10;
+  if (changed && activeSettingsCategory === 'appearance') void cancelRangePreviews();
+  activeSettingsCategory = category;
+  for (const id of settingsCategories) {
+    const tab = $('settings-tab-' + id), panel = $('settings-panel-' + id), selected = id === category;
+    if (tab) {
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      tab.classList.toggle('is-active', selected);
+    }
+    if (panel) {
+      panel.hidden = !selected;
+      panel.setAttribute('aria-hidden', String(!selected));
+    }
+  }
+  // Switching from a scrolled panel should reveal the next panel's beginning.
+  if (wasPinned) {
+    const panel = $('settings-panel-' + category);
+    const top = panel.getBoundingClientRect().top + window.scrollY - navigation.getBoundingClientRect().height - 22;
+    window.scrollTo({ top: Math.max(0, top), behavior: 'instant' });
+  }
+  if (focus) $('settings-tab-' + category)?.focus?.();
+}
+function setupSettingsCategories() {
+  for (const [index, id] of settingsCategories.entries()) {
+    const tab = $('settings-tab-' + id);
+    if (!tab) continue;
+    tab.addEventListener('click', () => selectSettingsCategory(id));
+    tab.addEventListener('keydown', event => {
+      const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0;
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? settingsCategories.length - 1 : direction ? (index + direction + settingsCategories.length) % settingsCategories.length : -1;
+      if (next < 0) return;
+      event.preventDefault(); selectSettingsCategory(settingsCategories[next], true);
+    });
+  }
+  selectSettingsCategory(activeSettingsCategory);
+}
 function translatedText(node, source) {
   node.setAttribute('data-i18n', source);
   node.textContent = t(source);
@@ -35,6 +78,7 @@ const booleans = ['showBubble','alwaysOnTop','clickThrough','sound','accountRese
 const numbers = ['scale','opacity','refreshSeconds','autoHideSeconds'];
 const peekPercentages = ['peekBottomPercent','peekSidePercent'];
 let current, phrasesEdited = false;
+const chatModels = window.MaidChatView?.mountModels({document,maid:window.maid,t});
 const characterCards = new Map();
 const interactionCatalog = window.MaidInteractionCatalog;
 let soundSaving = false, soundToggleSaving = false, soundPreviewing = false, soundPreviewBlocked = false;
@@ -219,8 +263,8 @@ function setupCornerPeek() {
   window.addEventListener('blur',cancelRangePreviews);window.addEventListener('pagehide',cancelRangePreviews);
 }
 
-const bubblePageIds = ['quota','conversation','accounts','today','week','lastTurn','phrase'];
-const bubblePageNames = {quota:'额度',conversation:'对话状态',accounts:'账号管理',today:'今日用量',week:'本周用量',lastTurn:'最近一轮',phrase:'女仆台词'};
+const bubblePageIds = ['quota','conversation','accounts','today','week','lastTurn','phrase','resetForecast'];
+const bubblePageNames = {quota:'额度',conversation:'对话状态',accounts:'账号管理',today:'今日用量',week:'本周用量',lastTurn:'最近一轮',phrase:'女仆台词',resetForecast:'重置预测'};
 let bubblePagePending = null, bubblePageSaving = false, bubblePageMessage = '', bubblePageError = false, draggingBubblePage = null, bubblePageSortable;
 function bubblePageConfig(settings = current?.settings || {}) {
   const order = [...new Set([...(Array.isArray(settings.bubblePageOrder)?settings.bubblePageOrder:[]),...bubblePageIds])].filter(id=>bubblePageIds.includes(id));
@@ -524,6 +568,8 @@ function render(value) {
   if (Number.isFinite(value.settingsRevision) && Number.isFinite(current?.settingsRevision) && value.settingsRevision < current.settingsRevision) return;
   current=value;
   renderLanguage(value.settings);
+  chatModels?.render(value.settings);
+  if ($('chatPageEnabled')) $('chatPageEnabled').checked = value.settings.chatPageEnabled === true;
   if (!value.settings.peekAtCorners && cornerRange.drafts.size) void cancelRangePreviews();
   $('version').textContent = 'v'+value.version;
   for(const id of booleans) $(id).checked = value.settings[id];
@@ -574,6 +620,8 @@ if ($('language')) $('language').addEventListener('change', async () => {
   }
 });
 for(const id of booleans.filter(id => id !== 'sound' && id !== 'peekAtCorners')) $(id).addEventListener('change',()=>window.maid.setSettings({[id]:$(id).checked}));
+if ($('chatPageEnabled')) $('chatPageEnabled').addEventListener('change', () => window.maid.setSettings({chatPageEnabled:$('chatPageEnabled').checked}));
+if ($('open-chat-manager')) $('open-chat-manager').addEventListener('click', () => window.maid.openChatManager());
 for(const id of [...numbers.filter(id=>!['scale','opacity'].includes(id)),'bucketId']) {
   $(id).addEventListener('change',()=>window.maid.setSettings({[id]:numbers.includes(id)?Number($(id).value):$(id).value}));
 }
@@ -603,4 +651,5 @@ $('import-characters').addEventListener('click', async () => {
 setupInteractionSounds();
 setupCornerPeek();
 setupBubblePages();
+setupSettingsCategories();
 window.maid.onState(render);window.maid.getState().then(render);

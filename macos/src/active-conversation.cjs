@@ -275,6 +275,12 @@ class ActiveConversationDetector {
     let window = windows.get(event.windowId);
     if (!window) { window = { classification: null, route: null, activity: null }; windows.set(event.windowId, window); }
     if (event.type === 'activity') {
+      // A background stream can finish after the user has switched chats. Its
+      // inactive snapshot belongs to that old view, not to the current route's
+      // window. Keep classification and activity scoped together with route.
+      const route = window.route;
+      if (!event.active && route?.threadId && (event.webContentsId !== route.webContentsId ||
+        event.threadId !== route.threadId && event.threadId !== route.ownerId)) return;
       if (!window.classification || event.at >= window.classification.at) window.classification = event;
       if (!window.activity || event.at >= window.activity.at) window.activity = event;
       if (window.route && event.webContentsId === window.route.webContentsId && event.at >= window.route.at) {

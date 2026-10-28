@@ -63,7 +63,7 @@ class SettingsElement {
 async function soundSettingsUi(settings = {}, localSamples = {presets:{}}, reduced = false) {
   const html = fs.readFileSync(path.join(__dirname,'../src/settings.html'),'utf8');
   const nodes = new Map([...html.matchAll(/\bid="([^"]+)"/g)].map(match => [match[1],new SettingsElement()]));
-  for(const [id,node] of nodes){node.id=id;node.dataset={};if(/^page-(quota|conversation|accounts|today|week|lastTurn|phrase)$/.test(id))node.dataset.pageId=id.slice(5);}
+  for(const [id,node] of nodes){node.id=id;node.dataset={};if(/^page-(quota|conversation|accounts|today|week|lastTurn|phrase|resetForecast)$/.test(id))node.dataset.pageId=id.slice(5);}
   let sorter;
   // Only the public adapter contract is doubled here. The Electron pointer
   // checks load the official library and exercise its actual dragging/animation.
@@ -345,11 +345,11 @@ test('a preview failure remains in the settings feedback and does not change pre
 });
 
 test('bubble page schema migrates legacy mode, repairs order and keeps a visible default without changing current mode', t => {
-  const ids=['quota','conversation','accounts','today','week','lastTurn','phrase'];
+  const ids=['quota','conversation','accounts','today','week','lastTurn','phrase','resetForecast'];
   for(const mode of ids){const value=sanitize({mode});assert.deepEqual(value.bubblePageOrder,ids);assert.deepEqual(value.bubbleHiddenPages,[]);assert.equal(value.defaultBubblePage,mode);assert.equal(value.mode,mode);}
   const repaired=sanitize({mode:'week',bubblePageOrder:['phrase','bad','quota','phrase'],bubbleHiddenPages:['phrase','bad'],defaultBubblePage:'phrase'});
-  assert.deepEqual(repaired.bubblePageOrder,['phrase','quota','conversation','accounts','today','week','lastTurn']);assert.deepEqual(repaired.bubbleHiddenPages,['phrase']);assert.equal(repaired.defaultBubblePage,'quota');assert.equal(repaired.mode,'week');
-  const allHidden=sanitize({mode:'accounts',bubbleHiddenPages:ids});assert.equal(allHidden.bubbleHiddenPages.length,6);assert.equal(allHidden.defaultBubblePage,'accounts');
+  assert.deepEqual(repaired.bubblePageOrder,['phrase','quota','conversation','accounts','today','week','lastTurn','resetForecast']);assert.deepEqual(repaired.bubbleHiddenPages,['phrase']);assert.equal(repaired.defaultBubblePage,'quota');assert.equal(repaired.mode,'week');
+  const allHidden=sanitize({mode:'accounts',bubbleHiddenPages:ids});assert.equal(allHidden.bubbleHiddenPages.length,7);assert.equal(allHidden.defaultBubblePage,'accounts');
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'maid 气泡 pages '));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const file=path.join(dir,'settings.json');writeSettings(file,repaired);assert.deepEqual(readSettings(file),repaired);
 });
 test('bubble cards commit the Sortable drop and keyboard order, select defaults directly and protect the last visible page',async()=>{
@@ -361,7 +361,7 @@ test('bubble cards commit the Sortable drop and keyboard order, select defaults 
   await h.nodes.get('page-handle-week').listeners.keydown({altKey:true,key:'ArrowUp',preventDefault(){}});assert.equal(h.value.settings.bubblePageOrder[2],'week');
   await h.finishSort(['phrase',...h.value.settings.bubblePageOrder.filter(id=>id!=='phrase')]);assert.equal(h.value.settings.bubblePageOrder[0],'phrase');
   h.nodes.get('page-visible-week').checked=false;await h.nodes.get('page-visible-week').listeners.change();assert.equal(h.value.settings.defaultBubblePage,'phrase');assert.match(h.nodes.get('bubble-pages-feedback').textContent,/原默认页已隐藏/);
-  for(const id of ['quota','conversation','accounts','today','lastTurn']){h.nodes.get('page-visible-'+id).checked=false;await h.nodes.get('page-visible-'+id).listeners.change();}
+  for(const id of ['quota','conversation','accounts','today','lastTurn','resetForecast']){h.nodes.get('page-visible-'+id).checked=false;await h.nodes.get('page-visible-'+id).listeners.change();}
   const writes=h.calls.length;h.nodes.get('page-visible-phrase').checked=false;await h.nodes.get('page-visible-phrase').listeners.change();assert.equal(h.calls.length,writes);assert.equal(h.nodes.get('page-visible-phrase').checked,true);assert.match(h.nodes.get('bubble-pages-feedback').textContent,/至少保留/);
   const reopened=await soundSettingsUi(h.value.settings);assert.equal(reopened.nodes.get('page-default-phrase').checked,true);assert.equal(reopened.nodes.get('page-visible-week').checked,false);
   reopened.setSave(()=>Promise.reject(new Error('isolated page commit failure')));await reopened.nodes.get('page-handle-quota').listeners.keydown({altKey:true,key:'ArrowUp',preventDefault(){}});assert.match(reopened.nodes.get('bubble-pages-feedback').textContent,/未能保存/);assert.equal(reopened.nodes.get('page-default-phrase').checked,true);

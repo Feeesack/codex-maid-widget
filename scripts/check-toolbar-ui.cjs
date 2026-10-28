@@ -101,7 +101,7 @@ async function checkContinuousReachability(mirror,scale){
   return {mirror,scale,cornerPose:!!fixtureVisualPose,route,expandedBridgePauseMs:720,buttonGapPauseMs:720,clicked,graceMs:600,
     continuousPointerPathClickable:true,expandedToolbarHitArea:true,dismissalGracePeriod:true,eventualDismissal:true};
 }
-const watchdog=setTimeout(failure,180000);
+const watchdog=setTimeout(failure,240000);
 app.whenReady().then(async()=>{
   try{
     win=new BrowserWindow({...widgetDimensions(),show:false,frame:false,transparent:true,backgroundColor:'#00000000',webPreferences:{
@@ -150,18 +150,32 @@ app.whenReady().then(async()=>{
       await key('Escape');const escapeObservation=await sample();
       for(let i=0;i<5&&await evaluate(`!!document.activeElement?.closest('.toolbar')`);i++)await key('Tab');
       await hidden('Tab leaving toolbar dismisses it');
+      await tabToToolbar();await shown('keyboard focus before pointer departure');
+      // Do not clear focus here: this is the CSS visibility path that used to
+      // remain open even after toolbar-open was removed by the timeout.
+      await move(...Object.values(await center('character')));await move(-20,-20);
+      const focusDeparture=await hidden('pointer departure clears retained keyboard focus');
+      assert.equal(focusDeparture.focusWithin,false);
+      await tabToToolbar();await shown('focus-only toolbar before outside movement');
+      await move(1,1);await hidden('outside movement dismisses focus-only toolbar');
+      await move(...Object.values(await center('character')));await move(-20,-20);
+      await tabToToolbar();await key('Enter');await shown('keyboard takeover cancels pointer timer');
+      for(let i=0;i<5&&await evaluate(`!!document.activeElement?.closest('.toolbar')`);i++)await key('Tab');
+      await hidden('Tab after keyboard takeover clears the stale hover state');
       cases.push({mirror,scale,mouseClicksDoNotPin:true,transparentRootIgnored:true,hiddenMouseHitDisabled:true,tabReachable:true,keyboardActivationPreserved:true,escapeObservation,tabAwayDismisses:true});
     }
     phase='blur and hidden lifecycle';
     settings=sanitize({...settings,mirror:false});revision++;publish();await clearFocus();await tabToToolbar();await shown('before window blur');
     const lifecycle=[];
-    await evaluate(`window.dispatchEvent(new Event('blur'));`);lifecycle.push({event:'window-blur',...await sample()});
+    await evaluate(`window.dispatchEvent(new Event('blur'));`);lifecycle.push({event:'window-blur',...await hidden('window blur dismisses focused toolbar')});
+    await tabToToolbar();await shown('before document hide');
     await evaluate(`Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'));void 0`);
-    lifecycle.push({event:'document-hidden',...await sample()});
+    lifecycle.push({event:'document-hidden',...await hidden('hidden document dismisses focused toolbar')});
     await evaluate(`delete document.hidden;document.dispatchEvent(new Event('visibilitychange'));void 0`);lifecycle.push({event:'document-restored',...await sample()});
+    await tabToToolbar();await shown('before presence hide');
     win.webContents.send('presence',{visible:false});await until(()=>evaluate(`document.body.classList.contains('presence-hidden')`));
     win.webContents.send('presence',{visible:true});await until(()=>evaluate(`!document.body.classList.contains('presence-hidden')`));
-    lifecycle.push({event:'presence-hide-restore',...await sample()});
+    lifecycle.push({event:'presence-hide-restore',...await hidden('presence restore cannot reopen stale toolbar')});
     // The fixture remains an invisible offscreen surface for its whole life.
     // Observe hide only; never show a temporary native window to the user.
     win.hide();await pause(100);await move(-20,-20);

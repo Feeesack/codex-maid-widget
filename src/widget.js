@@ -6,7 +6,8 @@ const $ = id => document.getElementById(id);
 const mirrorFlip = window.MaidMirrorFlip?.create({ image: $('maid-image') });
 let current, mode = 'quota', hideTimer, noticeTimer, phraseIndex = -1, lastTurnTimestamp, initializedTurn = false;
 let displayed = null, animationId;
-const modes = ['quota','conversation','accounts','today','week','lastTurn','phrase'];
+const modes = ['quota','conversation','accounts','today','week','lastTurn','phrase','resetForecast','chat'];
+let miniChat;
 let conversationVisible = false, conversationRequest = 0, conversationPending = false;
 let conversationSelectionMode = 'auto';
 let lastConversationResult = null, lastConversationLoading = false, lastConversationChoices = null;
@@ -14,6 +15,7 @@ let modeWriteGeneration = 0, modeWritePending = 0, lastSettingsRevision = -1;
 const accountCards = new Map(), accountResetEvents = new Map();
 let accountRequest = 0, accountFeedbackTimer;
 let accountFeedbackSource = '本机记录推算 · 历史账号需登录确认';
+let resetForecastPending = false, resetForecastGeneration = 0;
 function clearBounceMotion(keepPressed = false) { for (const id of ['character', 'bubble-motion']) { $(id).classList.remove('bounce', 'account-alarm-bounce'); if (!keepPressed) $(id).classList.remove('interaction-pressed'); } if (!keepPressed) $('widget').classList.remove('drag-interaction'); }
 function clearBounce() { interactionHeld = false; interactionSound?.stop(); clearBounceMotion(); }
 const themeCache = new Map();
@@ -134,9 +136,62 @@ function renderPhrase() {
   fitPhraseText();
 }
 function nextPhrase() { const list = current?.settings?.phrases || ['Tibo 义父，reset please……']; phraseIndex = (phraseIndex + 1) % list.length; renderPhrase(); }
+function resetForecastTime(value) {
+  const date = typeof value === 'string' ? new Date(value) : null;
+  return date && Number.isFinite(date.getTime()) ? date.toLocaleString(locale(), {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '--';
+}
+function resetForecastSignal(data) {
+  const signal = data?.signal, at = signal && Date.parse(signal.at);
+  return ['live','demo','stale','offline'].includes(data?.status) && Number.isFinite(at) && at <= Date.now() + 5 * 60_000 ? signal : null;
+}
+function updateResetForecastDeadline(data = current?.resetForecast) {
+  const signal = resetForecastSignal(data);
+  if (!signal) return;
+  const cached = !['live','demo'].includes(data.status), deadline = Date.parse(signal.deadlineAt), observation = signal.deadlineKind === 'observation', reportedDone = signal.pending === 'done';
+  const remaining = signal.state === 'expired' ? 0 : Number.isFinite(deadline) ? Math.max(0, Math.ceil((deadline - Date.now()) / 1000)) : null;
+  $('reset-deadline').textContent = reportedDone ? t('仍待核实') : remaining === null ? t('时间待公布') : [Math.floor(remaining / 3600), Math.floor(remaining % 3600 / 60), remaining % 60].map(value => String(value).padStart(2,'0')).join(':');
+  $('reset-deadline').classList.toggle('deadline-unknown', reportedDone || remaining === null);
+  $('reset-deadline-label').textContent = t(cached ? reportedDone ? '缓存消息 · 待联网核实' : '缓存截止 · 待核实' : reportedDone ? 'Tibo 自述 · 待确认' : signal.state === 'expired' ? observation ? '观察窗口已过 · 待确认' : '承诺窗口已过 · 待确认' : remaining === null ? '公告时间 · 待确认' : remaining === 0 ? observation ? '已到观察时间 · 待确认' : '已到公告时间 · 待确认' : observation ? '观察截止 · 待确认' : '公告截止 · 待确认');
+  $('reset-announcement').title = [Number.isFinite(deadline) ? t(observation ? '观察窗口：{time}' : '公告窗口：{time}', {time:resetForecastTime(signal.deadlineAt)}) : t('没有可核实的公告截止时间'), typeof signal.deadlineQuote === 'string' ? signal.deadlineQuote.slice(0,500) : ''].filter(Boolean).join('\n');
+}
+function renderResetForecast(value = current?.resetForecast) {
+  resetForecastGeneration++;
+  const data = value || {status:'connecting'}, live = ['live','demo'].includes(data.status);
+  const probability = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? `${Math.round(value)}%` : '--';
+  $('reset-probability-24').textContent = probability(data.probability24h);
+  $('reset-probability-48').textContent = probability(data.probability48h);
+  const signal = resetForecastSignal(data);
+  $('reset-signal').textContent = t(signal ? !live ? '缓存信号 · 待核实' : signal.pending === 'done' ? 'Tibo 表示已重置' : signal.state === 'expired' ? signal.deadlineKind === 'observation' ? '观察窗口已过' : '承诺窗口已过' : signal.pending === 'on_its_way' ? '重置正在路上' : signal.kind === 'promise' ? 'Tibo 承诺重置' : 'Tibo 有重置信号' : live ? '暂无新信号' : '信号待联网核实');
+  $('reset-signal').title = signal ? [typeof signal.summary === 'string' ? signal.summary.slice(0, 500) : '', signal.deadlineAt ? t(signal.deadlineKind === 'observation' ? '观察窗口：{time}' : '公告窗口：{time}', {time:resetForecastTime(signal.deadlineAt)}) : '', t('信号不代表额度已重置')].filter(Boolean).join('\n') : '';
+  $('reset-announcement').hidden = !signal;
+  $('resetForecast-view').classList.toggle('forecast-announcement', !!signal);
+  updateResetForecastDeadline(data);
+  $('reset-last-confirmed').textContent = t('上次重置：{time}', {time:resetForecastTime(data.lastResetAt)});
+  $('reset-confidence').textContent = t('置信度：{level}', {level:t(({low:'低',medium:'中',high:'高'})[data.confidence] || '未知')});
+  const time = resetForecastTime(data.updatedAt || data.fetchedAt);
+  $('reset-forecast-status').textContent = resetForecastPending ? t('正在刷新…') : t(({live:'{time} 更新',demo:'演示预测 · {time}',stale:'缓存 {time} · 请核实',offline:'离线 · 点击重试',disabled:'预测暂不可用',connecting:'正在连接预测服务…'})[data.status] || '离线 · 点击重试', {time});
+  $('reset-forecast-status').title = [data.updatedAt ? t('来源更新：{time}', {time:resetForecastTime(data.updatedAt)}) : '', data.fetchedAt ? t('本机获取：{time}', {time:resetForecastTime(data.fetchedAt)}) : ''].filter(Boolean).join('\n');
+  $('resetForecast-view').classList.toggle('forecast-stale', !live);
+  $('resetForecast-view').setAttribute('aria-busy', String(resetForecastPending));
+  if (mode === 'resetForecast') $('bubble').title = t('第三方预测 · 非到账保证') + '\n' + t('点击气泡刷新预测；使用左右箭头翻页');
+}
+async function refreshResetForecast() {
+  if (resetForecastPending || typeof window.maid.refreshResetForecast !== 'function') return;
+  resetForecastPending = true; renderResetForecast();
+  const generation = resetForecastGeneration;
+  try {
+    const result = await window.maid.refreshResetForecast();
+    // A state broadcast is authoritative over an older IPC response.
+    if (generation === resetForecastGeneration && current) {
+      current = {...current, resetForecast:result};
+    }
+  } catch {
+    if (generation === resetForecastGeneration && current) current = {...current, resetForecast:{...current.resetForecast,status:current.resetForecast?.fetchedAt ? 'stale' : 'offline'}};
+  } finally { resetForecastPending = false; renderResetForecast(); reveal(); }
+}
 function visibleBubblePages(settings = current?.settings || {}) {
   const order = [...new Set([...(Array.isArray(settings.bubblePageOrder) ? settings.bubblePageOrder : []),...modes])].filter(id => modes.includes(id));
-  const visible = order.filter(id => !settings.bubbleHiddenPages?.includes(id));
+  const visible = order.filter(id => (id !== 'chat' || settings.chatPageEnabled === true) && !settings.bubbleHiddenPages?.includes(id));
   return visible.length ? visible : ['quota'];
 }
 function defaultBubblePage(settings = current?.settings || {}) {
@@ -144,7 +199,7 @@ function defaultBubblePage(settings = current?.settings || {}) {
   return visible.includes(selected) ? selected : visible[0];
 }
 function bubblePageName(id) {
-  return t(({quota:'额度',conversation:'对话状态',accounts:'账号管理',today:'今日',week:'本周',lastTurn:'用量',phrase:'女仆'})[id] || '内容');
+  return t(({quota:'额度',conversation:'对话状态',accounts:'账号管理',today:'今日',week:'本周',lastTurn:'用量',phrase:'女仆',resetForecast:'重置预测',chat:'桌宠聊天'})[id] || '内容');
 }
 function updatePageNavigation() {
   const visible = visibleBubblePages(), index = visible.indexOf(mode), disabled = visible.length < 2;
@@ -167,7 +222,10 @@ function setMode(value, persist = true) {
   mode = visibleBubblePages().includes(value) ? value : defaultBubblePage();
   conversationVisible = mode === 'conversation';
   $('conversation-view').setAttribute('aria-busy', 'false');
-  for (const item of modes) $(item+'-view').hidden = mode !== item;
+  for (const item of modes) { const view = $(item+'-view'); if (view) view.hidden = mode !== item; }
+  // Keep the page controller usable in small isolated harnesses that extract
+  // this function without the optional chat mount binding.
+  if (typeof miniChat !== 'undefined') miniChat?.setVisible(mode === 'chat');
   fitTokenLabels();
   $('bubble-label').textContent = bubblePageName(mode);
   $('bubble').setAttribute('aria-label', t('Codex {page}气泡', {page:$('bubble-label').textContent}));
@@ -196,6 +254,11 @@ function setMode(value, persist = true) {
     updateAccountTimers();
     if (persist) void refreshAccounts();
   }
+  if (mode === 'resetForecast') {
+    renderResetForecast();
+    if (persist) void refreshResetForecast();
+  }
+  if (mode === 'chat') { $('bubble').title = t('桌宠聊天'); if (persist) void miniChat?.refresh(); }
 }
 function renderConversation(result, loading = false) {
   lastConversationResult = result; lastConversationLoading = loading;
@@ -347,16 +410,29 @@ async function accountAction(entry, action) {
   }
 }
 function createAccountCard(account) {
-  const card = accountElement('article', 'account-card');
+  const card = accountElement('article', 'account-card'); card.dataset.accountId = account.id;
   const heading = accountElement('div', 'account-heading');
   const name = accountElement('strong', 'account-name');
   const badge = accountElement('span', 'account-badge');
   const actions = accountElement('span', 'account-actions');
-  const rename = accountElement('button', '', '改名'), remove = accountElement('button', '', '移除');
+  const rename = accountElement('button', 'account-icon-button'), remove = accountElement('button', 'account-icon-button');
+  for (const [button, label, icon] of [[rename, '改名', 'pencil-edit'], [remove, '移除', 'delete']]) {
+    button.dataset.i18nTitle = button.dataset.i18nAriaLabel = label;
+    button.title = t(label); button.setAttribute('aria-label', t(label));
+    const glyph = accountElement('span', 'account-action-icon account-icon-' + icon); glyph.setAttribute('aria-hidden', 'true'); button.append(glyph);
+  }
   rename.type = remove.type = 'button'; actions.append(rename, remove); heading.append(name, badge, actions);
   const plan = accountElement('div', 'account-plan');
-  const track = accountElement('div', 'account-track'), bar = accountElement('span');
-  track.setAttribute('role', 'progressbar'); track.setAttribute('aria-valuemin', '0'); track.setAttribute('aria-valuemax', '100'); track.append(bar);
+  const track = accountElement('div', 'account-track'), cycle = accountElement('span', 'account-cycle');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 36 36'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false');
+  const circles = ['account-ring-track', 'account-ring-value'].map(className => {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    for (const [key, value] of Object.entries({class:className, cx:'18', cy:'18', r:'15', pathLength:'100'})) circle.setAttribute(key, value);
+    svg.append(circle); return circle;
+  });
+  const bar = circles[1]; cycle.setAttribute('aria-hidden', 'true');
+  track.setAttribute('role', 'progressbar'); track.setAttribute('aria-valuemin', '0'); track.setAttribute('aria-valuemax', '100'); track.append(svg, cycle);
   const countdown = accountElement('div', 'account-countdown');
   const reset = accountElement('div', 'account-detail'), remaining = accountElement('div', 'account-detail');
   const editor = accountElement('form', 'account-editor'); editor.hidden = true;
@@ -367,8 +443,10 @@ function createAccountCard(account) {
   const confirmRemove = accountElement('button', '', '确认移除'), cancelRemove = accountElement('button', '', '取消');
   confirmRemove.type = cancelRemove.type = 'button';
   confirm.append(accountElement('span', '', '下次登录会再次记录'), confirmRemove, cancelRemove);
-  card.append(heading, plan, editor, confirm, track, countdown, reset, remaining);
-  const entry = {card, name, badge, plan, actions, track, bar, countdown, reset, remaining, editor, input, confirm, account, busy: false};
+  const summary = accountElement('div', 'account-summary'), metadata = accountElement('div', 'account-metadata');
+  metadata.append(plan, remaining); summary.append(heading, countdown, metadata); reset.hidden = true;
+  card.append(track, summary, editor, confirm, reset);
+  const entry = {card, name, badge, plan, actions, track, bar, cycle, countdown, reset, remaining, editor, input, confirm, account, busy: false};
   rename.addEventListener('click', () => {
     closeAccountEditor(entry); actions.hidden = true; editor.hidden = false;
     input.value = entry.account.userEdited === true || entry.account.labelSource === 'manual' ? entry.account.label : '';
@@ -399,8 +477,13 @@ function createAccountCard(account) {
 }
 function renderAccounts(value) {
   if (!Array.isArray(value?.accounts)) return;
+  const focused = document.activeElement;
+  const editing = focused && $('account-list').contains(focused) ? { element:focused, start:focused.selectionStart, end:focused.selectionEnd, direction:focused.selectionDirection } : null;
   ++accountRequest;
-  const accounts = value.accounts.filter(account => typeof account?.id === 'string' && account.id).slice(0, 100);
+  const now = Date.now() / 1000;
+  const resetDelay = account => Number.isFinite(account.resetsAt) && account.resetsAt > 0 ? Math.max(0, account.resetsAt - now) : Infinity;
+  const accounts = value.accounts.filter(account => typeof account?.id === 'string' && account.id).slice(0, 100)
+    .sort((left, right) => { const a = resetDelay(left), b = resetDelay(right); return a === b ? 0 : a < b ? -1 : 1; });
   const ids = new Set(accounts.map(account => account.id));
   for (const [id, entry] of accountCards) {
     if (!ids.has(id)) { entry.card.remove(); accountCards.delete(id); }
@@ -428,6 +511,12 @@ function renderAccounts(value) {
     const node = $('account-list').children[index];
     if (node !== entry.card) $('account-list').insertBefore(entry.card, node || null);
   }
+  // insertBefore preserves the editor node and value, but moving its parent can
+  // drop browser focus. Restore only a still-present account's active control.
+  if (editing?.element.isConnected && document.activeElement !== editing.element) {
+    editing.element.focus({preventScroll:true});
+    if (typeof editing.start === 'number') editing.element.setSelectionRange(editing.start, editing.end, editing.direction);
+  }
   $('accounts-empty').hidden = accounts.length > 0;
   $('accounts-empty').textContent = t(value.storageError ? '本机账号记录暂不可用，原文件已保留。' : '登录账号并读取额度后，自动记录在这里。');
   $('account-list').hidden = !accounts.length;
@@ -439,15 +528,25 @@ function updateAccountTimers() {
     const account = entry.account, known = Number.isFinite(account.resetsAt) && account.resetsAt > 0;
     const seconds = known ? Math.max(0, Math.ceil(account.resetsAt - now)) : null;
     const progress = known ? Math.max(0, Math.min(100, (now - (account.resetsAt - 18000)) / 180)) : 0;
-    entry.bar.style.width = `${progress}%`;
+    entry.bar.style.strokeDashoffset = String(100 - progress);
+    entry.bar.style.opacity = progress > 0 ? '1' : '0';
+    entry.cycle.textContent = known ? '5h' : '?';
+    entry.track.classList.toggle('account-cycle-unknown', !known);
+    entry.track.classList.toggle('account-cycle-pending', known && seconds === 0);
     if (known) entry.track.setAttribute('aria-valuenow', String(Math.round(progress))); else entry.track.removeAttribute('aria-valuenow');
     entry.track.setAttribute('aria-valuetext', known ? t('五小时周期已过 {percent}%', {percent:Math.round(progress)}) : t('重置时间未知'));
     entry.countdown.textContent = !known ? t('五小时重置时间未知') : seconds === 0 ? t('预计已重置，待登录确认')
       : t('距重置 {time}', {time:`${Math.floor(seconds / 3600).toString().padStart(2, '0')}:${Math.floor(seconds % 3600 / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`});
     entry.reset.textContent = known ? t('预计 {time} 重置', {time:new Date(account.resetsAt * 1000).toLocaleString(locale(), {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})}) : t('读取此账号额度后才能推算');
-    const remaining = Number.isFinite(account.remainingPercent) ? `${Number(account.remainingPercent.toFixed(1))}%` : '--';
-    entry.remaining.textContent = t('上次剩余 {remaining} · {window}', {remaining, window:t(known ? '五小时周期' : '暂无五小时记录')});
-    entry.remaining.title = Number.isFinite(account.observedAt) ? t('最近观察：{time}', {time:new Date(account.observedAt * 1000).toLocaleString(locale())}) : t('尚无额度观察记录');
+    const remaining = Number.isFinite(account.remainingPercent) && !(known && seconds === 0) ? `${Number(account.remainingPercent.toFixed(1))}%` : '--';
+    const weeklyExpired = Number.isFinite(account.weeklyResetsAt) && account.weeklyResetsAt > 0 && account.weeklyResetsAt <= now;
+    const weekly = Number.isFinite(account.weeklyRemainingPercent) && !weeklyExpired ? `${Number(account.weeklyRemainingPercent.toFixed(1))}%` : '--';
+    entry.remaining.textContent = t('5h {primary} · 周 {weekly}', {primary:remaining, weekly});
+    const quotaLabel = t('五小时额度剩余 {primary}；周额度剩余 {weekly}', {primary:remaining, weekly});
+    entry.remaining.setAttribute('aria-label', quotaLabel);
+    entry.remaining.title = [quotaLabel, Number.isFinite(account.observedAt) ? t('5h 最近观察：{time}', {time:new Date(account.observedAt * 1000).toLocaleString(locale())}) : t('尚无额度观察记录'), Number.isFinite(account.weeklyObservedAt) ? t('周额度最近观察：{time}', {time:new Date(account.weeklyObservedAt * 1000).toLocaleString(locale())}) : t('尚无周额度观察记录')].join('\n');
+    entry.countdown.title = [entry.reset.textContent, entry.remaining.title].join('\n');
+    entry.track.title = [entry.track.getAttribute('aria-valuetext'), entry.countdown.textContent, entry.reset.textContent].join('\n');
   }
 }
 async function refreshAccounts() {
@@ -457,31 +556,86 @@ async function refreshAccounts() {
     if (request === accountRequest) renderAccounts(result?.accountManagement || result);
   } catch { if (request === accountRequest) accountFeedback('本机账号记录读取失败，请刷新重试。'); }
 }
+// The ledger has at most 100 accounts. Keep one pending message per account,
+// with a separate ordinary-notice slot so status/error feedback stays immediate.
+const accountResetNoticeQueue = [];
+let activeAccountResetNotice = null, ordinaryNoticeActive = false;
+let noticeGeneration = 0, noticeSurfaceVisible = true, noticeDragDepth = 0;
+function dismissActiveAccountResetNotice() {
+  if (!activeAccountResetNotice) return;
+  activeAccountResetNotice = null;
+  clearTimeout(noticeTimer); noticeTimer = null; noticeGeneration++;
+  $('notice').hidden = true;
+  for (const id of ['character', 'bubble-motion']) $(id).classList.remove('account-alarm-bounce');
+}
+function cancelAccountResetNotices() {
+  accountResetNoticeQueue.length = 0; dismissActiveAccountResetNotice();
+}
+function dismissNotices() {
+  cancelAccountResetNotices();
+  clearTimeout(noticeTimer); noticeTimer = null; noticeGeneration++;
+  ordinaryNoticeActive = false; $('notice').hidden = true;
+}
+function showNotice(message, completed) {
+  clearTimeout(noticeTimer);
+  const generation = ++noticeGeneration;
+  $('notice').textContent = t(message); $('notice').hidden = false;
+  noticeTimer = setTimeout(() => {
+    if (generation !== noticeGeneration) return;
+    noticeTimer = null; $('notice').hidden = true; completed();
+  }, 5000);
+}
+function drainAccountResetNotices() {
+  if (current?.settings.accountResetAlerts === false || document.hidden || !noticeSurfaceVisible) { cancelAccountResetNotices(); return; }
+  if (activeAccountResetNotice || ordinaryNoticeActive || interactionHeld || noticeDragDepth > 0 || current?.visualPose?.moving === true) return;
+  const item = accountResetNoticeQueue.shift();
+  if (!item) return;
+  activeAccountResetNotice = item;
+  showNotice(t('{name}的五小时额度预计已重置，请登录确认。', {name:item.name}), () => {
+    activeAccountResetNotice = null; drainAccountResetNotices();
+  });
+  // A normal notice may interrupt and requeue this text. Its alarm belongs to
+  // the original event and must not sound or bounce a second time on resumption.
+  if (!item.announced) { item.announced = true; accountAlarmBounce(); }
+  updateAccountTimers();
+}
 function handleAccountReset(value) {
-  if (!value || typeof value.id !== 'string' || current?.settings.accountResetAlerts === false) return;
+  if (!value || typeof value.id !== 'string') return;
   const key = `${value.id}:${Number.isFinite(value.resetsAt) ? value.resetsAt : Math.floor(Date.now() / 60000)}`;
   if (accountResetEvents.has(key)) return;
   accountResetEvents.set(key, true);
   if (accountResetEvents.size > 200) accountResetEvents.delete(accountResetEvents.keys().next().value);
+  // Hidden/muted events remain consumed, including after the window is shown
+  // again or reminders are re-enabled. Only visible, enabled events are queued.
+  if (current?.settings.accountResetAlerts === false || document.hidden || !noticeSurfaceVisible) return;
   const name = Array.from(typeof value.label === 'string' && value.label.trim() ? value.label.trim() : t('账号'));
   const shortName = name.length > 48 ? name.slice(0, 47).join('') + '…' : name.join('');
-  notice(t('{name}的五小时额度预计已重置，请登录确认。', {name:shortName}));
-  accountAlarmBounce();
-  updateAccountTimers();
+  const pending = accountResetNoticeQueue.find(item => item.id === value.id);
+  if (pending) pending.name = shortName;
+  else if (activeAccountResetNotice?.id === value.id) activeAccountResetNotice.name = shortName;
+  else if (accountResetNoticeQueue.length + Number(!!activeAccountResetNotice) < 100) accountResetNoticeQueue.push({id:value.id, name:shortName, announced:false});
+  drainAccountResetNotices();
 }
 function reveal() {
   clearTimeout(hideTimer);
   const enabled = current?.settings.showBubble !== false;
   setBubbleVisible(enabled);
-  if (enabled && current?.settings.autoHideSeconds) hideTimer = setTimeout(() => setBubbleVisible(false), current.settings.autoHideSeconds * 1000);
+  if (enabled && current?.settings.autoHideSeconds && !miniChat?.isExpanded) hideTimer = setTimeout(() => setBubbleVisible(false), current.settings.autoHideSeconds * 1000);
 }
 function setBubbleVisible(visible) {
+  if (!visible) miniChat?.setExpanded(false, false);
   $('bubble').classList.toggle('hidden-bubble', !visible);
   $('bubble').inert = !visible;
   $('bubble').setAttribute('aria-hidden', String(!visible));
   document.querySelectorAll('.thought-dot').forEach(el => el.classList.toggle('hidden-dots', !visible));
 }
-function notice(message) { clearTimeout(noticeTimer); $('notice').textContent = t(message); $('notice').hidden = false; noticeTimer = setTimeout(() => $('notice').hidden = true, 5000); }
+function notice(message) {
+  if (activeAccountResetNotice) {
+    accountResetNoticeQueue.unshift(activeAccountResetNotice); activeAccountResetNotice = null;
+  }
+  ordinaryNoticeActive = true;
+  showNotice(message, () => { ordinaryNoticeActive = false; drainAccountResetNotices(); });
+}
 let audio;
 let interactionHeld = false, interactionPressedAt = 0, interactionWasMoving = false;
 const interactionSound = window.MaidInteractionAudio.create({ samples: window.MaidInteractionAudio.withLocalSamples(window.MaidInteractionSamples, window.MaidLocalInteractionSamples), enabled: () => current?.settings.sound === true, preset: () => current?.settings.interactionSound || window.MaidInteractionSamples.defaultId });
@@ -514,6 +668,9 @@ function releaseInteraction(withSound = true) {
   }
   for (const element of elements) element.classList.remove('interaction-pressed');
   if (withSound) interactionSound.release();
+  // Release/cancel callers may still clear their pressed pose in this turn.
+  // Let those complete before a queued alarm starts its independent animation.
+  queueMicrotask(drainAccountResetNotices);
 }
 function startBounce(className) {
   clearBounce();
@@ -560,6 +717,14 @@ function render(value) {
     if (!Array.isArray(value.accountManagement?.accounts)) $('accounts-empty').textContent = t('登录账号并读取额度后，自动记录在这里。');
   }
   current = value;
+  if (value.settings.accountResetAlerts === false) cancelAccountResetNotices();
+  else if (Array.isArray(value.accountManagement?.accounts)) {
+    const registered = new Set(value.accountManagement.accounts.map(account => account.id));
+    if (activeAccountResetNotice && !registered.has(activeAccountResetNotice.id)) dismissActiveAccountResetNotice();
+    for (let index = accountResetNoticeQueue.length - 1; index >= 0; index--) {
+      if (!registered.has(accountResetNoticeQueue[index].id)) accountResetNoticeQueue.splice(index, 1);
+    }
+  }
   if (soundChanged) interactionSound.stop();
   if (!value.settings.sound) interactionSound.stop();
   else if (soundChanged) interactionSound.prepare();
@@ -569,6 +734,7 @@ function render(value) {
   else if (!visibleBubblePages().includes(mode)) setMode(defaultBubblePage(), false);
   else if (phrasesChanged && mode === 'phrase') nextPhrase();
   if (languageChanged && !modeChanged) {
+    miniChat?.retranslate();
     $('bubble-label').textContent = bubblePageName(mode);
     $('bubble').setAttribute('aria-label', t('Codex {page}气泡', {page:$('bubble-label').textContent}));
     if (mode === 'phrase') renderPhrase();
@@ -605,8 +771,9 @@ function render(value) {
   const statusText = value.demo ? t('演示数据 · 不代表真实账户') : data.stale ? t('连接异常 · 显示 {time} 的上次额度', {time}) : t(data.error || (data.status === 'connecting' ? '正在连接本机 Codex…' : t('每 {seconds} 秒自动刷新 · {time} 更新', {seconds:value.settings.refreshSeconds, time})));
   $('connection').title = statusText;
   $('connection').setAttribute('aria-label',statusText);
-  if (!conversationVisible && mode !== 'accounts') $('bubble').title = statusText + '\n' + t('点击刷新，按住拖动；使用左右箭头切换内容');
+  if (!conversationVisible && !['accounts','resetForecast','chat'].includes(mode)) $('bubble').title = statusText + '\n' + t('点击刷新，按住拖动；使用左右箭头切换内容');
   renderAccounts(value.accountManagement);
+  renderResetForecast(value.resetForecast);
   renderTokens('today-tokens', data.today?.tokens);
   $('today-detail').textContent = t(data.today ? data.today.complete === false ? '本机部分记录 · 含本机各账号' : '本机日志 · 含本机各账号' : '暂未取得用量数据');
   renderTokens('week-tokens', data.weekly?.tokens);
@@ -620,9 +787,13 @@ function render(value) {
   if (initializedTurn && data.lastTurn?.timestamp && data.lastTurn.timestamp !== lastTurnTimestamp) { notice(t('最近一轮消耗 {tokens} tokens', {tokens:compact(data.lastTurn.tokens)})); bounce(); }
   if (data.status !== 'connecting') { lastTurnTimestamp = data.lastTurn?.timestamp || null; initializedTurn = true; }
   countdown(); if (bubbleChanged || characterChanged) reveal();
+  drainAccountResetNotices();
 }
-async function doRefresh() { $('refresh').animate([{rotate:'0deg'},{rotate:'360deg'}], {duration:650}); await window.maid.refresh(); if (current?.snapshot.error) notice(current.snapshot.error); else reveal(); }
+async function doRefresh() { $('refresh').animate([{rotate:'0deg'},{rotate:'360deg'}], {duration:650}); if (mode === 'resetForecast') { await refreshResetForecast(); return; } await window.maid.refresh(); if (current?.snapshot.error) notice(current.snapshot.error); else reveal(); }
 $('refresh').addEventListener('click', doRefresh);
+$('reset-source').addEventListener('click', event => { event.stopPropagation(); void window.maid.openResetSource().catch(() => notice('来源页面暂未打开，请重试')); });
+$('reset-source').addEventListener('focus', () => clearTimeout(hideTimer));
+$('reset-source').addEventListener('blur', reveal);
 $('conversation-select').addEventListener('change', () => inspectConversation($('conversation-select').value === '@auto' ? null : $('conversation-select').value));
 $('conversation-select').addEventListener('focus', () => clearTimeout(hideTimer));
 $('conversation-select').addEventListener('blur', reveal);
@@ -645,10 +816,16 @@ $('settings').addEventListener('click', () => window.maid.action('settings'));
 $('hide').addEventListener('click', () => window.maid.action('hide'));
 document.addEventListener('contextmenu', e => { e.preventDefault(); window.maid.action('settings'); });
 let interactionKey = null;
-document.addEventListener('keydown', e => { if(e.target.closest('select,input,textarea,button')) return; if(e.key.toLowerCase() === 'q' || e.key === ' ' || (e.key === 'Enter' && e.target === $('character'))) { e.preventDefault(); if (!e.repeat && interactionKey === null && pressInteraction()) interactionKey = e.key.toLowerCase(); } });
+function dismissCharacterFocus() { if (document.activeElement === $('character')) $('character').blur(); }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && e.target === $('character')) { e.preventDefault(); interactionKey = null; releaseInteraction(); clearBounceMotion(); dismissCharacterFocus(); return; }
+  if(e.target.closest('select,input,textarea,button')) return;
+  if(e.key.toLowerCase() === 'q' || e.key === ' ' || (e.key === 'Enter' && e.target === $('character'))) { e.preventDefault(); if (!e.repeat && interactionKey === null && pressInteraction()) interactionKey = e.key.toLowerCase(); }
+});
 document.addEventListener('keyup', e => { if (interactionKey !== null && e.key.toLowerCase() === interactionKey) { e.preventDefault(); interactionKey = null; releaseInteraction(); } });
-window.addEventListener('blur', () => { interactionKey = null; releaseInteraction(); clearBounceMotion(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) { interactionKey = null; clearBounce(); } });
+window.addEventListener('blur', () => { interactionKey = null; releaseInteraction(); clearBounceMotion(); dismissCharacterFocus(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { dismissNotices(); interactionKey = null; clearBounce(); dismissCharacterFocus(); } });
+window.addEventListener('beforeunload', dismissNotices);
 $('character').addEventListener('animationend', event => {
   if (event.target !== $('character') || event.animationName !== 'accountAlarmCharacter') return;
   clearBounce();
@@ -658,10 +835,10 @@ $('character').addEventListener('transitionend', event => {
 });
 for (const target of [$('character'), $('bubble')]) {
   let start, moved = false;
-  target.addEventListener('pointerdown', e => { if(e.button !== 0 || start || e.target.closest('button,select,option,input,form,.account-list')) return; start = {x:e.screenX,y:e.screenY,pointerId:e.pointerId,interaction:target.id === 'character' && pressInteraction()}; moved = false; target.setPointerCapture(e.pointerId); window.maid.drag('start'); });
+  target.addEventListener('pointerdown', e => { if(e.button !== 0 || start || e.target.closest('button,select,option,input,form,.account-list')) return; start = {x:e.screenX,y:e.screenY,pointerId:e.pointerId,interaction:target.id === 'character' && pressInteraction()}; noticeDragDepth++; moved = false; target.setPointerCapture(e.pointerId); window.maid.drag('start'); });
   target.addEventListener('pointermove', e => { if(!start || start.pointerId !== e.pointerId) return; if(e.buttons === 0) { cancel(e); return; } if(Math.hypot(e.screenX-start.x,e.screenY-start.y)>4) { if(!moved) { if(start.interaction && interactionHeld) { $('widget').classList.add('drag-interaction'); for(const id of ['character','bubble-motion']) $(id).classList.add('interaction-pressed'); } clearBounceMotion(true); } moved=true; } if(moved) window.maid.drag('move'); });
-  const finish = e => { if(!start || start.pointerId !== e.pointerId || e.button !== 0) return; const active=start; window.maid.drag('end'); start=null; if(active.interaction) releaseInteraction(); if(target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId); if(!moved) { if(target.id === 'bubble') { if(conversationVisible) void inspectConversation(); else void doRefresh(); } else if(mode==='phrase') nextPhrase(); } };
-  const cancel = e => { if(start && start.pointerId === e.pointerId) { const active=start; window.maid.drag('end'); start=null; if(active.interaction) releaseInteraction(); clearBounceMotion(); if(target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId); } };
+  const finish = e => { if(!start || start.pointerId !== e.pointerId || e.button !== 0) return; const active=start; window.maid.drag('end'); start=null; noticeDragDepth=Math.max(0,noticeDragDepth-1); if(active.interaction) releaseInteraction(); if(target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId); if(!moved) { if(target.id === 'bubble') { if(conversationVisible) void inspectConversation(); else void doRefresh(); } else if(mode==='phrase') nextPhrase(); } drainAccountResetNotices(); };
+  const cancel = e => { if(start && start.pointerId === e.pointerId) { const active=start; window.maid.drag('end'); start=null; noticeDragDepth=Math.max(0,noticeDragDepth-1); if(active.interaction) releaseInteraction(); clearBounceMotion(); if(target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId); drainAccountResetNotices(); } };
   target.addEventListener('pointerup', finish);
   target.addEventListener('pointercancel', cancel);
   target.addEventListener('lostpointercapture', cancel);
@@ -669,23 +846,43 @@ for (const target of [$('character'), $('bubble')]) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && start) cancel({pointerId:start.pointerId}); });
 }
 let toolbarHideTimer;
+let toolbarPointerInside = false;
+function dismissToolbar() {
+  clearTimeout(toolbarHideTimer); toolbarHideTimer = null;
+  toolbarPointerInside = false;
+  // Focus can also reveal the toolbar through :focus-visible. Clear both
+  // visibility paths so an old button focus cannot pin it after departure.
+  if (document.activeElement?.closest('.toolbar')) document.activeElement.blur();
+  $('widget').classList.remove('toolbar-open');
+}
 function updateToolbarPointer(inside) {
+  toolbarPointerInside = inside;
   if (inside) {
     clearTimeout(toolbarHideTimer); toolbarHideTimer = null;
     $('widget').classList.add('toolbar-open');
-  } else if (!toolbarHideTimer && $('widget').classList.contains('toolbar-open')) {
+  } else if (!toolbarHideTimer && ($('widget').classList.contains('toolbar-open') || document.activeElement?.closest('.toolbar'))) {
     // Repeated movement outside must not postpone dismissal indefinitely.
-    toolbarHideTimer = setTimeout(() => {
-      toolbarHideTimer = null; $('widget').classList.remove('toolbar-open');
-    }, 600);
+    toolbarHideTimer = setTimeout(dismissToolbar, 600);
   }
 }
+document.addEventListener('keydown', e => {
+  if (e.target.closest('.toolbar')) {
+    clearTimeout(toolbarHideTimer); toolbarHideTimer = null;
+    // Keyboard focus now owns visibility; Tab away must not leave a stale hover.
+    if (!toolbarPointerInside) $('widget').classList.remove('toolbar-open');
+  }
+});
+window.addEventListener('blur', dismissToolbar);
+document.addEventListener('visibilitychange', () => { if (document.hidden) dismissToolbar(); });
 document.addEventListener('pointermove', e => {
   const el = document.elementFromPoint(e.clientX,e.clientY), inside = !!el?.closest('.interactive');
+  if (!interactionHeld && !el?.closest('#character')) dismissCharacterFocus();
   updateToolbarPointer(inside); window.maid.pointerRegion(inside);
 });
-document.documentElement.addEventListener('pointerleave', () => { updateToolbarPointer(false); window.maid.pointerRegion(false); });
+document.documentElement.addEventListener('pointerleave', () => { if (!interactionHeld) dismissCharacterFocus(); updateToolbarPointer(false); window.maid.pointerRegion(false); });
 $('character').addEventListener('pointerenter', reveal);
-const initialState = window.MaidPresence.connect(window.maid);
+const initialState = window.MaidPresence.connect(window.maid, visible => { noticeSurfaceVisible = visible; if (!visible) { dismissNotices(); interactionKey = null; clearBounce(); dismissCharacterFocus(); dismissToolbar(); } });
 window.maid.onState(render); window.maid.onBounce(bounce); window.maid.onAccountReset?.(handleAccountReset); initialState.then(render);
-setInterval(() => { countdown(); if (mode === 'accounts') updateAccountTimers(); },1000);
+window.MaidInputFocus?.connect({ window, document, maid: window.maid });
+miniChat = window.MaidChatView?.mountMini({document,maid:window.maid,t,onFocus:()=>clearTimeout(hideTimer),onBlur:reveal});
+setInterval(() => { countdown(); if (mode === 'accounts') updateAccountTimers(); if (mode === 'resetForecast') updateResetForecastDeadline(); },1000);

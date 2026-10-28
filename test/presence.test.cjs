@@ -7,11 +7,14 @@ for (const folder of ['', 'macos/']) {
     const context = { window: {}, document: { body } };
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', folder, 'src/presence.js'), 'utf8'), context);
     const initial = new Promise(done => { resolve = done; });
-    const ready = context.window.MaidPresence.connect({ getState() { queries++; return initial; }, onPresence(fn) { listener = fn; }, pointerRegion() {} });
+    const visibility=[];
+    const ready = context.window.MaidPresence.connect({ getState() { queries++; return initial; }, onPresence(fn) { listener = fn; }, pointerRegion() {} }, visible=>visibility.push(visible));
     listener({ visible: false, animate: true });
     resolve({ windowContainment: { enabled: false, visible: true } }); await ready;
     assert.equal(queries, 1); assert.equal(classes.has('presence-hidden'), true); assert.equal(body.inert, true);
+    assert.deepEqual(visibility,[false],'stale initial state cannot reopen visibility-dependent controls');
     listener({ visible: true, animate: true });
     assert.equal(classes.has('presence-hidden'), false); assert.equal(classes.has('presence-instant'), false); assert.equal(body.inert, false);
+    assert.deepEqual(visibility,[false,true]);
   });
 }

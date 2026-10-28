@@ -9,6 +9,8 @@ const { randomUUID } = require('node:crypto');
 
 const WINDOW_MINUTES = 300;
 const WINDOW_SECONDS = WINDOW_MINUTES * 60;
+const WEEK_MINUTES = 7 * 24 * 60;
+const WEEK_SECONDS = WEEK_MINUTES * 60;
 const MAX_ACCOUNTS = 100;
 const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_TIMESTAMP = 253402300799;
@@ -63,7 +65,7 @@ function refreshLabel(account) {
   return account;
 }
 
-function selectWindow(buckets) {
+function selectWindow(buckets, minutes = WINDOW_MINUTES) {
   if (!Array.isArray(buckets)) return null;
   const candidates = [];
   for (const bucket of buckets.slice(0, 100)) {
@@ -71,13 +73,13 @@ function selectWindow(buckets) {
     const bucketId = typeof bucket.id === 'string' ? bucket.id.slice(0, 160) : '';
     for (const kind of ['primary', 'secondary']) {
       const window = bucket[kind];
-      if (window && typeof window === 'object' && window.windowDurationMins === WINDOW_MINUTES) {
+      if (window && typeof window === 'object' && window.windowDurationMins === minutes) {
         candidates.push({ bucketId, kind, window });
       }
     }
   }
-  // The general Codex bucket wins. Other five-hour buckets have a stable order,
-  // and primary precedes secondary; weekly or unknown windows never substitute.
+  // The general Codex bucket wins, followed by a stable bucket/slot order.
+  // Match the exact duration: weekly and five-hour quotas never substitute.
   candidates.sort((a, b) => Number(b.bucketId === 'codex') - Number(a.bucketId === 'codex') ||
     (a.bucketId < b.bucketId ? -1 : a.bucketId > b.bucketId ? 1 : 0) ||
     Number(a.kind === 'secondary') - Number(b.kind === 'secondary'));
@@ -113,6 +115,8 @@ function readLedger(file) {
         userEdited,
         planType: planType(item.planType), firstSeenAt: item.firstSeenAt, lastSeenAt: item.lastSeenAt,
         observedAt: timestamp(item.observedAt), remainingPercent: percentage(item.remainingPercent),
+        weeklyObservedAt: timestamp(item.weeklyObservedAt), weeklyRemainingPercent: percentage(item.weeklyRemainingPercent),
+        weeklyResetsAt: timestamp(item.weeklyResetsAt),
         confirmedResetsAt, resetSource: confirmedResetsAt ? item.resetSource === 'observed' ? 'observed' : 'estimated' : null,
         alertedThrough: timestamp(item.alertedThrough) || 0,
       });
@@ -186,6 +190,7 @@ class AccountRegistry {
         profileNickname: null, displayName: null, email: null, workspaceName: null, userEdited: false,
         autoLabel: labelFor(null, nextOrdinal), labelSource: 'fallback',
         planType: null, firstSeenAt: seconds, lastSeenAt: seconds, observedAt: null, remainingPercent: null,
+        weeklyObservedAt: null, weeklyRemainingPercent: null, weeklyResetsAt: null,
         confirmedResetsAt: null, resetSource: null, alertedThrough: 0,
       };
       accounts.push(account); nextOrdinal += 1;
@@ -226,6 +231,16 @@ class AccountRegistry {
     } else if (account.confirmedResetsAt !== null) {
       account.resetSource = 'estimated';
     }
+    const weekly = selectWindow(input.buckets, WEEK_MINUTES);
+    if (weekly) {
+      account.weeklyObservedAt = seconds;
+      account.weeklyRemainingPercent = percentage(weekly.remainingPercent);
+      if (account.weeklyRemainingPercent === null && percentage(weekly.usedPercent) !== null) account.weeklyRemainingPercent = 100 - weekly.usedPercent;
+      const reset = timestamp(weekly.resetsAt);
+      // A response without a usable deadline cannot erase the last known
+      // boundary and make an old weekly observation live forever.
+      if (reset !== null && reset >= seconds - WEEK_SECONDS && reset <= seconds + WEEK_SECONDS + 60) account.weeklyResetsAt = reset;
+    }
     this._commit(accounts, nextOrdinal);
     return true;
   }
@@ -236,6 +251,7 @@ class AccountRegistry {
       accounts: this.accounts.map(account => {
         const resetsAt = account.confirmedResetsAt;
         const expired = resetsAt !== null && resetsAt <= seconds;
+        const weeklyExpired = account.weeklyResetsAt !== null && account.weeklyResetsAt <= seconds;
         return {
           id: account.id, label: account.label, autoLabel: account.autoLabel, labelSource: account.labelSource,
           userEdited: account.userEdited, profileNickname: account.profileNickname,
@@ -244,6 +260,8 @@ class AccountRegistry {
           planLabel: planLabel(account.planType), scopeLabel: scopeLabel(account.planType), current: !!current && account.key === current,
           firstSeenAt: account.firstSeenAt, lastSeenAt: account.lastSeenAt, observedAt: account.observedAt,
           remainingPercent: expired ? null : account.remainingPercent,
+          weeklyRemainingPercent: weeklyExpired ? null : account.weeklyRemainingPercent,
+          weeklyObservedAt: account.weeklyObservedAt, weeklyResetsAt: account.weeklyResetsAt,
           resetsAt, resetSource: resetsAt === null ? null : account.resetSource,
           status: resetsAt === null ? 'unknown' : expired ? 'awaiting-confirmation' : 'countdown',
           windowDurationMins: WINDOW_MINUTES,

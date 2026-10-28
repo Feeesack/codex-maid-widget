@@ -16,7 +16,7 @@ app.whenReady().then(async () => {
   const host = new BrowserWindow({ ...config.bounds, show: false, backgroundColor: '#00b4f0',
     webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true, backgroundThrottling: false } });
   host.removeMenu();
-  await host.loadURL('data:text/html,' + encodeURIComponent('<style>body{margin:0;background:#00b4f0;color:#123}h1{margin:24px}</style><h1>Isolated window mode test host</h1>'));
+  await host.loadURL('data:text/html,' + encodeURIComponent('<style>body{margin:0;background:#00b4f0;color:#123}h1{margin:24px}</style><h1>Isolated window mode test host</h1><textarea id="host-editor" aria-label="Synthetic host input"></textarea>'));
   if (config.focus) host.show(); else host.showInactive();
   fs.writeFileSync(config.readyFile, JSON.stringify({ pid: process.pid, id: host.getNativeWindowHandle().readBigUInt64LE().toString() }));
   let previous = 0;
@@ -31,6 +31,8 @@ app.whenReady().then(async () => {
       if (r.action === 'hide') host.hide();
       if (r.action === 'show') host.showInactive();
       if (r.action === 'focus') { host.show(); host.focus(); }
+      if (r.action === 'editor-focus-loop') void host.webContents.executeJavaScript('document.getElementById("host-editor").focus();window.editorFocusTimer=setInterval(()=>document.getElementById("host-editor").focus(),25)');
+      if (r.action === 'editor-focus-stop') void host.webContents.executeJavaScript('clearInterval(window.editorFocusTimer)');
       if (r.action === 'picker') void dialog.showOpenDialog(host, { defaultPath: pickerDirectory, properties: ['openFile'] });
       if (r.action === 'close') host.destroy();
       fs.writeFileSync(config.responseFile, JSON.stringify({ id: r.id, ok: true, alive: !host.isDestroyed() }));

@@ -1,0 +1,55 @@
+'use strict';
+// Production renderer/preload; synthetic IPC and explicit isolated profiles only.
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const root=path.resolve(__dirname,'..'),option=name=>{const i=process.argv.indexOf('--'+name);return i<0?null:process.argv[i+1]},output=option('output'),packaged=option('windows-root');
+assert.ok(output&&path.isAbsolute(output),'An absolute isolated output directory is required');if(packaged)assert.ok(path.isAbsolute(packaged));
+const version=require('../package.json').version;
+if(!process.versions.electron){
+ fs.mkdirSync(output,{recursive:true});const profile=fs.mkdtempSync(path.join(output,'profile-'));
+ for(const p of ['codex','maid','appdata','localappdata','temp','userdata','session','crashes'])fs.mkdirSync(path.join(profile,p));
+ const env={...process.env,CODEX_MAID_BUBBLE_QA:profile,CODEX_HOME:path.join(profile,'codex'),CODEX_MAID_HOME:path.join(profile,'maid'),HOME:profile,USERPROFILE:profile,APPDATA:path.join(profile,'appdata'),LOCALAPPDATA:path.join(profile,'localappdata'),TEMP:path.join(profile,'temp'),TMP:path.join(profile,'temp')};delete env.ELECTRON_RUN_AS_NODE;
+ const child=require('node:child_process').spawn(require('electron'),[__filename,'--output',output,...(packaged?['--windows-root',packaged]:[])],{env,cwd:root,windowsHide:true,stdio:'inherit'});child.on('error',()=>{process.exitCode=1});child.on('exit',code=>{process.exitCode=code??1});
+}else{
+ const {app,BrowserWindow,ipcMain}=require('electron'),profile=process.env.CODEX_MAID_BUBBLE_QA;assert.ok(profile&&path.dirname(profile)===output);
+ for(const [key,p]of Object.entries({CODEX_HOME:'codex',CODEX_MAID_HOME:'maid',APPDATA:'appdata',LOCALAPPDATA:'localappdata',TEMP:'temp',TMP:'temp'}))assert.equal(process.env[key],path.join(profile,p));
+ for(const [key,p]of Object.entries({userData:'userdata',sessionData:'session',home:'',temp:'temp',crashDumps:'crashes'}))app.setPath(key,path.join(profile,p));
+ app.disableHardwareAcceleration();app.on('window-all-closed',()=>{});
+ const fixtures=new Map(),cases=[],captures=[],errors=[];let networkAttempts=0,phase='startup';
+ const wait=ms=>new Promise(r=>setTimeout(r,ms)),evaluate=(w,s)=>w.webContents.executeJavaScript(s,true);
+ async function until(w,s){for(let i=0;i<160;i++){if(await evaluate(w,s))return;await wait(20)}throw Error('Timed out: '+phase+' '+s)}
+ const channels=['state','chat-state','chat-draft','chat-send','chat-open-manager','settings','widget-input-active','list-accounts'];
+ for(const ch of channels)ipcMain.handle(ch,async(e,arg)=>{const f=fixtures.get(e.sender.id);assert.ok(f);if(ch==='state')return f.state();if(ch==='chat-state')return f.chat;
+  if(ch==='chat-draft'){f.chat.draft=arg.text;return {revision:1}}if(ch==='chat-open-manager'){f.manages++;return true}if(ch==='widget-input-active')return true;if(ch==='list-accounts')return {accounts:[],count:0};
+  if(ch==='settings'){f.settings={...f.settings,...arg};f.publish();return f.state()}
+  if(ch==='chat-send'){f.sends++;assert.equal(f.pending,null);return new Promise((resolve,reject)=>{f.pending={resolve,reject}})}
+ });
+ for(const name of ['pointer-region','drag-start','drag-move','drag-end','character-enter','character-leave'])ipcMain.on(name,()=>{});
+ async function capture(f,name){await wait(550);await evaluate(f.win,'new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');const filename=f.label+'-'+name+'.png';fs.writeFileSync(path.join(output,filename),(await f.win.webContents.capturePage()).toPNG());captures.push(filename)}
+ async function check(base,platform,scale,language){
+  phase=platform+' '+scale+' '+language;const schema=require(path.join(base,'src/settings.cjs'));const f={label:platform+'-'+scale+'-'+language,settings:schema.sanitize({scale,language,sound:false,chatPageEnabled:true,defaultBubblePage:'chat',mode:'chat',autoHideSeconds:0,followCodex:false}),sends:0,pending:null,manages:0};
+  const {pathToFileURL}=require('node:url');f.chat={initialized:true,ready:true,mode:'simulation',generating:false,unknownExecution:false,draft:'',messages:[{id:'one',role:'user',text:'今天一起慢慢把事情做好。'},{id:'two',role:'assistant',text:language==='en'?'Take your time. We can work through it together, one small step at a time.':'慢慢来，我们可以一起把事情理清楚。今天已经很努力了，剩下的事一步一步来就好。'}],queued:[]};
+  f.state=()=>({version,settings:f.settings,settingsRevision:1,demo:true,visible:true,snapshot:{status:'demo',buckets:[]},characters:[],activeCharacterId:'frost-glass-cheek',characterName:'Synthetic companion',characterUrl:pathToFileURL(path.join(base,'assets/characters/frost-glass-cheek.png')).href,accountManagement:{accounts:[]},followSupported:false,cornerDock:{peeking:false},windowContainment:{enabled:false}});
+  const win=f.win=new BrowserWindow({width:Math.round(380*scale),height:Math.round(480*scale),useContentSize:true,show:false,transparent:true,frame:false,webPreferences:{preload:path.join(base,'src/preload.cjs'),sandbox:true,contextIsolation:true,nodeIntegration:false,offscreen:true,backgroundThrottling:false,partition:'bubble-'+f.label}});
+  fixtures.set(win.webContents.id,f);f.publish=()=>{win.webContents.send('state',f.state());win.webContents.send('chat-state',f.chat)};win.webContents.setAudioMuted(true);win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.session.setPermissionRequestHandler((_a,_b,cb)=>cb(false));
+  win.webContents.session.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*','ws://*/*','wss://*/*']},(_r,done)=>{networkAttempts++;done({cancel:true})});win.webContents.on('console-message',(_e,d)=>{if(d.level==='error')errors.push({phase,message:d.message})});
+  await win.loadFile(path.join(base,'src/index.html'));await until(win,'typeof current==="object"&&!!miniChat');await evaluate(win,'miniChat.refresh()');await until(win,"document.getElementById('chat-view').classList.contains('is-ready')");
+  assert.equal(await evaluate(win,"getComputedStyle(document.getElementById('chat-mini-messages')).fontSize"),'14px');
+  await capture(f,'compact');
+  await evaluate(win,"window.originalInput=document.getElementById('chat-mini-input');originalInput.value='A preserved draft — 原来的草稿';originalInput.dispatchEvent(new Event('input'));originalInput.setSelectionRange(2,9);document.getElementById('chat-mini-expand').click();void 0");
+  await until(win,"!document.getElementById('chat-compose-panel').hidden");
+  assert.equal(await evaluate(win,"document.getElementById('chat-mini-input')===originalInput&&originalInput.value.includes('原来的草稿')&&originalInput.selectionStart===2&&originalInput.selectionEnd===9"),true);
+  const bounds=await evaluate(win,"(()=>{const r=document.getElementById('chat-compose-panel').getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:innerWidth,height:innerHeight}})()");assert.ok(bounds.x>=0&&bounds.right<=bounds.width+1&&bounds.bottom<=bounds.height+1,JSON.stringify(bounds));
+  await capture(f,'expanded');if(scale===1){f.settings.autoHideSeconds=1;f.publish();await wait(1150);assert.equal(await evaluate(win,"document.getElementById('bubble').classList.contains('hidden-bubble')"),false)}
+  await evaluate(win,"document.getElementById('chat-compose-close').click();void 0");assert.equal(await evaluate(win,"document.getElementById('chat-mini-input')===originalInput&&originalInput.value.includes('原来的草稿')"),true);
+  await evaluate(win,"originalInput.dispatchEvent(new CompositionEvent('compositionstart'));document.getElementById('chat-mini-expand').click();void 0");assert.equal(await evaluate(win,"document.getElementById('chat-compose-panel').hidden"),true,'Composition prevents reparenting the live editor');await evaluate(win,"originalInput.dispatchEvent(new CompositionEvent('compositionend'));void 0");await until(win,"!document.getElementById('chat-compose-panel').hidden");
+  await evaluate(win,"originalInput.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,isComposing:true,bubbles:true}));void 0");await wait(20);assert.equal(f.sends,0);
+  await evaluate(win,"originalInput.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,bubbles:true,cancelable:true}));void 0");await until(win,"document.getElementById('chat-mini-send').disabled");assert.equal(f.sends,1);
+  await evaluate(win,"originalInput.value='New text typed during send';originalInput.dispatchEvent(new Event('input'));void 0");f.chat.draft='';f.pending.resolve({...f.chat});f.pending=null;await until(win,"!document.getElementById('chat-mini-send').disabled");assert.equal(await evaluate(win,'originalInput.value'),'New text typed during send');
+  f.settings.language=language==='en'?'zh-CN':'en';f.publish();await until(win,`document.documentElement.lang===${JSON.stringify(f.settings.language)}`);assert.equal(await evaluate(win,'originalInput.value'),'New text typed during send');assert.equal(await evaluate(win,"document.getElementById('chat-compose-panel').hidden"),false);
+  await evaluate(win,"document.getElementById('chat-mini-form').requestSubmit();void 0");await until(win,"document.getElementById('chat-mini-send').disabled");assert.equal(f.sends,2);f.pending.reject(new Error('Synthetic safe send failure'));f.pending=null;await until(win,"!document.getElementById('chat-mini-send').disabled");assert.equal(await evaluate(win,'originalInput.value'),'New text typed during send');f.publish();await until(win,"document.getElementById('chat-mini-status').textContent.includes('Synthetic safe send failure')");
+  f.chat.unknownExecution=true;f.chat.ready=false;f.publish();await until(win,"document.getElementById('chat-mini-send').disabled");await evaluate(win,"document.getElementById('chat-mini-form').requestSubmit();void 0");assert.equal(f.sends,2);
+  await evaluate(win,"originalInput.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));void 0");assert.equal(await evaluate(win,"document.getElementById('chat-compose-panel').hidden"),true);
+  cases.push({platform,scale,language,readableFont:true,panelInBounds:true,originalInputNodePreserved:true,draftPreserved:true,selectionPreserved:true,imePreserved:true,lateEditPreserved:true,blockedSendPreserved:true});fixtures.delete(win.webContents.id);win.destroy();
+ }
+ app.whenReady().then(async()=>{for(const [base,p]of [[packaged||root,'windows'],[path.join(root,'macos'),'macos']])for(const scale of [.6,1,1.6])for(const lang of ['zh-CN','en'])await check(base,p,scale,lang);assert.equal(networkAttempts,0);assert.deepEqual(errors,[]);fs.writeFileSync(path.join(output,'chat-bubble-ui-report.json'),JSON.stringify({ok:true,version,cases,captures,errors,networkAttempts,realModelRequests:0,syntheticDataOnly:true,allProfilePathsIsolated:true},null,2));console.log(JSON.stringify({ok:true,version,cases:cases.length,screenshots:captures.length,networkAttempts}));app.exit(0)}).catch(e=>{fs.writeFileSync(path.join(output,'chat-bubble-ui-report.json'),JSON.stringify({ok:false,version,phase,error:e.message,cases,errors},null,2));console.error(e.stack);app.exit(1)});
+}

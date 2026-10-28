@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.14 — Companion chat, persistent memory, reset reminders and a clearer interface
+
+This release collects the updates since public v0.3.51. See the [bilingual release notes](docs/releases/0.5.14.md) for downloads, upgrade guidance and validation limits.
+
+- Add optional text/image companion chat through the signed-in Codex account, checkpoint archives with original images, persistent persona/preferences/facts, offline history retrieval and controlled conversation handoff.
+- Add native chat usage records, independent archive metadata, seven chat-management pages and five settings categories. Refresh the verified native model catalog, including Terra when available.
+- Improve the chat bubble and add an expandable writing card, preserving the input node, drafts, selection and input-method composition. Enter adds a line, Ctrl/Cmd+Enter sends, and Escape collapses it.
+- Preserve the original thread and draft through writer conflicts, authentication errors and capacity reconciliation. Migrate compatible capacity proofs after program/CLI upgrades without replaying unknown requests.
+- Improve account quota displays, reset forecasts, current-conversation selection, CLI discovery and damaged-settings recovery. Add bounded public reset announcement/observation data with source citations, deadlines, freshness and stale/offline fallback; keep announcement, observation, Tibo self-report and real quota confirmation separate. Retain original characters/audio and user settings; Windows follows Codex with an owned top-level window.
+- Chat and model-based maintenance consume account quota; quota display alone makes no model requests. The worker shutdown fix passes the focused real-backend service regression; full-suite platform fixture failures, the unfinished older full-UI check, native Mac validation and user experience acceptance remain separately tracked.
+
+本版本汇总 v0.3.51 以来的更新。详见[中英发布说明](docs/releases/0.5.14.md)。
+
+- 新增图文桌宠聊天、带原图的可追溯归档、持久人设/偏好/事实、离线检索和受控换聊。
+- 新增聊天原生用量账本、独立归档整理元数据、七类聊天管理和五类设置；动态读取经过核验的模型目录。
+- 放大气泡正文，新增展开书写卡片，保留同一输入节点、草稿、选区和输入法状态。
+- 核对恢复区分占用、认证、容量与未知执行；兼容容量证明可在程序/CLI升级后迁移，不重发未知请求或擅自换聊。
+- 完善账号额度、重置预测、当前对话识别、CLI发现和损坏设置恢复；接入受限公开公告与观察数据，显示来源、截止时间和新鲜度，网络失败时安全降级，并保持公告、观察、Tibo 自述和真实额度确认分层；保留原图、音频、用户设置及Windows独立顶层跟随窗口。
+- 聊天与模型维护消耗账号额度，额度显示本身不发模型请求。Worker关闭生命周期修复后的真实后端定向服务回归已通过；全量套件的平台夹具失败、旧完整UI检查未完成、Mac原生验证与用户体验验收分别记录。
+
 ## 0.3.51 — Bilingual interface and macOS window fixes, 2026-10-21
 
 - Add persistent Simplified Chinese / English settings, bubbles, menus and dialogs, with layouts for longer English labels and reviewed built-in phrases.

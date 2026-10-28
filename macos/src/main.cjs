@@ -43,7 +43,8 @@ function notifyAccountReset(event) {
   });
   broadcast();
 }
-let widget, settingsWindow, tray, source, timer, controlServer, library, desktopMonitor, stopAuthWatch, authRefreshTimer;
+let widget, settingsWindow, chatWindow, chatService, tray, source, timer, controlServer, library, desktopMonitor, stopAuthWatch, authRefreshTimer;
+let resetForecastSource;
 let followRegistered = null, followLaunchGeneration = 0, refreshGeneration = 0;
 let followOperation = Promise.resolve();
 const followSupported = supportsDesktopFollow({ packaged: app.isPackaged, demo: demoMode });
@@ -51,6 +52,8 @@ let followError = '';
 let connectingPlugin = false;
 let snapshot = { status: 'connecting', buckets: [], today: null, lastTurn: null };
 let quitting = false, drag = null, refreshing = null, ownsControl = false;
+let chatQuitPreparing = false, chatQuitPrepared = false;
+let widgetInputSequence = 0;
 let windowMode = null;
 let widgetManuallyHidden = false;
 let lastCorner = null;
@@ -61,11 +64,11 @@ function state() {
   const characters = library.list();
   const active = characters.find(item => item.id === settings.activeCharacterId && item.available) || characters.find(item => item.id === library.defaultId);
   const dock = cornerDockState();
-  return { settings, settingsRevision, snapshot, demo: demoMode, version: app.getVersion(), platform: process.platform, characters, followSupported, followError: t(followError), windowContainment: windowModeState(), cornerDock: dock, visualPose: visualPoseState(dock),
+  return { settings, settingsRevision, snapshot, resetForecast: resetForecastSource?.snapshot() || { status: 'connecting', source: 'https://codex-reset.com/' }, demo: demoMode, version: app.getVersion(), platform: process.platform, characters, followSupported, followError: t(followError), windowContainment: windowModeState(), cornerDock: dock, visualPose: visualPoseState(dock),
     activeCharacterId: active.id, characterUrl: active.url, characterName: i18n.characterName(active), accountManagement: accountManagement() };
 }
 function broadcast() {
-  for (const win of [widget, settingsWindow]) if (win && !win.isDestroyed()) win.webContents.send('state', state());
+  for (const win of [widget, settingsWindow, chatWindow]) if (win && !win.isDestroyed()) win.webContents.send('state', state());
 }
 function broadcastWidgetState() {
   if (widget && !widget.isDestroyed()) widget.webContents.send('state', state());
@@ -403,16 +406,18 @@ function updateSettings(patch) {
   }
   i18n.setLocale(settings.language);
   if (appearanceOrigin) applyAppearanceGeometry(appearanceOrigin);
-  applyWindowSettings(); schedule(); broadcast();
+  applyWindowSettings(); schedule(); resetForecastSource?.setEnabled(!settings.bubbleHiddenPages?.includes('resetForecast')); broadcast();
   return state();
 }
 function updateTray() {
+  i18n.register?.({'桌宠聊天':'Companion chat'});
   if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.setTitle(t('Codex 女仆 · 设置'));
   if (!tray) return;
   tray.setToolTip(t('Codex 女仆 · 额度与陪伴'));
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: t('显示女仆 · Ctrl+Alt+M'), click: show },
     { label: t('刷新额度'), click: () => refresh() },
+    { label: t('桌宠聊天'), click: openChatManager },
     { label: t('切换形象'), submenu: characterMenuItems() },
     { label: t('设置'), click: openSettings },
     ...(process.platform === 'darwin' ? [{ label: t('连接 Codex 工具…'), click: connectCodexPlugin }] : []),
@@ -542,6 +547,7 @@ async function refresh() {
       snapshot = next.error && !next.clearPrevious && !next.accountChanged && !next.buckets?.length && snapshot.buckets?.length
         ? { ...next, buckets: snapshot.buckets, updatedAt: snapshot.updatedAt, stale: true }
         : next;
+      chatService?.notifyQuotaChange?.();
     }
     catch { if (generation !== refreshGeneration || quitting) return snapshot; snapshot = { ...snapshot, status: 'offline', account:null, buckets:[], stale:false, error: '暂时无法读取 Codex，请稍后刷新。' }; }
     broadcast();
@@ -574,6 +580,27 @@ function openSettings() {
   created.once('closed', release);
   created.webContents.once('destroyed', release);
   created.loadFile(path.join(__dirname, 'settings.html'));
+}
+function companionChat() {
+  i18n.register(require('./i18n-chat.js'));
+  if (!chatService) {
+    chatService = new (require('./chat-service.cjs').ChatService)({ dataDir, autoConnect: true, getSettings: () => settings, updateSettings: patch => updateSettings(patch) });
+    chatService.on('state', value => {
+      for (const win of [widget, chatWindow]) if (win && !win.isDestroyed()) win.webContents.send('chat-state', value);
+    });
+  }
+  return chatService;
+}
+function openChatManager() {
+  i18n.register(require('./i18n-chat.js'));
+  if (chatWindow && !chatWindow.isDestroyed()) { chatWindow.show(); chatWindow.focus(); return; }
+  const created = new BrowserWindow({ width: 1040, height: 860, minWidth: 640, minHeight: 520, icon: windowIcon,
+    title: t('聊天管理'), backgroundColor: '#f5faf8', autoHideMenuBar: true,
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  chatWindow = created; secureWindow(created);
+  created.on('close', event => { if (!quitting) { event.preventDefault(); created.hide(); } });
+  created.once('closed', () => { if (chatWindow === created) chatWindow = null; });
+  created.loadFile(path.join(__dirname, 'chat-page.html'));
 }
 function rebuildWidget() {
   if (quitting) return;
@@ -663,7 +690,7 @@ function passiveConversationServices() {
   return conversationServices;
 }
 function setupIpc() {
-  const trusted = event => event.sender === widget?.webContents || event.sender === settingsWindow?.webContents;
+  const trusted = event => event.sender === widget?.webContents || event.sender === settingsWindow?.webContents || event.sender === chatWindow?.webContents;
   const handle = (name, callback) => ipcMain.handle(name, (event, ...args) => {
     if (!trusted(event)) throw new Error(t('无效窗口'));
     const localizedError = error => {
@@ -676,7 +703,68 @@ function setupIpc() {
     } catch (error) { return localizedError(error); }
   });
   handle('state', () => state());
+  handle('widget-input-active', async (event, active, source) => {
+    if (event.sender !== widget?.webContents || event.senderFrame !== event.sender.mainFrame ||
+        typeof active !== 'boolean' || !['pointer', 'focus', 'blur'].includes(source)) throw new Error(t('无效窗口'));
+    const win = widget, mode = windowMode, sequence = ++widgetInputSequence;
+    const needsActivation = active && (mode?.nativeChild || mode?.inputDetached);
+    const ready = await mode?.setInputActive(active);
+    if (!active || !needsActivation) return ready !== false;
+    if (!ready || sequence !== widgetInputSequence || quitting || widget !== win || win.isDestroyed()) return false;
+    const foregroundAllowed = await mode.canActivateInput();
+    if (sequence !== widgetInputSequence || quitting || widget !== win || win.isDestroyed()) return false;
+    const point = screen.getCursorScreenPoint(), bounds = win.getBounds();
+    const pointerInside = point.x >= bounds.x && point.x < bounds.x + bounds.width && point.y >= bounds.y && point.y < bounds.y + bounds.height;
+    const anotherWindowFocused = [settingsWindow, chatWindow].some(other => other && !other.isDestroyed() && other.isFocused?.());
+    if (!foregroundAllowed || anotherWindowFocused || (!win.isFocused?.() && !pointerInside)) {
+      await mode.setInputActive(false); return false;
+    }
+    if (mode?.nativeChild) { win.webContents.focus(); return true; }
+    win.focus(); win.webContents.focus(); return true;
+  });
+  const chatHandle = (name, callback) => handle(name, (event, ...args) => {
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) throw new Error(t('无效窗口'));
+    return callback(event, ...args);
+  });
+  chatHandle('chat-state', () => companionChat().getState());
+  chatHandle('chat-open-manager', () => openChatManager());
+  chatHandle('chat-choose-directory', async (_event, input = {}) => {
+    const { inputObject, selectProjectDirectory } = require('./chat-service.cjs'); inputObject(input, ['mode']);
+    return selectProjectDirectory({ dialog: { showOpenDialog: (win, options) => dialog.showOpenDialog(win, {...options,title:t(options.title)}) },
+      window: chatWindow || settingsWindow || widget, mode: input.mode, getService: companionChat,
+      defaultParent: () => require('./chat-project.cjs').defaultChatParent() });
+  });
+  chatHandle('chat-initialize', (_event, input) => companionChat().initialize(input));
+  chatHandle('chat-memory', (_event, input) => companionChat().getMemory(input));
+  chatHandle('chat-memory-save', (_event, input) => companionChat().saveMemory(input));
+  chatHandle('chat-draft', (_event, input) => companionChat().setDraft(input));
+  chatHandle('chat-send', (_event, input) => companionChat().send(input));
+  chatHandle('chat-models', () => companionChat().listModels());
+  chatHandle('chat-configure', (_event, input) => companionChat().configure(input));
+  chatHandle('chat-choose-images', () => require('./chat-native-input.cjs').chooseImages({dialog,window:chatWindow || widget,stageImages:input=>companionChat().stageImages(input)}));
+  chatHandle('chat-paste-image', () => require('./chat-native-input.cjs').pasteImage({clipboard:require('electron').clipboard,stageImages:input=>companionChat().stageImages(input)}));
+  chatHandle('chat-drop-images', (_event, input) => companionChat().dropImages(input));
+  chatHandle('chat-steer', (_event, input) => companionChat().steer(input));
+  chatHandle('chat-messages', (_event, input) => companionChat().messages(input));
+  chatHandle('chat-usage', (_event, input) => companionChat().listUsage(input));
+  chatHandle('chat-history-update', (_event, input) => companionChat().updateHistoryMetadata(input));
+  chatHandle('chat-history-overview', (_event, input) => companionChat().historyOverview(input));
+  chatHandle('chat-history-list', (_event, input) => companionChat().listHistory(input));
+  chatHandle('chat-history-read', (_event, input) => companionChat().readHistory(input));
+  chatHandle('chat-reference', (_event, input) => companionChat().resolveReference(input));
+  chatHandle('chat-memory-history', (_event, input) => companionChat().memoryHistory(input));
+  chatHandle('chat-memory-revision', (_event, input) => companionChat().memoryRevision(input));
+  chatHandle('chat-memory-restore', (_event, input) => companionChat().restoreMemory(input));
+  chatHandle('chat-persona-defaults', (_event, input) => companionChat().restorePersonaDefaults(input));
+  chatHandle('chat-maintenance', (_event, input) => companionChat().maintenance(input));
+  chatHandle('chat-relocate', (_event, input) => companionChat().relocateProject(input));
+  chatHandle('chat-dream-command', (_event, input) => companionChat().dream(input));
+  chatHandle('chat-interrupt', () => companionChat().interrupt());
+  chatHandle('chat-reconcile', () => companionChat().reconcile());
+  chatHandle('chat-dream', () => companionChat().activeDream());
   handle('refresh', () => refresh());
+  handle('refresh-reset-forecast', () => resetForecastSource?.refresh());
+  handle('open-reset-source', () => require('electron').shell.openExternal('https://codex-reset.com/'));
   handle('list-conversations', () => passiveConversationServices().target.list());
   handle('select-conversation', async (_event, id) => {
     const services = passiveConversationServices();
@@ -780,17 +868,25 @@ function setupIpc() {
 async function startControl() {
   const token = crypto.randomBytes(32).toString('hex');
   controlServer = http.createServer(async (req, res) => {
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    if (req.headers.origin || req.headers.authorization !== `Bearer ${token}`) { res.writeHead(403); res.end('{"error":"Forbidden"}'); return; }
+    // A disconnected local client must not let an async body-read rejection
+    // escape this request listener or write to a response already destroyed.
+    res.on('error', () => {});
+    const reply = (status, body) => {
+      if (res.destroyed || res.writableEnded) return;
+      try { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(body); }
+      catch { res.destroy(); }
+    };
+    try {
+    if (req.headers.origin || req.headers.authorization !== `Bearer ${token}`) { reply(403, '{"error":"Forbidden"}'); return; }
     if (req.method === 'GET' && req.url === '/status') {
       const character = state();
-      res.end(JSON.stringify({ ...snapshot, visible: widget.isVisible(), demo: demoMode, version: app.getVersion(), activeCharacterId: character.activeCharacterId, characterName: character.characterName, characterCount: character.characters.length, followCodex:settings.followCodex, followSupported, followError, stayInCodexWindow:settings.stayInCodexWindow, windowContainment:windowModeState() })); return;
+      reply(200, JSON.stringify({ ...snapshot, resetForecast: resetForecastSource?.snapshot(), visible: widget.isVisible(), demo: demoMode, version: app.getVersion(), activeCharacterId: character.activeCharacterId, characterName: character.characterName, characterCount: character.characters.length, followCodex:settings.followCodex, followSupported, followError, stayInCodexWindow:settings.stayInCodexWindow, windowContainment:windowModeState() })); return;
     }
-    if (req.method !== 'POST' || req.url !== '/action') { res.writeHead(404); res.end('{}'); return; }
+    if (req.method !== 'POST' || req.url !== '/action') { reply(404, '{}'); return; }
     let body = '';
-    for await (const chunk of req) { body += chunk; if (body.length > 2048) { res.writeHead(413); res.end('{}'); return; } }
-    try { const input = JSON.parse(body); await action(input.action); res.end(JSON.stringify({ ok: true })); }
-    catch { res.writeHead(400); res.end('{"error":"Invalid action"}'); }
+    for await (const chunk of req) { body += chunk; if (body.length > 2048) { reply(413, '{}'); return; } }
+    const input = JSON.parse(body); await action(input.action); reply(200, JSON.stringify({ ok: true }));
+    } catch { reply(400, '{"error":"Invalid action"}'); }
   });
   await new Promise((resolve, reject) => { controlServer.once('error', reject); controlServer.listen(0, '127.0.0.1', resolve); });
   fs.mkdirSync(dataDir, { recursive: true });
@@ -822,6 +918,9 @@ else {
         notify: notifyAccountReset });
     }
     if (!demoMode) stopAuthWatch = watchAuthChanges(process.env.CODEX_HOME || path.join(os.homedir(), '.codex'), authChanged);
+    resetForecastSource = new (require('./reset-forecast.cjs').ResetForecast)({
+      file: path.join(dataDir, 'reset-forecast-cache.json'), version: app.getVersion(), demo: demoMode,
+      fetch: (url, options) => net.fetch(url, options), onChange: () => { if (!quitting) broadcast(); } });
     setupIpc(); await createWidget();
     if (settings.characterPath && fs.existsSync(settings.characterPath)) {
       try {
@@ -842,13 +941,37 @@ else {
     globalShortcut.register('Control+Alt+Q', () => action('bounce'));
     globalShortcut.register('Control+Alt+Shift+M', () => updateSettings({ clickThrough: !settings.clickThrough }));
     await startControl(); show(); schedule(); refresh(); accountAlarm?.start();
+    resetForecastSource.setEnabled(!settings.bubbleHiddenPages?.includes('resetForecast'));
   }).catch(error => { dialog.showErrorBox(t('Codex 女仆启动失败'), t(error.message)); app.quit(); });
 }
 app.on('window-all-closed', () => {});
 app.on('activate', () => { if (widget && !widget.isDestroyed()) show(); });
-app.on('before-quit', () => {
+app.on('before-quit', event => {
+  if (chatService?.hasPendingDrafts()) {
+    const response = dialog.showMessageBoxSync(chatWindow && !chatWindow.isDestroyed() ? chatWindow : widget, {
+      type: 'warning', message: t('有未发送的消息或未保存的编辑。'),
+      detail: t('退出会放弃这些运行中草稿；已保存的项目和记忆不受影响。'),
+      buttons: [t('返回处理'), t('复制并返回'), t('放弃草稿并退出')], defaultId: 0, cancelId: 0 });
+    if (response !== 2) { event.preventDefault(); if (response === 1) require('electron').clipboard.writeText(chatService.copyPendingDrafts()); openChatManager(); return; }
+    chatService.discardDrafts();
+  }
+  if (chatService && !chatQuitPrepared) {
+    event.preventDefault();
+    if (chatQuitPreparing) return;
+    chatQuitPreparing = true;
+    const showUnconfirmed = () => {
+      dialog.showErrorBox(t('聊天退出核对未完成'), t('上次请求状态尚未确认，已保留定位，下次启动后可继续核对。'));
+    };
+    Promise.resolve().then(() => chatService.prepareClose()).then(result => {
+      if (result?.terminalConfirmed === false) showUnconfirmed();
+    }, showUnconfirmed).finally(() => {
+      chatQuitPrepared = true; chatQuitPreparing = false; app.quit();
+    });
+    return;
+  }
+  try { chatService?.close(); } catch { event.preventDefault(); return; }
   cancelPose(true);
   accountAlarm?.close();
-  quitting = true; clearInterval(timer); clearTimeout(authRefreshTimer); windowMode?.close(); stopAuthWatch?.(); desktopMonitor?.stop(); globalShortcut.unregisterAll(); source?.close(); controlServer?.close();
+  quitting = true; resetForecastSource?.close(); clearInterval(timer); clearTimeout(authRefreshTimer); windowMode?.close(); stopAuthWatch?.(); desktopMonitor?.stop(); globalShortcut.unregisterAll(); source?.close(); controlServer?.close();
   if (ownsControl) try { fs.unlinkSync(path.join(dataDir, 'control.json')); } catch {}
 });

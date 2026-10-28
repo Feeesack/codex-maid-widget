@@ -40,7 +40,7 @@ function harness(variant, options = {}) {
   };
   const factory = () => {
     const index = providers.length, answers = [...(options.answers?.[index] || [])];
-    const provider = { queries: 0, closes: 0, attaches: 0, positions: 0, detaches: 0,
+    const provider = { queries: 0, closes: 0, attaches: 0, positions: 0, detaches: 0, focuses: 0, releases: 0,
       query() { this.queries++; return answers.length ? answers.shift() : Promise.resolve(raw); },
       close() { this.closes++; calls.push({ kind: 'provider-close', index }); },
     };
@@ -56,6 +56,16 @@ function harness(variant, options = {}) {
       detachChild() {
         this.detaches++; calls.push({ kind: 'detach', index });
         return Promise.resolve(options.detach?.(this.detaches, index) ?? ok()).then(value => { calls.push({ kind: 'detach-ack', ok: value.ok, index }); return value; });
+      },
+    });
+    if (options.focusChild) Object.assign(provider, {
+      focusChild(handle, id) {
+        this.focuses++; calls.push({ kind: 'focus', id, index });
+        return Promise.resolve(options.focusChild(this.focuses, index)).then(value => { calls.push({ kind: 'focus-ack', ok: value.ok, index }); return value; });
+      },
+      releaseChildFocus(handle, id) {
+        this.releases++; calls.push({ kind: 'release-focus', id, index });
+        return Promise.resolve(options.releaseChildFocus?.(this.releases, index) ?? ok()).then(value => { calls.push({ kind: 'release-focus-ack', ok: value.ok, index }); return value; });
       },
     });
     providers.push(provider); return provider;
@@ -88,6 +98,7 @@ function harness(variant, options = {}) {
       return options.topmost?.(value) ?? { known: true, ok: true, topmost: value };
     }, close() {} }),
     intervalMs: 100, activeIntervalMs: 100, staleAfterMs: 50,
+    allowNativeChild: options.allowNativeChild,
     onStatus() { statusChanges++; }, onRecreate() { recreations++; },
   });
   if (options.rendererReady !== false) { webContents.emit('did-finish-load'); calls.length = 0; }
@@ -206,6 +217,17 @@ for (const variant of variants) {
 }
 
 const windows = variants[0];
+test('Windows production follows with a contained top-level widget so keyboard focus stays local', async t => {
+  const h = await start(t, windows, { child: true, allowNativeChild: false });
+  assert.equal(h.mode.getState().embedded, false);
+  assert.equal(h.mode.nativeChild, false);
+  assert.equal(h.providers[0].attaches, 0);
+  assert.ok(h.calls.some(c => c.kind === 'moveAbove' && c.id === 'window:123:0'));
+  assert.equal(await h.mode.setInputActive(true), true);
+  assert.equal(h.providers[0].focuses, 0);
+  assert.equal(h.providers[0].detaches, 0);
+  assert.equal(h.mode.inputRequested, true);
+});
 test('Windows child: first position ACK is required before native show', async t => {
   const attached = deferred(), positioned = deferred(), h = await start(t, windows, { child: true, attach: () => attached.promise, position: (_id, _bounds, n) => n === 1 ? positioned.promise : ok() });
   assert.equal(h.mode.getState().embedded, true); assert.equal(h.visible, false); assert.equal(h.providers[0].positions, 0);
@@ -214,6 +236,30 @@ test('Windows child: first position ACK is required before native show', async t
   assert.ok(h.calls.findIndex(c => c.kind === 'position-ack') < h.calls.findIndex(c => c.kind === 'showInactive'));
   const bounds = h.calls.find(c => c.kind === 'position').bounds; assert.deepEqual({ width: bounds.width, height: bounds.height }, { width: 342, height: 432 });
   assert.equal(h.calls.some(c => c.kind === 'moveAbove' || c.kind === 'bounds'), false);
+});
+test('Windows child: production focus acknowledgement must be successful before editing is accepted', async t => {
+  const h = await start(t, windows, { child: true, focusChild: () => ({ known: true, ok: false, parented: true, reason: 'child-focus-failed' }) });
+  const provider = h.providers[0];
+  assert.equal(await h.mode.setInputActive(true), false);
+  assert.equal(provider.focuses, 1);
+  assert.equal(provider.detaches, 0);
+  assert.equal(h.mode.nativeChild, true);
+  assert.equal(h.mode.inputRequested, true);
+  h.mode.setInputActive(false); await flush();
+});
+test('Windows child: successful native focus stays attached, reasserts while editing, and releases on blur', async t => {
+  const h = await start(t, windows, { child: true, focusChild: () => ({ known: true, ok: true, parented: true }) });
+  const provider = h.providers[0];
+  assert.equal(await h.mode.setInputActive(true), true);
+  assert.equal(provider.focuses, 1);
+  assert.equal(provider.detaches, 0);
+  await h.advance(100);
+  assert.ok(provider.focuses >= 2);
+  assert.equal(h.mode.nativeChild, true);
+  await h.mode.setInputActive(false);
+  assert.equal(provider.releases, 1);
+  assert.equal(provider.detaches, 0);
+  assert.equal(h.mode.inputRequested, false);
 });
 test('Windows child: minimize retains visibility style and previous geometry for parent OS animation', async t => {
   const h = await start(t, windows, { child: true }), before = plain(h.mode.getBounds()); h.calls.length = 0;
@@ -360,3 +406,60 @@ test('Windows standalone: a blocked or failed native helper never prevents indep
     assert.equal(h.timers.size, 0, 'native failure creates no background poll in independent mode');
   }
 });
+
+for (const source of variants) {
+  const variant = { ...source, platform: 'win32' };
+  test(source.name + ' source: editor detaches once, keeps containment/following and reattaches without activation', async t => {
+    const h = await start(t, variant, { child: true });
+    const provider = h.providers[0], startPositions = provider.positions, before = h.mode.getBounds();
+    assert.equal(await h.mode.setInputActive(true), true);
+    assert.equal(provider.detaches, 1); assert.equal(h.mode.enabled, true); assert.equal(h.mode.nativeChild, false);
+    assert.deepEqual(plain(h.mode.getBounds()), plain(before));
+    h.calls.length = 0;
+    await h.poll(snapshot({ windows: [{ ...snapshot().windows[0], bounds: { ...hostBounds, x: 200, y: 180 }, widgetParented: false }] }));
+    assert.ok(provider.detaches >= 1); assert.ok(provider.positions >= startPositions);
+    assert.equal(h.visible, true);
+    if (source.name === 'Windows') { assert.equal(h.bounds.x, before.x + 100); assert.equal(h.bounds.y, before.y + 100); }
+    assert.equal(await h.mode.setInputActive(true), true); assert.ok(provider.detaches >= 1);
+    assert.equal(await h.mode.setInputActive(false), true);
+    await flush();
+    assert.ok(provider.attaches >= 2); assert.equal(h.mode.nativeChild, true); assert.equal(h.mode.enabled, true);
+    assert.equal(h.calls.some(call => ['show', 'moveTop', 'focus'].includes(call.kind)), false);
+  });
+  test(source.name + ' source: cancelled editor detach settles before silent reattachment and late completion cannot reopen it', async t => {
+    const barrier = deferred(), h = await start(t, variant, { child: true, detach: count => count === 1 ? barrier.promise : ok() });
+    const started = h.mode.setInputActive(true); await flush();
+    const cancelled = h.mode.setInputActive(false);
+    barrier.resolve(ok());
+    assert.equal(await started, false); assert.equal(await cancelled, true);
+    assert.equal(h.mode.inputDetached, false); assert.equal(h.mode.inputTransition, false);
+    assert.equal(h.providers[0].detaches, 1); assert.equal(h.providers[0].attaches, 2);
+  });
+  test(source.name + ' source: leaving containment during editing restores standalone preference without a child or focus loop', async t => {
+    const h = await start(t, variant, { child: true });
+    await h.mode.setInputActive(true);
+    h.mode.configure(false, { alwaysOnTop: false }); await flush();
+    assert.equal(h.mode.enabled, false); assert.equal(h.mode.nativeChild, false); assert.equal(h.mode.inputTransition, false);
+    assert.equal(h.top, false); assert.equal(h.providers[0].closes, 1);
+  });
+  test(source.name + ' source: activation queries current native foreground and rejects another app or stale owner', async t => {
+    const h = await start(t, variant, { child: true }); await h.mode.setInputActive(true);
+    assert.equal(await h.mode.canActivateInput(), true);
+    h.setSnapshot(snapshot({ foregroundWindow: '555', foregroundRoot: '555', foregroundPid: 999,
+      windows: [{ ...snapshot().windows[0], foreground: false }] }));
+    assert.equal(await h.mode.canActivateInput(), false);
+    const barrier = deferred(), provider = h.mode.provider; provider.query = () => barrier.promise;
+    const permission = h.mode.canActivateInput(); h.mode.bindingRevision++;
+    barrier.resolve(snapshot()); assert.equal(await permission, false);
+  });
+  test(source.name + ' source: old detach acknowledgement cannot overwrite a newly enabled provider or geometry', async t => {
+    const barrier = deferred(), h = await start(t, variant, { child: true, detach: (count, index) => index === 0 && count === 1 ? barrier.promise : ok() });
+    const oldProvider = h.mode.provider, oldEpoch = h.mode.epoch;
+    const editing = h.mode.setInputActive(true); await flush();
+    h.mode.configure(false); h.mode.configure(true); await flush();
+    assert.notEqual(h.mode.provider, oldProvider); assert.ok(h.mode.epoch > oldEpoch);
+    barrier.resolve(ok()); assert.equal(await editing, false); await flush();
+    assert.equal(h.mode.inputDetached, false); assert.equal(h.mode.nativeChild, true); assert.equal(h.mode.inputTransition, false);
+    assert.equal(h.mode.getState().reason, 'contained'); assert.equal(oldProvider.closes, 1);
+  });
+}

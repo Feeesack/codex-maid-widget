@@ -22,7 +22,7 @@ async function checkBubbleSortUi({win,evaluate,pause,publish,getSettings,getRevi
   assert.equal(library.attached,true,'SortableJS owns the production page list');
   assert.equal(library.version,'1.15.7');assert.ok(library.animation>0,'row-gap movement has an animation duration');assert.equal(library.handle,'.page-drag-handle');
   const controls=await evaluate(`({cards:document.querySelectorAll('#bubble-pages>.bubble-page-card').length,icons:[...document.querySelectorAll('#bubble-pages>.bubble-page-card')].map(row=>row.querySelectorAll('.ui-icon').length),resetIcons:document.querySelectorAll('#reset-page-order .ui-icon').length,rightOrderButtons:document.querySelectorAll('.page-order-buttons,[id^="page-up-"],[id^="page-down-"]').length})`);
-  assert.equal(controls.cards,7);assert.deepEqual(controls.icons,Array(7).fill(3));assert.equal(controls.resetIcons,1);assert.equal(controls.rightOrderButtons,0,'cards have no right-side up/down sorting buttons');
+  assert.equal(controls.cards,8);assert.deepEqual(controls.icons,Array(8).fill(3));assert.equal(controls.resetIcons,1);assert.equal(controls.rightOrderButtons,0,'cards have no right-side up/down sorting buttons');
   const original=config();
   await publish({bubbleHiddenPages:['conversation','lastTurn']});
   const drag = async (source,target,{reject=false,statusDuringDrag=false}={}) => {

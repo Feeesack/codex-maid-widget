@@ -1,6 +1,6 @@
 # Installers and local integration
 
-The Windows and macOS installers share version **0.3.51** and include the application runtime and optional Codex plugin connector. End users do not need Node.js, npm, a source checkout, or an API key. Real quota requires an installed, signed-in Codex desktop app.
+The Windows and macOS release candidate shares version **0.5.14**. Its installers include the application runtime, pinned offline semantic-search resources and optional Codex plugin connector. Candidate downloads remain unavailable until publication; the last published installers are 0.3.51. End users do not need Node.js, npm, a source checkout, or a separate API key. Real quota requires an installed, signed-in Codex desktop app. Optional companion chat and model-based memory maintenance use the signed-in ChatGPT account through Codex and consume its quota.
 
 - [Download and installation](../docs/INSTALLATION.md)
 - [Build commands and verification](../docs/BUILDING.md)

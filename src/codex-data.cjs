@@ -10,7 +10,7 @@ const { spawn } = require('node:child_process');
 const { StringDecoder } = require('node:string_decoder');
 const { createHash } = require('node:crypto');
 const { version: APP_VERSION } = require('../package.json');
-const { environmentValue, codexCommandInvocation } = require('./codex-cli.cjs');
+const { environmentValue, codexCommandInvocation, findCodexCandidate } = require('./codex-cli.cjs');
 
 const READ_METHODS = new Set(['initialize', 'account/read', 'account/rateLimits/read']);
 const MAX_LINE = 4 * 1024 * 1024;
@@ -180,29 +180,12 @@ function friendlyError(error) {
     return 'Codex 尚未登录或登录已过期，请在 Codex 中重新登录。';
   }
   if (/api.key|bedrock|unsupported auth/i.test(error?.message || '')) return '当前登录方式不提供 ChatGPT 订阅额度，请使用 ChatGPT 账号登录 Codex。';
+  if (['EACCES', 'EPERM'].includes(error?.code)) return 'Codex CLI 启动被系统拒绝，请检查应用权限，或用 CODEX_MAID_CODEX_PATH 指定可运行的 CLI。';
+  if (['EXIT', 'ENOEXEC', 'EINVAL', 'UNKNOWN', 'EPIPE', 'ECONNRESET', 'ERR_STREAM_DESTROYED', 'ERR_STREAM_WRITE_AFTER_END', 'PROTOCOL', -32601, -32602].includes(error?.code)) return 'Codex CLI 未能正常启动额度服务，请打开或更新 Codex 后重试。';
   return '暂时无法读取 Codex 额度，请确认 Codex CLI 可用并稍后刷新。';
 }
 
-function findCodexExecutable(explicitPath, { platform = process.platform, env = process.env, fileSystem = fs } = {}) {
-  if (explicitPath) {
-    if (typeof explicitPath !== 'string' || /[\r\n\0]/.test(explicitPath)) throw Object.assign(new Error('Invalid executable path'), { code: 'CLI_MISSING' });
-    return explicitPath;
-  }
-  const paths = platform === 'win32' ? path.win32 : path.posix;
-  const names = platform === 'win32' ? ['codex.exe', 'codex.cmd', 'codex.bat'] : ['codex'];
-  for (const directory of (environmentValue(env, 'PATH', platform) || '').split(platform === 'win32' ? ';' : ':').filter(Boolean)) {
-    for (const name of names) {
-      const candidate = paths.join(directory.replace(/^"|"$/g, ''), name);
-      try { if (fileSystem.statSync(candidate).isFile()) return candidate; } catch { /* next PATH entry */ }
-    }
-  }
-  const localAppData = environmentValue(env, 'LOCALAPPDATA', platform);
-  if (platform === 'win32' && localAppData) {
-    const desktopCli = paths.join(localAppData, 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe');
-    try { if (fileSystem.statSync(desktopCli).isFile()) return desktopCli; } catch { /* absent */ }
-  }
-  throw Object.assign(new Error('Codex CLI not found'), { code: 'CLI_MISSING' });
-}
+function findCodexExecutable(explicitPath, options = {}) { return findCodexCandidate(explicitPath, options); }
 
 function spawnCodex(executable, args, options) {
   const invocation = codexCommandInvocation(executable, args, { env: options.env });
@@ -234,16 +217,59 @@ class ReadOnlyAppServer {
   async start() {
     const generation = this.generation;
     const discovery = new AbortController(); this.discovery = discovery;
-    let executable;
-    try { executable = await require('./codex-cli.cjs').resolveCodexExecutable(this.options.codexPath, {
-      ...this.options, signal: discovery.signal, find: explicit => findCodexExecutable(explicit, this.options),
-    }); } catch (error) {
-      if (this.closed) throw Object.assign(new Error('Closed'), { code: 'CLOSED' });
-      if (generation !== this.generation) throw Object.assign(new Error('Connection superseded'), { code: 'INVALIDATED' });
-      throw error;
-    } finally { if (this.discovery === discovery) this.discovery = null; }
-    if (this.closed) throw Object.assign(new Error('Closed'), { code: 'CLOSED' });
-    if (generation !== this.generation) throw Object.assign(new Error('Connection superseded'), { code: 'INVALIDATED' });
+    const startupMs = Math.min(30000, Math.max(1, this.options.startupTimeoutMs || 20000));
+    const deadline = Date.now() + startupMs;
+    const attempts = Math.min(64, Math.max(1, this.options.maxStartupAttempts || 32));
+    const timeoutError = () => Object.assign(new Error('Codex CLI startup timed out'), { code: 'TIMEOUT' });
+    const interrupted = () => this.closed ? Object.assign(new Error('Closed'), { code: 'CLOSED' })
+      : generation !== this.generation ? Object.assign(new Error('Connection superseded'), { code: 'INVALIDATED' })
+      : discovery.signal.aborted || Date.now() >= deadline ? timeoutError() : null;
+    const timer = setTimeout(() => {
+      discovery.abort();
+      if (generation === this.generation && this.discovery === discovery) this.releaseChild(this.child, timeoutError());
+    }, startupMs);
+    const excludedPaths = new Set(this.options.excludedPaths || []);
+    let lastError;
+    try {
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        const interruption = interrupted(); if (interruption) throw interruption;
+        let executable;
+        try {
+          executable = await require('./codex-cli.cjs').resolveCodexExecutable(this.options.codexPath, {
+            ...this.options, excludedPaths, signal: discovery.signal,
+            find: (explicit, excluded) => findCodexExecutable(explicit, { ...this.options, ...excluded, excludedPaths }),
+          });
+        } catch (error) {
+          throw interrupted() || (error?.code === 'CLI_MISSING' && lastError ? lastError : error);
+        }
+        const stopped = interrupted(); if (stopped) throw stopped;
+        try {
+          const connected = await this.startCandidate(executable, Math.min(this.options.timeoutMs || 12000, Math.max(1, deadline - Date.now())));
+          const cancelled = interrupted();
+          if (cancelled) { this.releaseChild(connected, cancelled); throw cancelled; }
+          if (this.child !== connected) throw Object.assign(new Error('App-server exited during startup'), { code: 'EXIT' });
+          return;
+        } catch (error) {
+          const cancelled = interrupted(); if (cancelled) throw cancelled;
+          // Only launch/initialize failures may select another automatically
+          // discovered CLI. Login and later account RPCs never use this path.
+          if (this.options.codexPath || authenticationError(error) || /api.key|bedrock|unsupported auth/i.test(error?.message || '') || !new Set([
+            'ENOENT', 'ENOTDIR', 'EACCES', 'EPERM', 'ENOEXEC', 'EINVAL', 'UNKNOWN', 'EXIT', 'TIMEOUT',
+            'EPIPE', 'ECONNRESET', 'ERR_STREAM_DESTROYED', 'ERR_STREAM_WRITE_AFTER_END', 'PROTOCOL', 'CLI_MISSING', -32601, -32602,
+          ]).has(error?.code)) throw error;
+          lastError = error;
+          excludedPaths.add(executable);
+        }
+      }
+      throw lastError || timeoutError();
+    } finally {
+      clearTimeout(timer);
+      if (this.discovery === discovery) this.discovery = null;
+    }
+  }
+
+  async startCandidate(executable, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
     const env = { ...(this.options.env || process.env) };
     if (this.options.codexHome) {
       for (const key of Object.keys(env)) if (key.toUpperCase() === 'CODEX_HOME') delete env[key];
@@ -256,13 +282,19 @@ class ReadOnlyAppServer {
       '-c', 'analytics.enabled=false',
     ], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env, cwd: os.tmpdir() });
     this.child = child;
+    let failure;
+    const fail = error => {
+      if (this.child !== child) return;
+      failure = error;
+      this.releaseChild(child, error);
+    };
     let buffer = '';
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', chunk => {
       if (this.child !== child) return;
       buffer += chunk;
       if (buffer.length > MAX_LINE && !buffer.includes('\n')) {
-        this.disconnect(Object.assign(new Error('Protocol message too large'), { code: 'PROTOCOL' }));
+        fail(Object.assign(new Error('Protocol message too large'), { code: 'PROTOCOL' }));
         return;
       }
       let newline;
@@ -273,7 +305,7 @@ class ReadOnlyAppServer {
         let message;
         try { message = JSON.parse(line); } catch { continue; }
         if (!message || typeof message !== 'object' || Array.isArray(message)) {
-          this.disconnect(Object.assign(new Error('Invalid protocol message'), { code: 'PROTOCOL' })); return;
+          fail(Object.assign(new Error('Invalid protocol message'), { code: 'PROTOCOL' })); return;
         }
         if (message.method && message.id !== undefined) {
           // No auth refresh, tool calls, elicitation, or other server request is supported.
@@ -281,7 +313,7 @@ class ReadOnlyAppServer {
           continue;
         }
         const pending = this.pending.get(message.id);
-        if (!pending) continue;
+        if (!pending || pending.child !== child) continue;
         clearTimeout(pending.timer);
         this.pending.delete(message.id);
         if (message.error) pending.reject(Object.assign(new Error(message.error.message || 'App-server error'), { code: message.error.code }));
@@ -290,28 +322,51 @@ class ReadOnlyAppServer {
     });
     // Drain without retaining stderr: it may contain private filesystem paths or account data.
     child.stderr.on('data', () => {});
-    child.stdin.on('error', error => { if (this.child === child) this.disconnect(error); });
-    child.stdout.on('error', error => { if (this.child === child) this.disconnect(error); });
+    child.stdin.on('error', fail);
+    child.stdout.on('error', fail);
     child.stderr.on('error', () => {});
-    child.on('error', error => { if (this.child === child) this.disconnect(error); });
-    child.on('exit', () => { if (this.child === child) this.disconnect(Object.assign(new Error('App-server exited'), { code: 'EXIT' })); });
+    child.on('error', fail);
+    child.on('exit', () => fail(Object.assign(new Error('App-server exited'), { code: 'EXIT' })));
     try {
-      await this.request('initialize', { clientInfo: { name: 'codex_maid_widget', title: 'Codex Maid Widget', version: APP_VERSION } });
-      if (this.child !== child) throw Object.assign(new Error('Connection superseded'), { code: 'INVALIDATED' });
-      if (!this.write(child, `${JSON.stringify({ method: 'initialized', params: {} })}\n`))
-        throw Object.assign(new Error('App-server pipe unavailable'), { code: 'EXIT' });
-    } catch (error) { if (this.child === child) this.disconnect(error); throw error; }
+      await this.request('initialize', { clientInfo: { name: 'codex_maid_widget', title: 'Codex Maid Widget', version: APP_VERSION } }, timeoutMs);
+      if (this.child !== child) throw failure || Object.assign(new Error('Connection superseded'), { code: 'INVALIDATED' });
+      await this.notifyInitialized(child, Math.max(1, deadline - Date.now()));
+      if (this.child !== child) throw failure || Object.assign(new Error('App-server exited during startup'), { code: 'EXIT' });
+      return child;
+    } catch (error) { this.releaseChild(child, error); throw error; }
   }
 
-  write(child, value) {
+  notifyInitialized(child, timeoutMs) {
+    // This notification has no RPC response. Wait for the pipe write callback
+    // before calling startup successful, keeping it under the same cleanup as
+    // initialize so close/invalidation cannot strand this promise.
+    const id = Symbol('initialized');
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => this.releaseChild(child,
+        Object.assign(new Error('Codex CLI initialization timed out'), { code: 'TIMEOUT' })), timeoutMs);
+      const pending = { resolve, reject, timer, child };
+      this.pending.set(id, pending);
+      const written = this.write(child, `${JSON.stringify({ method: 'initialized', params: {} })}\n`, error => {
+        if (this.pending.get(id) !== pending) return;
+        if (error) { this.releaseChild(child, error); return; }
+        clearTimeout(timer); this.pending.delete(id); resolve();
+      });
+      if (!written && this.pending.get(id) === pending) {
+        clearTimeout(timer); this.pending.delete(id);
+        reject(Object.assign(new Error('App-server pipe unavailable'), { code: 'EXIT' }));
+      }
+    });
+  }
+
+  write(child, value, completed) {
     if (this.child !== child) return false;
     try {
-      child.stdin.write(value, error => { if (error && this.child === child) this.disconnect(error); });
+      child.stdin.write(value, error => { if (error) this.releaseChild(child, error); completed?.(error); });
       return this.child === child;
-    } catch (error) { if (this.child === child) this.disconnect(error); return false; }
+    } catch (error) { this.releaseChild(child, error); completed?.(error); return false; }
   }
 
-  request(method, params = {}) {
+  request(method, params = {}, timeoutMs = this.options.timeoutMs || 12000) {
     if (!READ_METHODS.has(method)) return Promise.reject(new Error('Only quota read methods are allowed'));
     const child = this.child;
     if (!child) return Promise.reject(new Error('Not connected'));
@@ -319,22 +374,28 @@ class ReadOnlyAppServer {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         const error = Object.assign(new Error('Codex quota request timed out'), { code: 'TIMEOUT' });
-        this.disconnect(error);
-      }, this.options.timeoutMs || 12000);
-      this.pending.set(id, { resolve, reject, timer });
+        this.releaseChild(child, error);
+      }, timeoutMs);
+      this.pending.set(id, { resolve, reject, timer, child });
       this.write(child, `${JSON.stringify({ id, method, params })}\n`);
     });
+  }
+
+  releaseChild(child, error) {
+    if (!child || this.child !== child) return;
+    this.child = null;
+    for (const [id, request] of this.pending) {
+      if (request.child !== child) continue;
+      clearTimeout(request.timer); this.pending.delete(id); request.reject(error);
+    }
+    try { child.stdin.destroy(); } catch {} try { child.kill(); } catch {}
   }
 
   disconnect(error = Object.assign(new Error('Closed'), { code: 'CLOSED' })) {
     this.generation++;
     this.discovery?.abort(); this.discovery = null;
-    const child = this.child;
-    this.child = null;
     this.connecting = null;
-    for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(error); }
-    this.pending.clear();
-    if (child) { try { child.stdin.destroy(); } catch {} try { child.kill(); } catch {} }
+    this.releaseChild(this.child, error);
   }
 
   close() { this.closed = true; this.disconnect(); }

@@ -52,6 +52,7 @@ class CodexWindowMode {
     this.geometryReady = true; this.rendererLoaded = !widget.webContents?.on;
     this.nativeShown = false; this.lastProjected = null; this.raw = null; this.host = null;
     this.binding = Promise.resolve(); this.bindingRevision = 0; this.recreating = false;
+    this.inputDetached = false; this.inputRequested = false; this.inputRevision = 0; this.inputTransition = false;
     this.preferences = {};
     this.lastHostGeometry = ''; this.fastTrackingUntil = 0;
     this.lastPointer = null; this.lastNativeQueryAt = 0;
@@ -288,6 +289,37 @@ class CodexWindowMode {
     }
   }
   getArea() { return this.controller.getArea(); }
+  get nativeChild() { return this.embedded && !this.inputDetached; }
+  async canActivateInput() {
+    const provider = this.provider, id = this.hostId, epoch = this.epoch, owner = this.bindingRevision;
+    if (!provider || !id || this.closed || this.widget.isDestroyed?.() || !this.enabled || !this.inputRequested) return false;
+    let value; try { value = await provider.query(); } catch { return false; }
+    if (this.closed || this.widget.isDestroyed?.() || !this.enabled || !this.inputRequested || provider !== this.provider ||
+        epoch !== this.epoch || owner !== this.bindingRevision || id !== this.hostId || value?.known !== true) return false;
+    const widgetId = nativeHandleId(this.widget.getNativeWindowHandle());
+    return value.foregroundWindow === widgetId || value.foregroundWindow === id || value.foregroundRoot === id;
+  }
+  setInputActive(active) {
+    this.inputRequested = active === true;
+    const revision = ++this.inputRevision;
+    if (!this.enabled || !this.embedded || this.closed) return Promise.resolve(true);
+    this.inputTransition = true;
+    const task = this.binding.then(async () => {
+      if (this.closed || !this.enabled || revision !== this.inputRevision) return false;
+      const detached = this.inputRequested, provider = this.provider, id = this.hostId, epoch = this.epoch, owner = this.bindingRevision;
+      if (detached === this.inputDetached) return true;
+      if (!provider || !id || this.widget.isDestroyed?.()) return false;
+      const result = await (detached ? provider.detachChild(this.widget.getNativeWindowHandle()) : provider.attachChild(this.widget.getNativeWindowHandle(), id));
+      if (result?.known !== true || result.ok !== true) return false;
+      if (this.closed || !this.enabled || provider !== this.provider || epoch !== this.epoch || owner !== this.bindingRevision || id !== this.hostId) return false;
+      this.inputDetached = detached; this.geometryReady = true; this.controller.lastBounds = null;
+      if (this.controller.snapshot) this.controller.snapshot.embedded = this.nativeChild;
+      if (detached && this.lastProjected) this.widget.setBounds({ ...this.lastProjected });
+      return revision === this.inputRevision;
+    });
+    this.binding = task.catch(() => {});
+    return task.finally(() => { if (revision === this.inputRevision && !this.closed) { this.inputTransition = false; this.controller.refreshSize(); this.publish(); } });
+  }
   getBounds() { return this.embedded && this.lastProjected ? { ...this.lastProjected } : this.widget.getBounds(); }
   moveTo(x, y) { return this.controller.moveTo(x, y); }
   refreshSize() { this.controller.refreshSize(); this.publish(); }

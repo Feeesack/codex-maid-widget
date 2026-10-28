@@ -78,12 +78,31 @@ licenses. Consult the installed dependency packages for complete notices.
 Packaged runtimes include Electron's LICENSE and LICENSES.chromium.html;
 retain those files when redistributing the runtime.
 
+Offline semantic search
+----------------------
+The CPU retrieval encoder uses the q8 ONNX conversion
+Xenova/multilingual-e5-small at revision
+761b726dd34fb83930e26aab4e9ac3899aa1fa78:
+https://huggingface.co/Xenova/multilingual-e5-small
+It derives from intfloat/multilingual-e5-small at revision
+614241f622f53c4eeff9890bdc4f31cfecc418b3, a Microsoft Research / UniLM E5
+model. The model's MIT notice, including Microsoft Corporation's copyright,
+is retained in licenses/multilingual-e5-MIT.txt. The model weights are not
+covered by this project's artwork license. Inference runs locally; model
+preparation is an explicit build step using pinned revisions and checksums.
+
+The production runtime includes @huggingface/transformers 3.8.1 (Apache-2.0),
+onnxruntime-node and onnxruntime-common 1.21.0 (MIT), and Sharp 0.34.5
+(Apache-2.0), with their dependency-specific licenses and third-party notices.
+Retain the original LICENSE and NOTICE files within distributed dependency
+packages; these notices do not relicense those dependencies as project code.
+
 Codex app-server and plugin interfaces are provided by OpenAI. Codex is
 installed and authenticated separately and is not redistributed here.
 
 Hugeicons free UI icons
 ----------------------
-Toolbar controls and bubble-page editor icons are an unmodified
+Toolbar, bubble-page editor and account-action icons are an unmodified
 path-data subset of @hugeicons/core-free-icons 4.3.5 (Stroke Rounded), from
 https://github.com/hugeicons/hugeicons . SVG markup is generated mechanically
 from the official package data, not redrawn. These third-party icons use MIT,

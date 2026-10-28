@@ -136,6 +136,66 @@ app.whenReady().then(async () => {
     assert.equal((await provider.request('fixture-close-picker', 'owner')).ok, true);
     await until(async () => !(await observation()).windows.find(item => item.id === hostId)?.modal, 'Own picker did not close.');
     await settled(); assert.deepEqual(mode.getBounds(), anchor); await composed('picker-close-preserves-pet');
+    // Exercise the actual cross-process child-HWND focus while a separate
+    // Chromium host continually restores its own DOM editor focus. No real
+    // Codex window, data-home, account or conversation participates.
+    await hostCommand('focus');
+    assert.equal((await provider.request('fixture-focus ' + hostId + ' ' + hostPid, 'owner')).ok, true);
+    await until(async () => (await observation()).foregroundPid === hostPid, 'Synthetic editor host did not acquire foreground before the test.');
+    await hostCommand('editor-focus-loop');
+    await widget.webContents.executeJavaScript('document.body.insertAdjacentHTML("beforeend",\'<textarea id="fixture-editor" aria-label="Synthetic widget input"></textarea>\')');
+    const focusRemapsBefore = mode.visibility.snapshot().remaps;
+    assert.equal(await mode.setInputActive(true), true);
+    assert.equal((await observation()).widgetParented, true);
+    assert.equal(mode.nativeChild, true);
+    widget.webContents.focus();
+    await widget.webContents.executeJavaScript('document.getElementById("fixture-editor").focus()');
+    await until(async () => (await observation()).foregroundPid === hostPid && await widget.webContents.executeJavaScript('document.hasFocus()&&document.activeElement.id==="fixture-editor"'), 'Embedded editor did not acquire native and DOM focus.');
+    const editorQueries = queries;
+    for (let index = 0; index < 12; index++) {
+      widget.webContents.sendInputEvent({ type: 'char', keyCode: 'a' });
+      await wait(55);
+      assert.equal((await observation()).foregroundPid, hostPid, 'Host focus changed during embedded widget typing.');
+    }
+    assert.equal(await widget.webContents.executeJavaScript('document.getElementById("fixture-editor").value'), 'a'.repeat(12));
+    assert.ok(queries >= editorQueries + 4); assert.equal(mode.enabled, true); assert.equal(mode.nativeChild, true);
+    assert.equal(mode.visibility.snapshot().remaps, focusRemapsBefore, 'Input focus must not remap or hide/show the widget.');
+    capture('editor-typing-retains-native-child-and-dom-focus-through-host-focus-loop');
+    const editorBounds = mode.getBounds(), editorArea = mode.getArea();
+    await hostCommand('bounds', { bounds: { ...smaller, x: smaller.x + 17, y: smaller.y + 13 } });
+    await until(() => mode.getArea()?.x !== editorArea.x, 'Detached editor did not keep following its host.');
+    assert.equal((await observation()).foregroundPid, hostPid);
+    assert.ok(Math.abs(mode.getBounds().x - editorBounds.x - 17) <= 2); capture('editor-follow-update-does-not-activate-host');
+    await hostCommand('focus');
+    await until(async () => (await observation()).foregroundPid === hostPid, 'Synthetic host did not regain focus.');
+    assert.equal(await mode.setInputActive(false), true); await settled();
+    assert.equal(mode.visibility.snapshot().remaps, focusRemapsBefore, 'Input blur must not remap or hide/show the widget.');
+    for (let index = 0; index < 4; index++) { await wait(65); assert.equal((await observation()).foregroundPid, hostPid, 'Reattachment stole focus back from host.'); }
+    await hostCommand('editor-focus-stop'); await hostCommand('bounds', { bounds: smaller });
+    await until(() => mode.getArea()?.x === editorArea.x, 'Host restoration after editing was not observed.'); await settled();
+    assert.deepEqual(mode.getBounds(), anchor); capture('editor-blur-reattaches-without-taking-host-focus');
+    const focusMain = fs.readFileSync(path.join(__dirname, '../src/main.cjs'), 'utf8');
+    const focusStart = focusMain.indexOf("  handle('widget-input-active',"), focusEnd = focusMain.indexOf('  const chatHandle', focusStart);
+    require('node:vm').runInNewContext(focusMain.slice(focusStart, focusEnd), { widget, windowMode: mode, widgetInputSequence: 0,
+      // Synthetic Tab is dispatched to this fixture's own textarea; bind its
+      // pointer witness to the same surface instead of moving the user's cursor.
+      screen: { getCursorScreenPoint: () => { const b = widget.getBounds(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; } },
+      settingsWindow: null, chatWindow: null, quitting: false, t: value => value,
+      handle: (name, handler) => ipcMain.handle(name, async (event, ...args) => {
+        (report.keyboardEvents ||= []).push({ args, focused: widget.isFocused(), detached: mode.inputDetached, transition: mode.inputTransition });
+        const result = await handler(event, ...args);
+        report.keyboardEvents.push({ result, focused: widget.isFocused(), detached: mode.inputDetached, transition: mode.inputTransition });
+        return result;
+      }) }, { filename: 'isolated-production-focus-ipc.cjs' });
+    await widget.webContents.executeJavaScript(fs.readFileSync(path.join(__dirname, '../src/widget-input-focus.js'), 'utf8'));
+    await widget.webContents.executeJavaScript('window.fixtureEditorFocus=MaidInputFocus.connect({window,document,maid:window.maid});document.body.tabIndex=0;document.body.focus()');
+    widget.focus(); widget.webContents.focus();
+    await widget.webContents.executeJavaScript('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Tab",bubbles:true}));document.getElementById("fixture-editor").focus()');
+    await until(async () => mode.nativeChild && (await observation()).foregroundPid === hostPid &&
+      await widget.webContents.executeJavaScript('document.hasFocus()&&document.activeElement.id==="fixture-editor"'), 'Keyboard editor activation was cancelled by native reparent blur.');
+    capture('editor-tab-enters-through-production-ipc-and-renderer');
+    await hostCommand('focus'); await until(() => mode.nativeChild, 'Renderer window blur did not release keyboard editing.'); await settled();
+    await widget.webContents.executeJavaScript('window.fixtureEditorFocus.dispose()'); ipcMain.removeHandler('widget-input-active');
     mode.hide(); await until(async () => !(await observation()).widgetVisible, 'Manual hide failed.'); const hiddenQueries = queries;
     await until(() => queries >= hiddenQueries + 3, 'No polling while hidden.'); assert.equal((await observation()).widgetVisible, false); capture('manual-hide-stable');
     mode.show(); await settled(); capture('explicit-show-recovers-child');
@@ -162,6 +222,11 @@ app.whenReady().then(async () => {
     if (foregroundOther) { await settled(); const covered = await observation();
       assert.equal(covered.widgetParentId, hostId); assert.equal(covered.widgetVisible, true); assert.equal((lastNative.style & 0x10000000) !== 0, true);
       assert.deepEqual(mode.getBounds(), anchor); capture('other-process-half-window-retains-child');
+      await mode.setInputActive(true);
+      assert.equal(await mode.canActivateInput(), false, 'A stationary widget pointer must not permit activation over another native foreground process.');
+      assert.equal((await observation()).foregroundPid, otherPid);
+      await mode.setInputActive(false); await settled();
+      assert.equal((await observation()).foregroundPid, otherPid); capture('foreign-foreground-blocks-late-editor-activation');
     } else report.cases.push({ name: 'other-process-half-window-retains-child', skipped: true, reason: 'Windows foreground lock denied the self-created window.' });
     fs.writeFileSync(otherCommand, JSON.stringify({ id: 2, action: 'close' }));
     await until(() => readJson(otherResponse)?.id === 2, 'Own half-window failed to close.'); occluderProcess.kill(); occluderProcess = null;

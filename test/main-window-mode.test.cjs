@@ -41,7 +41,11 @@ function controller(variant, options = {}) {
   };
   const isolatedFilesystem = new Proxy({
     mkdirSync(file) { assert.equal(file, fakeHome); },
-    readFileSync(file, encoding) { assert.equal(file, settingsFile); assert.equal(encoding, 'utf8'); return JSON.stringify(persisted); },
+    readFileSync(file, encoding) {
+      assert.equal(file, settingsFile); assert.ok(encoding === undefined || encoding === 'utf8');
+      const contents = JSON.stringify(persisted);
+      return encoding === undefined ? Buffer.from(contents) : contents;
+    },
     writeFileSync(file, value) {
       if (file === controlFile) { controlRecord = JSON.parse(value); return; }
       assert.equal(file, settingsFile + '.tmp'); temporary = JSON.parse(value);
@@ -83,6 +87,9 @@ function controller(variant, options = {}) {
   });
   class IntegratedMode extends windowMode.CodexWindowMode {
     constructor(value) { super({ ...value, platform: variant.platform, providerFactory: () => provider,
+      // Only the explicit native-child fixture opts into the compatibility
+      // path. The production constructor keeps its independent input surface.
+      allowNativeChild: options.embedded === true ? true : value.allowNativeChild,
       activeIntervalMs: 100, // Keep provider polls separate from the <=40 ms animation/remap fixture timers.
       topmostProviderFactory: () => ({ async setTopmost(_handle, value) { return { known: true, ok: true, topmost: value }; }, close() {} }) }); mode = this; }
   }
@@ -144,11 +151,11 @@ function controller(variant, options = {}) {
   const context = { module: { exports: {} }, __dirname: path.join(variant.root, 'src'), Date: FakeDate, ...clock,
     process: { platform: variant.platform, argv: [], env: {}, pid: 900, execPath: path.join(fakeHome, 'widget') },
     require(name) { if (Object.hasOwn(modules, name)) return modules[name]; throw new Error('Unexpected main dependency: ' + name); },
-    __widget: widget, __tray: tray,
+    __widget: widget, __tray: tray, __forecast: options.forecast,
     __library: { defaultId: 'lilac-dragon', list: () => [{ id: 'lilac-dragon', name: 'Isolated pet', url: 'isolated:pet', available: true }] },
   };
   vm.runInNewContext(fs.readFileSync(path.join(variant.root, 'src', 'main.cjs'), 'utf8') +
-    '\nwidget = __widget; tray = __tray; library = __library; setupIpc(); openSettings(); applyWindowSettings();\n' +
+    '\nwidget = __widget; tray = __tray; library = __library; resetForecastSource = __forecast; setupIpc(); openSettings(); applyWindowSettings();\n' +
     'module.exports = { state, hide, show, action, startControl };', context, { filename: 'main.cjs' });
   const api = context.module.exports;
   function advance(milliseconds) {
@@ -173,6 +180,7 @@ function controller(variant, options = {}) {
     get persisted() { return plain(persisted); }, get mode() { return mode; },
     get schedules() { return intervalStarts; }, get settingsSender() { return settingsWindow.webContents; },
     state: () => plain(api.state()),
+    forecast: (sender = settingsWindow.webContents) => handlers.get('refresh-reset-forecast')({ sender }),
     patch: value => plain(handlers.get('settings')({ sender: settingsWindow.webContents }, value)),
     foreignPatch(value) { return handlers.get('settings')({ sender: {} }, value); },
     preview(value, sender = settingsWindow.webContents, ...frames) { const senderFrame = frames.length ? frames[0] : sender.mainFrame; return plain(handlers.get('preview-corner-peek')({ sender, senderFrame }, value)); },
@@ -199,7 +207,7 @@ function controller(variant, options = {}) {
       const request = { method: 'POST', url: '/action', headers: { authorization: 'Bearer ' + controlRecord.token },
         async *[Symbol.asyncIterator]() { yield JSON.stringify({ action }); } };
       let status = 200, body;
-      await route(request, { setHeader() {}, writeHead(code) { status = code; }, end(value) { body = value; } });
+      await route(request, Object.assign(new EventEmitter(), { setHeader() {}, writeHead(code) { status = code; }, end(value) { body = value; } }));
       return { status, body: JSON.parse(body) };
     },
     close() { mode?.close(); timers.clear(); },
@@ -1090,5 +1098,19 @@ for (const variant of variants) {
     assert.equal(reloaded.state().settings.stayInCodexWindow, false);
     assert.deepEqual(reloaded.state().settings.phrases, preferences.phrases);
     assert.deepEqual(reloaded.state().settings.position, desktopPosition);
+  });
+}
+
+for (const variant of variants) {
+  test(variant.name + ': reset forecast IPC is trusted and hiding the page suspends its reader', async t => {
+    const enabled = []; let reads = 0;
+    const value = { status: 'live', source: 'https://codex-reset.com/', probability24h: 22, probability48h: 39 };
+    const control = controller(variant, { forecast: { snapshot: () => value, setEnabled: flag => enabled.push(flag), refresh: async () => { reads++; return value; } } });
+    t.after(() => control.close());
+    assert.deepEqual(control.state().resetForecast, value);
+    assert.deepEqual(await control.forecast(), value); assert.equal(reads, 1);
+    assert.throws(() => control.forecast({}), /无效窗口/); assert.equal(reads, 1);
+    control.patch({ bubbleHiddenPages: ['resetForecast'] }); assert.equal(enabled.at(-1), false);
+    control.patch({ bubbleHiddenPages: [] }); assert.equal(enabled.at(-1), true);
   });
 }

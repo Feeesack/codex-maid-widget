@@ -22,3 +22,6 @@ docs/coordination/
 /github-publish/
 # PowerShell cache generated during local validation
 /Microsoft/Windows/PowerShell/ModuleAnalysisCache
+# Pinned public encoder weights are prepared and hash-verified separately.
+/resources/chat-semantic/
+/macos/resources/chat-semantic/

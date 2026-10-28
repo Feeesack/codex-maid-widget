@@ -18,7 +18,8 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
 const accountA = 'a'.repeat(64), accountB = 'b'.repeat(64);
 const initialTime = Date.UTC(2026, 9, 19, 1);
 const quota = resetsAt => ({ status: 'live', account: { authMode: 'chatgpt', planType: 'plus' },
-  buckets: [{ id: 'codex', primary: { windowDurationMins: 300, remainingPercent: 40, resetsAt } }],
+  buckets: [{ id: 'codex', primary: { windowDurationMins: 300, remainingPercent: 40, resetsAt },
+    secondary: { windowDurationMins: 10080, remainingPercent: 90, resetsAt: resetsAt + 86400 } }],
   clearPrevious: true, accountChanged: false });
 
 // The real main entry point, settings, ledger and alarm execute in isolated VMs.
@@ -33,7 +34,7 @@ async function harness(variant, options = {}) {
     sound: true, ...options.settings })]]);
   if (options.corruptLedger) files.set(ledgerFile, '{ invalid fixture');
   const writes = [], reads = [], messages = [], dependencies = [], timers = new Map();
-  const descriptors = new Map(), windows = [], handlers = new Map();
+  const descriptors = new Map(), windows = [], handlers = new Map(), forecasts = [];
   let now = initialTime, sequence = 0, route, authCallback, startup, registryWritesToFail = 0;
   const clock = {
     setTimeout(callback, delay = 0) { const id = ++sequence; timers.set(id, { callback, due: now + delay }); return id; },
@@ -60,9 +61,9 @@ async function harness(variant, options = {}) {
       return { isFile: () => true, size: Buffer.byteLength(files.get(file)) };
     },
     readFileSync(file, encoding) {
-      assertDataPath(file); assert.equal(encoding, 'utf8'); reads.push(file);
+      assertDataPath(file); assert.ok(encoding === undefined || encoding === 'utf8'); reads.push(file);
       if (!files.has(file)) throw missing();
-      return files.get(file);
+      return encoding === undefined ? Buffer.from(files.get(file)) : files.get(file);
     },
     openSync(file, flags, mode) {
       assertDataPath(file); assert.equal(flags, 'wx'); assert.equal(mode, 0o600);
@@ -121,7 +122,8 @@ async function harness(variant, options = {}) {
       'node:fs': isolatedFs, 'node:fs/promises': unavailableAsyncFs, 'node:path': path,
       'node:os': { homedir: () => dataHome }, 'node:child_process': {},
       'node:string_decoder': { StringDecoder }, 'node:crypto': { createHash }, '../package.json': { version: '0.3.28' },
-      './codex-cli.cjs': load('codex-cli.cjs', { 'node:fs': isolatedFs, 'node:path': path }),
+      './codex-cli.cjs': load('codex-cli.cjs', { 'node:fs': isolatedFs, 'node:path': path,
+        'node:os': { homedir: () => dataHome } }),
       './macos-bundle.cjs': { CODEX_BUNDLE_ID: 'synthetic.bundle', MacBundleReader: class {}, standardBundles: () => [] },
     });
     source = new CodexDataSource({ codexHome: path.join(dataHome, 'codex'),
@@ -169,6 +171,7 @@ async function harness(variant, options = {}) {
   });
   const modules = {
     electron: { app, BrowserWindow: Window, ipcMain, screen,
+      net: { fetch() { throw new Error('Account fixtures must never access the network'); } },
       get Notification() { throw new Error('Account reminders must never access system notifications'); },
       Tray: class extends EventEmitter { setToolTip() {} setContextMenu() {} },
       Menu: { buildFromTemplate: value => value }, nativeImage: {},
@@ -193,6 +196,22 @@ async function harness(variant, options = {}) {
       get(id) { return id === character.id ? character : undefined; } list() { return [character]; }
     } },
     './codex-data.cjs': { CodexDataSource: class { constructor() { return source; } } },
+    // These tests exercise account startup, so the public forecast provider is
+    // deliberately inert. It records lifecycle calls without reading a cache,
+    // consulting a host data-home helper or invoking even the mocked transport.
+    './reset-forecast.cjs': { ResetForecast: class {
+      constructor(value) {
+        assert.equal(value.file, path.join(dataHome, 'reset-forecast-cache.json'));
+        assert.equal(value.version, app.getVersion()); assert.equal(value.demo, !!options.demo);
+        assert.equal(typeof value.fetch, 'function'); assert.equal(typeof value.onChange, 'function');
+        this.file = value.file; this.demo = value.demo; this.enabled = false; this.closed = false;
+        this.refreshes = 0; this.transitions = []; forecasts.push(this);
+      }
+      setEnabled(enabled) { this.enabled = !!enabled; this.transitions.push(this.enabled); }
+      snapshot() { return { source: 'https://codex-reset.com/', status: !this.enabled ? 'disabled' : this.demo ? 'demo' : 'connecting' }; }
+      async refresh() { this.refreshes++; return this.snapshot(); }
+      close() { this.closed = true; }
+    } },
     './codex-desktop.cjs': {}, './windows-launch.cjs': {}, './macos-launch.cjs': {}, './desktop-observation.cjs': {},
     './auth-change-watch.cjs': { watchAuthChanges(home, callback) {
       assert.equal(home, path.join(dataHome, 'codex')); authCallback = callback; return () => {};
@@ -213,7 +232,8 @@ async function harness(variant, options = {}) {
     '\nmodule.exports = { refresh, state, authChanged, notifyAccountReset, setWidgetForTest: value => { widget = value; } };', context, { filename: 'main.cjs' });
   await startup; await flush();
   const api = context.module.exports;
-  return { source, messages, dependencies, reads, writes, files, ledgerFile,
+  assert.equal(forecasts.length, 1);
+  return { source, messages, dependencies, reads, writes, files, ledgerFile, forecast: forecasts[0],
     state: () => plain(api.state()),
     invoke(name, ...args) { return handlers.get(name)({ sender: windows[0].webContents }, ...args); },
     foreign(name, ...args) { return handlers.get(name)({ sender: {} }, ...args); },
@@ -235,10 +255,10 @@ async function harness(variant, options = {}) {
     async publicStatus() {
       let status = 200, body;
       await route({ method: 'GET', url: '/status', headers: { authorization: 'Bearer synthetic-control-token' } },
-        { setHeader() {}, writeHead(value) { status = value; }, end(value) { body = value; } });
+        Object.assign(new EventEmitter(), { setHeader() {}, writeHead(value) { status = value; }, end(value) { body = value; } }));
       assert.equal(status, 200); return JSON.parse(body);
     },
-    close() { app.emit('before-quit'); assert.equal(source.closed, true); assert.equal(timers.size, 0); },
+    close() { app.emit('before-quit'); assert.equal(source.closed, true); assert.equal(forecasts[0].closed, true); assert.equal(timers.size, 0); },
   };
 }
 
@@ -267,6 +287,7 @@ for (const variant of variants) {
     const initial = plain(fixture.invoke('list-accounts'));
     assert.equal(initial.count, 1); assert.equal(initial.accounts[0].current, true);
     assert.equal(initial.accounts[0].remainingPercent, 40);
+    assert.equal(initial.accounts[0].weeklyRemainingPercent, 90);
     assert.doesNotMatch(JSON.stringify(initial), /[a-f0-9]{64}|synthetic-control-token/);
     assert.throws(() => fixture.foreign('list-accounts'), /无效窗口/);
     assert.throws(() => fixture.foreign('rename-account', initial.accounts[0].id, 'Foreign label'), /无效窗口/);
@@ -376,6 +397,21 @@ for (const variant of variants) {
     assert.equal(plain(fixture.invoke('list-accounts')).count, 0);
     fixture.invoke('rename-account', 'account-1', 'Ignored'); fixture.invoke('remove-account', 'account-1');
     assert.equal(fixture.files.has(fixture.ledgerFile), false);
+    assert.equal(fixture.forecast.demo, true); assert.equal(fixture.state().resetForecast.status, 'demo');
+    assert.equal(fixture.reads.includes(fixture.forecast.file), false);
+    assert.equal(fixture.writes.includes(fixture.forecast.file), false);
+  });
+
+  test(`${variant.name}: hidden reset forecast remains an isolated inactive provider during account startup`, async t => {
+    const fixture = await harness(variant, { settings: { bubbleHiddenPages: ['resetForecast'] } });
+    t.after(() => fixture.close());
+    assert.equal(fixture.forecast.enabled, false);
+    assert.equal(fixture.forecast.refreshes, 0);
+    assert.deepEqual(fixture.forecast.transitions, [false]);
+    assert.equal(fixture.state().resetForecast.status, 'disabled');
+    assert.equal(fixture.reads.includes(fixture.forecast.file), false);
+    assert.equal(fixture.writes.includes(fixture.forecast.file), false);
+    assert.equal((await fixture.publicStatus()).resetForecast.status, 'disabled');
   });
 
   test(`${variant.name}: one login with personal and work plans creates distinct local quota records`, async t => {

@@ -19,6 +19,7 @@ Run in PowerShell from the repository root:
 
 ```powershell
 npm ci
+node scripts/prepare-chat-semantic.cjs --download
 npm test
 npm run smoke
 npm run check:native
@@ -26,11 +27,13 @@ npm run check:drag-dpi
 npm run check:window
 npm run check:follow
 npm run build
-node distribution/windows/build.cjs
-node distribution/windows/test-install.cjs
 ```
 
-`npm run build` produces the complete portable application at `release/Codex-Maid-Widget-win32-x64/`. The installer builder packages it with the local plugin connector and writes the `.exe` and its checksum under `release/installers/`.
+The explicit preparation command downloads the pinned public multilingual encoder and verifies its revision, byte lengths and SHA-256 hashes. It sends no chat records. Later builds can use `node scripts/prepare-chat-semantic.cjs` to verify existing resources without downloading. Runtime inference is local CPU only and never downloads a model. Build from a clean controlled source tree with a real dependency installation: production dependency junctions or symlinks are rejected. Install with `npm ci` in that tree instead of linking the development workspace's `node_modules`.
+
+`npm run build` produces the portable application at `release/Codex-Maid-Widget-win32-x64/`. Production dependencies and model resources are copied into its `resources` directory; running it needs no development Node.js, Python, GPU or network model service. Use a separate build output and the project's local upgrade procedure when the application is already running; preserve the old application and user data.
+
+Only after an explicit release request, run `node distribution/windows/build.cjs` and `node distribution/windows/test-install.cjs` to generate and verify an installer. Daily local updates do not generate installers.
 
 The installer builder uses Inno Setup. If its local compiler is missing, the bootstrap script downloads the pinned official compiler and verifies its checksum and publisher signature. You may instead provide its executable through `ISCC_PATH`.
 
@@ -43,14 +46,17 @@ Use a Mac with macOS development tools, including the command-line tools needed 
 ```sh
 cd macos
 npm ci
+node scripts/prepare-chat-semantic.cjs --download
 npm test
 npm run smoke
 npm run check:native
 npm run check:follow
-npm run build:installer
+npm run build:mac
 ```
 
-The installer builder creates one package for Apple Silicon and Intel under `macos/release/<version>/installers/`, with a SHA-256 checksum. It checks universal executables, application layout, embedded runtime and connector, resource permissions, and app signatures.
+Install dependencies on the target Mac architecture. The build checks ONNX CPU and Sharp resources for the requested target and fails if they are missing, instead of silently packaging another platform's native modules. Universal builds require both arm64 and x64 native dependency resources; single-architecture dependency installation alone does not prove universal readiness. Native Mac build and manual experience must be checked on macOS separately from Windows source tests.
+
+Only after an explicit release request, `npm run build:installer` creates a package under `macos/release/<version>/installers/` with a SHA-256 checksum. It checks universal executables, application layout, embedded runtime and connector, resource permissions, and app signatures.
 
 The app uses an ad-hoc signature. Developer ID Application/Installer signing and Apple notarization are not configured. A successful build does not imply notarization.
 
@@ -58,7 +64,7 @@ The app uses an ad-hoc signature. Developer ID Application/Installer signing and
 
 The macOS workflow builds one universal installer and installs that same artifact on Apple Silicon and Intel macOS runners. It checks installed-app startup, embedded-runtime MCP, rendering and follow behavior, and the native login helper.
 
-Window display uses different platform mechanisms: Windows attaches a native child window to the Codex main window; macOS uses a separate window constrained to Codex's bounds and visibility. A Windows containment check does not verify Mac Spaces or full-screen behavior. Report native runner results and manual desktop acceptance separately.
+Window display uses different platform mechanisms. The production Windows follow path is an independent top-level widget owned by the Codex main window; it follows the host's bounds and minimizes/restores with it, without attaching the windows' input queues. macOS uses a separate window constrained to Codex's bounds and visibility. A Windows containment check does not verify Mac Spaces or full-screen behavior. Report native runner results and manual desktop acceptance separately.
 
 `macos/scripts/check-macos-startup.cjs` exercises real launchd registration, removal, and cleanup. It is restricted to an isolated GitHub Actions runner and is not a daily local-development command. Do not change its isolation guard or run startup tests against personal login items.
 
@@ -66,7 +72,7 @@ Window display uses different platform mechanisms: Windows attaches a native chi
 
 On Windows, `check:drag-dpi` runs the production drag handlers against native Electron windows at 100%, 125%, 150%, 175%, and 200% device scale. Each isolated profile compares the previous position-only behavior with fixed preferred bounds, including repeated movement, immediate left/right mirroring, bottom-corner snapping and free placement near other edges. It records normal pixel rounding separately and requires the fixed size range to stay within one DIP. It does not move the user's cursor or load personal widget/Codex profiles.
 
-`check:window` creates a separate Electron host and exercises the production native provider and containment adapter with isolated profiles. It checks real child composition, fixed geometry, native modal pickers, minimization and restoration, visibility recovery, style-cache loss and surface recreation, and clean detachment. It does not attach to or control the user's Codex window. Cross-process attachment requires matching HWND DPI-awareness contexts.
+`check:window` creates a separate Electron host and exercises the native provider and containment adapter with isolated profiles. It covers fixed geometry, native modal pickers, minimization and restoration, visibility recovery, style-cache loss and surface recreation, plus the retained child-window compatibility path. Older child-composition checks do not establish acceptance of the production owned-top-level input and stacking behavior. The check does not attach to or control the user's Codex window. Cross-process child attachment in that compatibility path requires matching HWND DPI-awareness contexts.
 
 ## Optional checks
 

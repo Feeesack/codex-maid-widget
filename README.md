@@ -10,7 +10,7 @@ A small desktop companion for Codex. It shows your remaining quota and local tok
 
 ## See it in action
 
-Screenshots show the current Windows interface with **synthetic demo data**. Account names, conversation names, quota values and repository counts are examples. Click an image to view it at full size.
+These screenshots show the 0.3.48 Windows interface with **synthetic demo data**. Account names, conversation names, quota values and repository counts are examples. The current settings and companion-chat interfaces have changed. Click an image to view it at full size.
 
 | Quota and the new dragon girl | Conversation context and Git | Multiple account countdowns |
 | --- | --- | --- |
@@ -22,18 +22,18 @@ Screenshots show the current Windows interface with **synthetic demo data**. Acc
 
 ## Download and install
 
-The latest Windows and macOS installers are **v0.3.51**. This release keeps the bilingual interface from 0.3.49/0.3.50 and adds the macOS window-following, stacking-recovery and viewport-clipping fixes from PR #1. Download the installers below, or visit [Releases](https://github.com/Feeesack/codex-maid-widget/releases) for other versions.
+**v0.5.14 is released.** Windows x64 and macOS 13+ universal installers are available. This release adds companion chat and persistent memory, archive and usage management, clearer settings, upgrade-safe chat recovery, and reset forecasts with public announcement reminders.
 
 | Platform | Installer |
 | --- | --- |
-| Windows x64 | [Download Windows installer (.exe)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.51/Codex-Maid-Widget-0.3.51-windows-x64-setup.exe) |
-| macOS 13+, Apple Silicon and Intel | [Download universal Mac installer (.pkg)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.3.51/Codex-Maid-Widget-0.3.51-macOS-universal.pkg) |
+| Windows x64 | [Windows installer (.exe)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.5.14/Codex-Maid-Widget-0.5.14-windows-x64-setup.exe) |
+| macOS 13+, Apple Silicon and Intel | [Universal Mac installer (.pkg)](https://github.com/Feeesack/codex-maid-widget/releases/download/v0.5.14/Codex-Maid-Widget-0.5.14-macOS-universal.pkg) |
 
 Release notes and SHA-256 checksums are on the [Releases](https://github.com/Feeesack/codex-maid-widget/releases) page. The installers include the runtime and optional local Codex plugin, so you don't need to install Node.js or npm, or download the source.
 
 The [0.3.48 release notes](docs/releases/0.3.48.md) bring together the changes since 0.3.21: paired press/release interactions; five sound choices including DSH Duck; multi-account reset reminders; two new dragon-girl poses; conversation context, compaction and Git status; Motion mirroring; Hugeicons controls; page ordering and visibility; live appearance and corner-hiding previews; and Windows installation-path fixes. Sound sources and their separate license scopes are documented in [audio provenance](docs/interaction-audio.md).
 
-The [0.3.51 release notes](docs/releases/0.3.51.md) cover the macOS native-window fixes: more reliable Codex window identification, bounded visibility recovery, smoother following, corrected stacking after focus changes and `overflow: clip` for focused bubble content. Windows behavior, settings, imported characters and original assets are preserved. The Mac package is built and checked on native runners; hands-on acceptance for Spaces, full screen, multiple displays, Retina, audio and login sessions remains separate.
+The [0.5.14 release notes](docs/releases/0.5.14.md) describe this release, and the [changelog](CHANGELOG.md) records its preceding local updates. Windows settings, imported characters and original assets are retained. The macOS universal installer has completed native installation and startup checks on Apple Silicon and Intel; hands-on acceptance for Spaces, full screen, multiple displays, Retina, audio and login sessions remains separate.
 
 1. Install and sign in to the official Codex desktop app to see real account quota.
 2. Run the installer, then open Codex Maid Widget from the Windows Start menu or macOS Applications folder.
@@ -50,6 +50,13 @@ The installers don't yet have developer distribution certificates. The Mac app i
 - A bounce and optional short sound when the widget sees a newly completed turn: “duang.” You can also click the character or use a shortcut to trigger it yourself.
 - Automatic startup alongside Codex. A login helper waits in the background, opens the widget when Codex starts, and closes it after Codex fully quits. You can turn this off in settings.
 - Four built-in characters, a local image library, custom phrases, and bubble colors that match the character.
+- Optional text and image chat through your signed-in Codex account, with streamed replies, interruption, model selection and a dedicated companion project. Chat and model-based maintenance consume account quota; no separate API key is needed.
+- Persistent persona, user-preference and fact records, checkpoint archives with original images, offline history search and controlled handoff to a new conversation. Archive titles, tags, favorites and hidden state use separate metadata, preserving original records.
+- Seven chat-management pages: current chat, usage, archive history, memory, handoff and maintenance, dream maintenance, and project/model settings. Native chat token records are separate from the widget's device-wide log totals; missing measurements remain unknown.
+- A readable chat bubble and expandable writing card that preserve the same input field, draft, selection and input-method composition. Enter adds a line, Ctrl/Cmd+Enter sends, and Escape collapses the card.
+- Five settings categories, bilingual navigation and draft preservation. Chat reconciliation reports progress and specific errors; compatible capacity proofs can survive program or CLI upgrades without replaying an unknown request or silently switching threads.
+- A reset forecast page that prioritizes explicit Tibo signals and real target countdowns, with secondary 24/48-hour odds, the last confirmed reset and freshness status, using data from [codex-reset.com](https://codex-reset.com/). Community forecasts do not guarantee a reset or replace your real account quota. See the [0.5.14 release notes](docs/releases/0.5.14.md).
+- Reset reminders read bounded public announcement and observation data from `codex-reset.com`, show source citations, announcement/observation deadlines and stale/offline state, and keep announcement, observation, Tibo self-report and real quota confirmation separate. Each observed account gets a five-hour expiry reminder with widget text, four bounces in one second and one short sound; reminders deduplicate, can be disabled, and never block startup when the network is unavailable.
 - Dragging with a fixed character size, bottom-corner snapping, mirrored layouts, size and opacity settings, always-on-top, click-through, and remembered window placement. The character turns as you drag it across the screen's midpoint.
 - Optional display inside the Codex window. On Windows, the character is attached to the main window and moves, minimizes and restores with it. On macOS, a separate widget window follows Codex's bounds and visibility.
 - Optional head peeking at the two bottom corners. Drag inward to reveal the whole character; release near a bottom corner to let it settle back.
@@ -70,7 +77,9 @@ Quota percentages come from the account currently signed in to Codex. Token tota
 | --- | --- |
 | Move | Drag the character or bubble |
 | Refresh | Click the bubble or refresh button |
-| Change bubble view | Previous/next arrows: quota, conversation, accounts, today, week, last turn, phrases; order and visibility are configurable |
+| Change bubble view | Previous/next arrows: quota, conversation, accounts, today, week, last turn, phrases, reset forecast, and optional companion chat; order and visibility are configurable |
+| Companion chat | Enable the chat page in Settings, create or resume its project, then open the edit button or chat-management window |
+| Write / send | Enter adds a line; Ctrl+Enter on Windows or Cmd+Enter on Mac sends; Escape collapses the writing card |
 | Bounce / interaction | Click the character or heart; press `Q` or Space while focused |
 | Settings | Gear, right-click, or tray/menu bar |
 | Show / hide | Windows `Ctrl+Alt+M`; Mac `Control+Option+M` |
@@ -82,9 +91,9 @@ If another app uses the same shortcut, you can use the tray/menu bar instead. Ho
 
 ### Window display and corner peeking
 
-Both options are off by default. On Windows, enable **Stay inside the Codex window** (**固定在 Codex 窗口内**) in settings to keep the character inside Codex. It follows the main window's movement and system minimize/restore animation. Other apps and dialogs cover it according to normal window ordering, and it does not float above them. Turning the option off restores the saved desktop position and always-on-top preference.
+Both options are off by default. On Windows, enable **Stay inside the Codex window** (**固定在 Codex 窗口内**) in settings to keep the character within Codex's bounds. It remains an independent top-level window owned by the Codex main window, following its movement and minimize/restore state while accepting normal text input. Other applications cover it according to normal window ordering. Turning the option off restores the saved desktop position and always-on-top preference.
 
-On macOS, the equivalent option is labelled **Show only inside the Codex window** (**仅在 Codex 窗口内显示**). It uses a separate window, hides when another app is active or Codex is minimized, and does not use Windows native child-window attachment. Mac Spaces and full-screen behavior still need hands-on validation.
+On macOS, the equivalent option is labelled **Show only inside the Codex window** (**仅在 Codex 窗口内显示**). It uses a separate window and hides when another app is active or Codex is minimized. Mac Spaces and full-screen behavior still need hands-on validation.
 
 Enable **Peek from a bottom corner** (**底角吸附时只露头部**) to tuck the character behind the side and bottom edges at either bottom corner. Dragging inward gradually brings the full character into view; dragging outward keeps it following the pointer. Releasing near a bottom corner snaps it back with a short settling animation. Other edges do not attract the widget. This works in desktop mode and inside Codex.
 
@@ -105,7 +114,11 @@ Before uninstalling a connected widget, use **Disconnect Codex plugin** in the W
 
 ## Data and privacy
 
-The widget gets quota from the local Codex app-server and extracts conversation metadata and numeric counter/checkpoint events from local session and archived-session records, without exporting conversation text. It asks for no API key, sends no prompts to a model and has no application analytics.
+Quota and device-wide usage displays read the local Codex app-server and numeric metadata from local session records; those displays do not send model prompts. The app asks for no separate API key and has no application analytics.
+
+Companion chat is optional and uses your signed-in ChatGPT account through Codex. Sending a message transmits its text, attached images and the relevant project memory to the model service. Checkpoint and dream maintenance also make model requests and consume account quota. After creating a companion project, review the dream mode in its maintenance page: automatic mode can run when its idle, quota and maintenance conditions are met; choose manual mode if you want to start those jobs yourself. The displayed dream budget is an estimate, not a guaranteed charge limit.
+
+Companion archives, original images, memory revisions, retrieval indexes and its native token ledger stay in the project directory you choose. Model requests can include the bounded context selected from that project. Hidden reasoning is not archived, and the usage ledger does not store message bodies. Different logins on the same device share that companion project.
 
 For account nicknames and workspace names, the packaged app can use existing local sign-in credentials within its main process to make read-only requests to fixed official profile endpoints. It does not refresh sign-in or store credentials in account records, logs, control responses or MCP output. Display names and aliases stay local. Profile lookup failure does not prevent quota reading.
 
@@ -123,6 +136,7 @@ Windows, from the repository root:
 
 ```powershell
 npm ci
+node scripts/prepare-chat-semantic.cjs --download
 npm test
 npm run build
 node distribution/windows/build.cjs
@@ -133,6 +147,7 @@ macOS, on a Mac:
 ```sh
 cd macos
 npm ci
+node scripts/prepare-chat-semantic.cjs --download
 npm test
 npm run build:installer
 ```
@@ -141,7 +156,9 @@ Windows and macOS use the same release version. The build stops if their manifes
 
 ## Testing
 
-Windows 0.3.51 has local runtime evidence for main-app and helper versions, non-demo quota, local controls and MCP. Automated regression covers both source trees, including rendering, settings, data parsing, interactions and path compatibility. The universal Mac installer is built on a native runner, with installation, launch, MCP, native window and launchd-helper checks on Apple Silicon and Intel runners.
+Windows 0.5.14 has local evidence for matching main-app, helper and MCP versions, non-demo quota, local controls and protected user data. The latest focused regression passed 47 tests; the isolated bubble check passed 12 scenarios with 24 screenshots across both source trees, two languages and three sizes. The preceding recovery regression passed 157 tests. These results cover their stated changes and do not establish a new full-suite pass.
+
+The worker shutdown lifecycle fix passes the focused service regression with the real semantic backend; the former native V8 crash did not recur. The complete cross-platform suite still has local window-fixture and platform-environment failures, so this release is not presented as a full-suite pass. Full real-chat workflows, Terra sending, input-focus feel and long-term memory quality still need user feedback.
 
 CI does not replace hands-on Mac acceptance for multiple monitors, Spaces, full screen, Retina, audio and login sessions. Subjective sound and animation feel, real five-hour reset reminders and Windows sign-out/sign-in also need hands-on acceptance.
 

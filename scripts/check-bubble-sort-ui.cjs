@@ -22,7 +22,7 @@ for(const file of ['src/preload.cjs','src/settings.html','src/settings.css','src
 }
 const {sanitize,writeSettings,readSettings}=require(path.join(runtimeRoot,'src/settings.cjs'));
 const snapshot=require(path.join(runtimeRoot,'src/demo.cjs'))();
-let settings=sanitize({sound:false,mode:'week',defaultBubblePage:'week',bubblePageOrder:['quota','conversation','week','accounts','today','lastTurn','phrase']}),revision=1,writes=0,diskWrites=0,rejectNext=false,win;
+let settings=sanitize({sound:false,mode:'week',defaultBubblePage:'week',bubblePageOrder:['quota','conversation','week','accounts','today','lastTurn','phrase','resetForecast']}),revision=1,writes=0,diskWrites=0,rejectNext=false,win;
 const settingsFile=path.join(taskHome,'maid','settings.json');writeSettings(settingsFile,settings);
 function state(){return {version:'isolated-bubble-sort-fixture',settings,settingsRevision:revision,snapshot,demo:true,characters:[],activeCharacterId:'frost-glass-cheek',characterName:'fixture',characterUrl:''};}
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -41,7 +41,7 @@ app.whenReady().then(async()=>{
   let networkAttempts=0;win.webContents.session.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*']},(_request,done)=>{networkAttempts++;done({cancel:true});});
   await win.loadFile(path.join(rendererRoot,'src/settings.html'));await pause(200);win.webContents.debugger.attach('1.3');
   assert.equal(await evaluate(`typeof process==='undefined'&&typeof require==='undefined'`),true);
-  assert.equal(await evaluate(`document.querySelector('.app-logo').naturalWidth>0&&document.querySelectorAll('#bubble-pages .ui-icon').length===21&&document.querySelectorAll('#reset-page-order .ui-icon').length===1`),true,'relative icon assets and all 22 inline Hugeicons load from the nondefault path');
+  assert.equal(await evaluate(`document.querySelector('.app-logo').naturalWidth>0&&document.querySelectorAll('#bubble-pages .ui-icon').length===24&&document.querySelectorAll('#reset-page-order .ui-icon').length===1`),true,'relative icon assets and all 25 inline Hugeicons load from the nondefault path');
   phase='real handle drag, status broadcast, failed save and ordinary controls';
   const evidence=await checkBubbleSortUi({win,evaluate,pause,publish,getSettings:()=>settings,getRevision:()=>revision,getWrites:()=>writes,getDiskWrites:()=>diskWrites,failNextSave:()=>{rejectNext=true;},capture:async name=>{win.webContents.invalidate();fs.writeFileSync(path.join(output,name),(await win.webContents.capturePage()).toPNG());}});
   // The helper restores only fixture-only display values after the actual save

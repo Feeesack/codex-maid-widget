@@ -43,7 +43,7 @@ function retainMacRuntimeLicenses({ buildPath, platform }) {
 function packageDirectory(root, arch, version = require('../package.json').version) {
   return path.join(root, 'release', version, `${APP_NAME}-darwin-${arch}`);
 }
-function buildOptions({ root = path.resolve(__dirname, '..'), arch = process.arch, hostPlatform = process.platform } = {}) {
+function buildOptions({ root = path.resolve(__dirname, '..'), arch = process.arch, hostPlatform = process.platform, stageResources = require('./chat-runtime-resources.cjs').stageRuntimeResources } = {}) {
   checkWorkspaceVersion(root);
   if (!['arm64', 'x64', 'universal'].includes(arch)) throw new Error(`不支持的 Mac 架构 ${arch}；请使用 --arch arm64、--arch x64 或 --arch universal。`);
   if (arch === 'universal' && hostPlatform !== 'darwin') throw new Error('Universal Mac 构建需要 macOS 的 lipo 和代码签名工具；请运行 macOS 安装包工作流。');
@@ -57,13 +57,15 @@ function buildOptions({ root = path.resolve(__dirname, '..'), arch = process.arc
     appCategoryType: 'public.app-category.utilities', darwinDarkModeSupport: true,
     extendInfo: { LSUIElement: true, LSMinimumSystemVersion: '13.0', NSHighResolutionCapable: true },
     afterExtract: [stripUnusedMacPermissions, retainMacRuntimeLicenses],
-    afterCopy: [({ buildPath, platform }) => {
+    afterCopy: [({ buildPath, platform, arch: targetArch }) => {
       if (platform !== 'darwin') return;
       const localIntegration = path.join(root, 'distribution', 'integration', 'prepare-payload.cjs');
       const { stageIntegration } = require(fs.existsSync(localIntegration) ? localIntegration : '../../distribution/integration/prepare-payload.cjs');
       stageIntegration({ root, platform, destination: path.join(path.dirname(buildPath), 'integration') });
+      const stageArch = arch === 'universal' ? 'universal' : (targetArch || arch);
+      stageResources({root,resources:path.dirname(buildPath),platform:'darwin',arch:stageArch});
     }],
-    osxUniversal: { mergeASARs: true },
+    osxUniversal: { mergeASARs: true, x64ArchFiles: 'Contents/Resources/node_modules/**' },
   };
   // A local ad-hoc signature needs no Apple account. Sign every nested code
   // object using Packager's proper inside-out signing order and verify strictly.

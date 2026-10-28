@@ -39,8 +39,9 @@ let peekPreview=null,peekPreviewWindow=null,peekPreviewRequests=0;
 let appearancePreview=null,appearancePreviewRequests=0;
 function applyFixtureAppearance(){if(peekPreviewWindow){const effective={...settings,...appearancePreview},size=widgetDimensions(effective.scale);peekPreviewWindow.setSize(size.width,size.height);peekPreviewWindow.setOpacity(effective.opacity);}}
 const snapshot=require('../src/demo.cjs')();
+const resetForecast={status:'demo',source:'https://codex-reset.com/',probability24h:24,probability48h:42,confidence:'medium',lastResetAt:'2026-10-20T01:00:00.000Z',updatedAt:'2026-10-22T01:00:00.000Z',fetchedAt:'2026-10-22T01:01:00.000Z',signal:null};
 const pause = ms => new Promise(resolve=>setTimeout(resolve,ms));
-function state(){const characters=library.list();const active=library.get(settings.activeCharacterId)||library.get(library.defaultId);const dock=peekPreviewWindow?{corner:'right',peeking:settings.peekAtCorners}:cornerDock;const pose=peekPreviewWindow?{offset:cornerPeekOffset(dock.peeking?dock.corner:null,widgetDimensions(settings.scale),{...settings,...peekPreview}),moving:false}:visualPose;return {settings,settingsRevision,snapshot,cornerDock:dock,visualPose:pose,demo:true,version:require('../package.json').version,characters,activeCharacterId:active.id,characterUrl:active.url,characterName:active.name};}
+function state(){const characters=library.list();const active=library.get(settings.activeCharacterId)||library.get(library.defaultId);const dock=peekPreviewWindow?{corner:'right',peeking:settings.peekAtCorners}:cornerDock;const pose=peekPreviewWindow?{offset:cornerPeekOffset(dock.peeking?dock.corner:null,widgetDimensions(settings.scale),{...settings,...peekPreview}),moving:false}:visualPose;return {settings,settingsRevision,snapshot,resetForecast,cornerDock:dock,visualPose:pose,demo:true,version:require('../package.json').version,characters,activeCharacterId:active.id,characterUrl:active.url,characterName:active.name};}
 async function publish(patch={}) { settings=sanitize({...settings,...patch});if(Object.keys(patch).length)settingsRevision++;applyFixtureAppearance();win.webContents.send('state',state());await pause(100); }
 let firstStateRequest = true;
 ipcMain.handle('state',async()=>{
@@ -69,6 +70,8 @@ ipcMain.handle('preview-corner-peek',(_event,patch)=>{
   const value=state();peekPreviewWindow?.webContents.send('state',value);return value;
 });
 ipcMain.handle('refresh',()=>{refreshes++;return snapshot;});
+ipcMain.handle('refresh-reset-forecast',()=>resetForecast);
+ipcMain.handle('open-reset-source',()=>true);
 ipcMain.handle('preview-appearance',(_event,patch)=>{if(patch!==null)assert.ok(patch&&Object.keys(patch).every(key=>['scale','opacity'].includes(key)&&typeof patch[key]==='number'&&Number.isFinite(patch[key])&&patch[key]>=(key==='scale'?.6:.35)&&patch[key]<=(key==='scale'?1.6:1)));appearancePreview=patch;if(patch)appearancePreviewRequests++;applyFixtureAppearance();return state();});
 ipcMain.handle('list-conversations',()=>{
   conversationLists++;
@@ -512,17 +515,17 @@ async function checkConversationStatus(capture) {
   inspectionResult=ready;inspectionTargetOverrides={};
   await evaluate(`setMode('quota')`);await pause(30);
   const beforeCycle=inspections, listsBeforeCycle=conversationLists;
-  for(const page of ['conversation','accounts','today','week','lastTurn','phrase','quota']) {
+  for(const page of ['conversation','accounts','today','week','lastTurn','phrase','resetForecast','quota']) {
     await evaluate(`document.getElementById('next-page').click()`);await pause(30);
     if(page==='conversation') await waitForResult();
-    assert.equal(settings.mode,page,'the full seven-page cycle follows quota → conversation → accounts → today → week → lastTurn → phrase → quota');
+    assert.equal(settings.mode,page,'the full eight-page cycle preserves all previous pages and appends resetForecast');
     assert.equal(await evaluate(`!document.getElementById('${page}-view').hidden`),true,'the selected cycle page is visible');
   }
   assert.equal(inspections,beforeCycle+1,'one complete page cycle inspects only on conversation entry');
   assert.equal(conversationLists,listsBeforeCycle+1);
   const beforePrevious=inspections,listsBeforePrevious=conversationLists,refreshesBeforePrevious=refreshes;
   await evaluate("window.navigationBubbleClicks=0;document.getElementById('bubble').addEventListener('click',()=>navigationBubbleClicks++);");
-  for(const page of ['phrase','lastTurn','week','today','accounts','conversation','quota']) {
+  for(const page of ['resetForecast','phrase','lastTurn','week','today','accounts','conversation','quota']) {
     await evaluate("document.getElementById('previous-page').querySelector('svg').dispatchEvent(new MouseEvent('click',{bubbles:true}))");await pause(30);
     if(page==='conversation')await waitForResult();
     assert.equal(settings.mode,page,'previous page traverses the visible sequence in reverse with wrap');
@@ -714,9 +717,9 @@ async function checkCornerPeeking(capture) {
 }
 
 async function checkBubblePagesUi(capture,screenshots) {
-  const ids=['quota','conversation','accounts','today','week','lastTurn','phrase'];
+  const ids=['quota','conversation','accounts','today','week','lastTurn','phrase','resetForecast'];
   const act=async code=>{const revision=settingsRevision;await evaluate(code);for(let attempt=0;attempt<80;attempt++){if(settingsRevision>revision&&!(await evaluate('bubblePageSaving')))return;await pause(25);}throw new Error('Bubble page settings action did not finish');};
-  assert.equal(await evaluate(`document.getElementById('mode')===null&&document.querySelectorAll('.bubble-page-card').length===7`),true);
+  assert.equal(await evaluate(`document.getElementById('mode')===null&&document.querySelectorAll('.bubble-page-card').length===8`),true);
   const selectedBefore=settings.mode;
   await act(`document.getElementById('page-default-week').click()`);
   assert.equal(settings.defaultBubblePage,'week');assert.equal(settings.mode,selectedBefore,'selecting a startup default does not rewrite the current page');
@@ -727,13 +730,13 @@ async function checkBubblePagesUi(capture,screenshots) {
   assert.equal(settings.bubblePageOrder[0],'phrase');
   await act(`document.getElementById('page-visible-week').click()`);assert.equal(settings.defaultBubblePage,'phrase');assert.ok(settings.bubbleHiddenPages.includes('week'));
   assert.match(await evaluate(`document.getElementById('bubble-pages-feedback').textContent`),/原默认页已隐藏/);
-  for(const id of ['quota','conversation','accounts','today','lastTurn'])await act(`document.getElementById('page-visible-${id}').click()`);
+  for(const id of ['quota','conversation','accounts','today','lastTurn','resetForecast'])await act(`document.getElementById('page-visible-${id}').click()`);
   const beforeLast=settingsRevision;await evaluate(`document.getElementById('page-visible-phrase').click()`);await pause(50);
   assert.equal(settingsRevision,beforeLast);assert.equal(await evaluate(`document.getElementById('page-visible-phrase').checked`),true);assert.match(await evaluate(`document.getElementById('bubble-pages-feedback').textContent`),/至少保留/);
   await publish({bubblePageOrder:ids,bubbleHiddenPages:[],defaultBubblePage:'week'});
   await evaluate(`document.getElementById('bubble-pages').scrollIntoView({block:'center'})`);await pause(80);await capture('bubble-pages-settings.png');
   const inspectionsBefore=inspections,listsBefore=conversationLists;
-  await publish({bubblePageOrder:['week','today','quota','conversation','accounts','lastTurn','phrase'],bubbleHiddenPages:['conversation','accounts','lastTurn','phrase'],defaultBubblePage:'week',mode:'quota'});
+  await publish({bubblePageOrder:['week','today','quota','conversation','accounts','lastTurn','phrase'],bubbleHiddenPages:['conversation','accounts','lastTurn','phrase','resetForecast'],defaultBubblePage:'week',mode:'quota'});
   const size=widgetDimensions(settings.scale);win.setSize(size.width,size.height);await win.loadFile(path.join(root,'src','index.html'));await pause(250);
   assert.equal(await evaluate('mode'),'week','startup uses the independent default instead of the last current page');
   for(const id of ['today','quota','week']){await evaluate(`document.getElementById('next-page').click()`);await pause(80);assert.equal(await evaluate('mode'),id);assert.equal(settings.defaultBubblePage,'week');}
@@ -749,7 +752,7 @@ async function checkBubblePagesUi(capture,screenshots) {
   for(const type of ['keyDown','keyUp'])await win.webContents.debugger.sendCommand('Input.dispatchKeyEvent',{type,key:' ',code:'Space',windowsVirtualKeyCode:32,nativeVirtualKeyCode:32,...(type==='keyDown'?{text:' '}:{})});
   await pause(80);assert.equal(await evaluate('mode'),'week','Space activates the previous-page button');
   await evaluate(`document.getElementById('talk').click()`);await pause(60);assert.equal(await evaluate('mode'),'week');assert.match(await evaluate(`document.getElementById('notice').textContent`),/台词页已隐藏/);
-  await publish({bubbleHiddenPages:['week','conversation','accounts','lastTurn','phrase'],defaultBubblePage:'today'});
+  await publish({bubbleHiddenPages:['week','conversation','accounts','lastTurn','phrase','resetForecast'],defaultBubblePage:'today'});
   assert.equal(await evaluate('mode'),'today','hiding the current page selects a visible fallback');
   await publish({bubbleHiddenPages:ids.filter(id=>id!=='conversation'),defaultBubblePage:'conversation'});
   await win.loadFile(path.join(root,'src','index.html'));await pause(250);assert.equal(await evaluate('mode'),'conversation');
@@ -1114,6 +1117,6 @@ app.whenReady().then(async()=>{
   assert.equal(inspections,inspectionsAfterChecks,'later quota updates, normal pages, settings and reloads must never poll conversation status');
   assert.equal(conversationLists,conversationListsAfterChecks,'later quota updates, normal pages, settings and reloads must never poll the conversation list');
   assert.deepEqual(errors,[]);
-  console.log('PASS: continuous bottom-corner side/bottom clipping and pointer-following drag/settle pose for both builtin characters, orientations and scales, fixed native bounds and toolbar, opt-in settings, synchronized character/bubble bounce in both orientations, ordered bubble/dot show and collapse, rapid reversal and automatic hide, always-on animation under either OS preference, device-wide weekly tokens and mode cycle, compact weekly layout, weekly default and Codex-follow settings, builtin/imported character themes and async switch guard, full dialogue auto-fit across long CJK/mixed/unbroken text, both orientations and scale range, short-line font reset and immediate dialogue updates, passive conversation context/Git status as the second of seven pages, bubble-click refresh, passive default restoration, immediate loading, deduplication, stale reply protection, four-button toolbar, gallery preview/import/select/rename/delete, edit focus across refresh, plain-text names, compact/mirrored layouts, live gradient and warning/offline colors, sandbox, IPC, settings, screenshots.');
+  console.log('PASS: continuous bottom-corner side/bottom clipping and pointer-following drag/settle pose for both builtin characters, orientations and scales, fixed native bounds and toolbar, opt-in settings, synchronized character/bubble bounce in both orientations, ordered bubble/dot show and collapse, rapid reversal and automatic hide, always-on animation under either OS preference, device-wide weekly tokens and mode cycle, compact weekly layout, weekly default and Codex-follow settings, builtin/imported character themes and async switch guard, full dialogue auto-fit across long CJK/mixed/unbroken text, both orientations and scale range, short-line font reset and immediate dialogue updates, passive conversation context/Git status as the second of eight pages, bubble-click refresh, passive default restoration, immediate loading, deduplication, stale reply protection, four-button toolbar, gallery preview/import/select/rename/delete, edit focus across refresh, plain-text names, compact/mirrored layouts, live gradient and warning/offline colors, sandbox, IPC, settings, screenshots.');
   clearTimeout(smokeWatchdog);app.exit(0);
 }).catch(error=>{console.error(error);app.exit(1);});

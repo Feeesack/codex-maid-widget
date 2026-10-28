@@ -170,6 +170,23 @@ test('child methods reject invalid geometry and native acknowledgement before an
   assert.equal(children[0].kills, 1);
 });
 
+test('native focus acknowledgements preserve child-focus-failed and keep the worker alive', async t => {
+  const { provider, children, scripts } = harness({ widgetHandle: '23456' }); t.after(() => provider.close());
+  const focus = provider.focusChild('23456', '12345'); await turn();
+  assert.equal(children[0].writes.at(-1), 'focus 23456 12345\n');
+  children[0].reply({ known: true, supported: true, ok: false, parented: true, reason: 'child-focus-failed' });
+  assert.deepEqual(await focus, { known: true, supported: true, ok: false, parented: true, reason: 'child-focus-failed' });
+  assert.equal(children[0].kills, 0);
+  const release = provider.releaseChildFocus('23456', '12345'); await turn();
+  assert.equal(children[0].writes.at(-1), 'release-focus 23456 12345\n');
+  children[0].reply({ known: true, supported: true, ok: true, parented: true });
+  assert.deepEqual(await release, { known: true, supported: true, ok: true, parented: true });
+  const query = provider.query(); await turn(); children[0].reply(snapshot);
+  assert.equal((await query).known, true);
+  assert.match(scripts[0], /SetActiveWindow\(host\)/);
+  assert.match(scripts[0], /ReleaseChildFocus/);
+});
+
 test('a successful native child acknowledgement must confirm the requested parent relationship', async t => {
   const { provider, children } = harness(); t.after(() => provider.close());
   const attach = provider.attachChild('23456', '12345'); await turn();
