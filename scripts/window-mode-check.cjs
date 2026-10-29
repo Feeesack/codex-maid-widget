@@ -105,16 +105,24 @@ app.whenReady().then(async () => {
   async function observation() { const value = await provider.query(); assert.equal(value.known, true, 'Native self-host observation unavailable.'); return value; }
   function inside(a, b) { return a.x >= b.x - 1 && a.y >= b.y - 1 && a.x + a.width <= b.x + b.width + 1 && a.y + a.height <= b.y + b.height + 1; }
   async function settled({ allowModalOcclusion = false } = {}) {
+    let ready;
     await until(async () => { if (widget.isDestroyed() || mode.getState().reason !== 'contained') return false;
       const value = await observation(), host = value.windows.find(item => item.id === hostId);
-      return value.widgetParented === false && value.widgetOwnedByHost && value.ownerBindingCached && value.ownedHostId === hostId &&
-        value.widgetVisible && (host?.widgetAboveHost || allowModalOcclusion && host?.modal) && lastNative && inside(lastNative.bounds, host.bounds);
+      const state = mode.getState(), native = lastNative && { ...lastNative, bounds: { ...lastNative.bounds } };
+      // A direct native observation can confirm the new owner one poll before
+      // the adapter receives that same state. Require both witnesses within
+      // this bounded wait, including after disabling and re-enabling the mode.
+      if (state.reason !== 'contained' || state.owned !== true || mode.nativeChild !== false ||
+          value.widgetParented !== false || !value.widgetOwnedByHost || !value.ownerBindingCached || value.ownedHostId !== hostId ||
+          !value.widgetVisible || !(host?.widgetAboveHost || allowModalOcclusion && host?.modal) || !native || !inside(native.bounds, host.bounds)) return false;
+      ready = { host, native, bounds: { ...mode.getBounds() } };
+      return true;
     }, 'Native owned top-level surface did not settle visibly inside host.');
-    const host = (await observation()).windows.find(item => item.id === hostId), expected = screen.dipToScreenRect(null, { ...mode.getBounds(), ...size }), actual = lastNative.bounds;
+    const { host, native, bounds } = ready, expected = screen.dipToScreenRect(null, { ...bounds, ...size }), actual = native.bounds;
     assert.ok(Math.abs(actual.width - expected.width) <= 1 && Math.abs(actual.height - expected.height) <= 1, 'Native top-level dimensions drifted.');
     assert.equal(widget.webContents.getZoomFactor(), 1); assert.equal(widget.isAlwaysOnTop(), false);
-    assert.equal((lastNative.style & 0x40000000) !== 0, false, 'Production follow surface must remain a top-level HWND.');
-    assert.equal((lastNative.exStyle & 0x00000008) !== 0, false, 'Contained top-level surface must not be globally topmost.');
+    assert.equal((native.style & 0x40000000) !== 0, false, 'Production follow surface must remain a top-level HWND.');
+    assert.equal((native.exStyle & 0x00000008) !== 0, false, 'Contained top-level surface must not be globally topmost.');
     assert.equal(mode.nativeChild, false); assert.equal(mode.getState().owned, true);
     const presence = await widget.webContents.executeJavaScript('({opacity:+getComputedStyle(document.body).opacity,scale:parseFloat(getComputedStyle(document.body).scale)||1,inert:document.body.inert})');
     assert.equal(presence.opacity, 1); assert.equal(presence.scale, 1); assert.equal(presence.inert, false); return host;
