@@ -37,8 +37,13 @@ app.whenReady().then(async () => {
       assert.ok(compressed || pipeBootstrap, 'Native bootstrap changed.');
       function fixturePayload(payload) {
         let script = zlib.gunzipSync(Buffer.from(payload, 'base64')).toString('utf8'), replacements = 0;
-        script = script.replace(/var roots = ValidatedRoots\((?:true|false)\);/g, () => { replacements++; return 'var roots = new HashSet<uint> { ' + hostPid + ' };'; });
-        assert.ok(replacements >= 3, 'Native checks must use only the self-created process.');
+        // Replace every call, including inline TrackLayer/StackAbove guards.
+        // Keeping the original method definition is harmless only when no
+        // fixture execution path can call into the real desktop inventory.
+        script = script.replace(/\bValidatedRoots\s*\(\s*(?:true|false)\s*\)/g, () => { replacements++; return 'new HashSet<uint> { ' + hostPid + ' }'; });
+        assert.ok(replacements >= 7, 'Native checks must replace every trusted-root call with the self-created process.');
+        assert.doesNotMatch(script, /\bValidatedRoots\s*\(\s*(?:true|false)\s*\)/, 'Native fixture must never call the real trusted-root inventory.');
+        report.isolation.trustedRootCallReplacements = replacements;
         // Geometry is emitted ONLY by the test worker; the production transport
         // discards it. The real C# provider and adapter remain otherwise intact.
         script = script.replace('return answer;', `Rect fixtureRect; GetWindowRect(widget,out fixtureRect);
