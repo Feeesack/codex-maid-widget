@@ -40,6 +40,7 @@ This release collects the updates since public v0.3.51. See the [bilingual relea
 - Ignore delayed hidden snapshots from a previous remap; cancel pending recovery after a manual hide or foreground-app change and cap recovery attempts.
 - Use `overflow: clip` on macOS to prevent focused bubble content from retaining an internal scroll crop.
 - Preserve user settings, imported characters and original assets. See the [bilingual release notes](docs/releases/0.3.51.md).
+- The bilingual interface was developed in the local 0.3.49 and 0.3.50 iterations; see the [0.3.50](docs/releases/0.3.50.md) and [0.3.49](docs/releases/0.3.49.md) notes.
 
 ## 0.3.48 — Cumulative update since 0.3.21, 2026-10-19
 
