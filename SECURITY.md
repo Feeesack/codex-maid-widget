@@ -2,7 +2,7 @@
 
 ## Supported release
 
-Security fixes target the current release, **0.3.13**, and the active development branch. Update to the latest release before reporting a problem when practical.
+Security fixes target the latest published release and the active development branch. Update to the latest release before reporting a problem when practical.
 
 ## Report a vulnerability privately
 
