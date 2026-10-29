@@ -428,6 +428,7 @@ class ChatHistory {
     clearTimeout(this.syncTimer); this.syncTimer = null; this.syncRequested = false;
     this.healthState.index = this.healthState.coverage = 'indexing';
     this._notifyHealth();
+    if (isCancelled()) { this.indexing = false; fail('CHAT_INDEX_CANCELLED'); }
     if (this.useWorker) {
       const timer = setInterval(() => { if (isCancelled()) this.worker?.postMessage({ cancel: true }); }, 20); timer.unref?.();
       try { return await this._workerRequest('syncIndex', { rebuild, waitSemantic }, 900000); } finally { clearInterval(timer); this.indexing = false; }
