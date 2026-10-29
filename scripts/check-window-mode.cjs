@@ -44,7 +44,8 @@ async function run() {
     fs.writeFileSync(path.join(runDir, 'summary.json'), JSON.stringify({ ok: reports.every(item => item.ok), reports }, null, 2));
     assert.equal(exit, 0, report.error || 'Isolated Electron failed.');
     assert.equal(report.ok, true, report.error);
-    console.log(JSON.stringify({ dpi: factor, cases: report.cases.length, realNativeChild: report.realNativeChild, realProductionProvider: report.realProductionProvider,
+    console.log(JSON.stringify({ dpi: factor, cases: report.cases.length, realNativeChild: report.realNativeChild, realOwnedTopLevel: report.realOwnedTopLevel,
+      nativeEditorFocusVerified: report.nativeEditorFocus?.verified, skippedCases: report.cases.filter(item => item.skipped).length, realProductionProvider: report.realProductionProvider,
       optionalCodexProbe: report.codexProbe?.known, report: path.relative(root, reportFile) }));
   }
   console.log('PASS: isolated native Codex window mode adapter. Evidence: ' + path.join(runDir, 'summary.json'));
