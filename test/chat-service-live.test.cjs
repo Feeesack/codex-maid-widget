@@ -3,6 +3,7 @@ const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { ChatService } = require('../src/chat-service.cjs');
+const { ChatHistory } = require('../src/chat-history.cjs');
 const { setImmediate: tick } = require('node:timers/promises');
 
 class NativeFixture extends EventEmitter {
@@ -53,9 +54,14 @@ class NativeFixture extends EventEmitter {
 }
 function fixture(t) {
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'maid-service-live-')), dataDir = path.join(sandbox, '隔离 数据'), parent = path.join(sandbox, '非默认 路径'); fs.mkdirSync(dataDir); fs.mkdirSync(parent);
-  const native = new NativeFixture(), service = new ChatService({ dataDir, transportFactory: () => native }); native.getConversation = () => service.conversation.conversationId;
+  // This suite exercises the real service/history worker against a fake native
+  // transport. Keep model loading isolated too: host-prepared ONNX resources
+  // must not turn every transport fixture into an unrelated native session.
+  // The pinned encoder and worker restart paths have dedicated retrieval tests.
+  const historyFactory = options => new ChatHistory({ ...options, semanticOptions: { resourceRoot: path.join(sandbox, 'absent-semantic-resources') } });
+  const native = new NativeFixture(), service = new ChatService({ dataDir, transportFactory: () => native, historyFactory }); native.getConversation = () => service.conversation.conversationId;
   const choice = service.selectDirectory(parent); service.initialize({ selectionId: choice.selectionId, petName: '小龙娘', userNickname: '测试' });
-  t.after(async () => { await service.close(); fs.rmSync(sandbox, { recursive: true, force: true }); }); return { service, native, sandbox };
+  t.after(async () => { await service.close(); fs.rmSync(sandbox, { recursive: true, force: true }); }); return { service, native, sandbox, historyFactory };
 }
 test('production service sends default model/effort and streams without writing ordinary-turn bodies', async t => {
   const { service, native } = fixture(t); const state = await service.send({ text: '合成验收问题' });
@@ -123,13 +129,13 @@ test('manual checkpoint executes actual workflow and a new native thread with on
   assert.equal(Object.keys(service.workflow.tree.state().conversations).length, 1);
 });
 test('a lost acknowledgement is reconciled by its exact client ID after reopening without replaying it', async t => {
-  const { service, native } = fixture(t); const original = native.send.bind(native);
+  const { service, native, historyFactory } = fixture(t); const original = native.send.bind(native);
   native.send = async (thread, input) => { await original(thread, input); throw Object.assign(new Error('lost ack'), { code: 'DISCONNECTED', executionState: 'unknown' }); };
   await assert.rejects(service.send({ text: '仅合成未知请求', clientMessageId: 'lost-ack-once' }), { code: 'DISCONNECTED' });
-  assert.equal(service.getState().unknownExecution, true); service.close();
+  assert.equal(service.getState().unknownExecution, true); await service.close();
   native.send = original;
   native.resumeThread = async () => ({ contextRecoveryRequired: true });
-  const reopened = new ChatService({ dataDir: service.dataDir, transportFactory: () => native }); t.after(() => reopened.close());
+  const reopened = new ChatService({ dataDir: service.dataDir, transportFactory: () => native, historyFactory }); t.after(async () => { await reopened.close(); });
   await assert.rejects(reopened.reconcile(), { code: 'CHAT_CONTEXT_RECOVERY_REQUIRED' }); assert.equal(native.sent.length, 1); assert.equal(reopened.getState().unknownExecution, false);
   assert.equal(reopened.getState().contextRecoveryRequired, true); assert.equal(reopened.getState().ready, false);
   assert.equal(reopened.getState().messages.filter(value => value.role === 'user').length, 1);

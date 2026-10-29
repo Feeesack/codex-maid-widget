@@ -1,6 +1,6 @@
 {
   "name": "codex-maid-widget",
-  "version": "0.5.14",
+  "version": "0.5.15",
   "description": "Codex 女仆额度桌面挂件 · macOS 适配版",
   "main": "src/entry.cjs",
   "private": true,

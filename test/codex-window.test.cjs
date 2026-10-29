@@ -33,12 +33,25 @@ function harness(options = {}) {
     assert.equal(Object.hasOwn(settings, 'shell'), false);
     assert.ok(args.join(' ').length < 30000, 'must fit CreateProcess command-line limit');
     const bootstrap = Buffer.from(args[args.indexOf('-EncodedCommand') + 1], 'base64').toString('utf16le');
-    const compressed = bootstrap.match(/FromBase64String\('([A-Za-z0-9+/=]+)'\)/)[1];
-    scripts.push(gunzipSync(Buffer.from(compressed, 'base64')).toString('utf8'));
+    // The production worker keeps the UTF-16 EncodedCommand short and sends
+    // the gzipped source through the pipe as its first line. Older builds
+    // embedded that base64 payload in the bootstrap. Accept both protocols so
+    // this harness continues to inspect the exact native source while keeping
+    // ordinary command writes separate from bootstrap transport.
+    const embedded = bootstrap.match(/FromBase64String\('([A-Za-z0-9+/=]+)'\)/);
+    let bootstrapPending = !embedded;
+    if (embedded) scripts.push(gunzipSync(Buffer.from(embedded[1], 'base64')).toString('utf8'));
     const child = new EventEmitter();
     child.stdin = new EventEmitter(); child.stdout = new EventEmitter();
     child.writes = []; child.ends = 0; child.kills = 0;
-    child.stdin.write = (value, done) => { child.writes.push(value); done?.(); };
+    child.stdin.write = (value, done) => {
+      const line = typeof value === 'string' ? value.trim() : '';
+      if (bootstrapPending && /^[A-Za-z0-9+/=]+$/.test(line)) {
+        scripts.push(gunzipSync(Buffer.from(line, 'base64')).toString('utf8'));
+        bootstrapPending = false;
+      } else child.writes.push(value);
+      done?.();
+    };
     child.stdin.end = () => child.ends++;
     child.kill = () => { child.kills++; child.emit('exit', 0); };
     child.reply = value => child.stdout.emit('data', Buffer.from(JSON.stringify(value) + '\n'));

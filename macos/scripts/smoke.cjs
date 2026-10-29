@@ -1072,6 +1072,9 @@ app.whenReady().then(async()=>{
   await publish();assert.equal(await evaluate(`document.getElementById('followCodex').checked`),false,'refreshing settings should preserve an explicit opt-out');
   await evaluate(`document.getElementById('followCodex').click()`);await pause(80);assert.equal(settings.followCodex,true);
   await checkBubblePagesUi(capture,screenshots);
+  // The sort check uses Display. Gallery geometry and focus need the real
+  // Appearance panel visible before its controls can receive focus.
+  assert.equal(await evaluate(`(()=>{document.getElementById('settings-tab-appearance').click();return !document.getElementById('settings-panel-appearance').hidden;})()`),true);
   assert.equal(await evaluate(`document.querySelectorAll('.character-card').length`),4);
   assert.deepEqual(await evaluate(`[...document.querySelectorAll('.character-card')].slice(0,2).map(card=>({id:card.dataset.characterId,name:card.querySelector('.character-name').textContent}))`),[{id:'frost-glass-cheek',name:'小龙娘-托腮'},{id:'frost-glass-idle',name:'小龙娘-端庄'}],'the requested dragon names lead the gallery in the requested order');
   for(const id of ['frost-glass-idle','frost-glass-cheek']) {

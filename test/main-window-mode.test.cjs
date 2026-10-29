@@ -1064,11 +1064,10 @@ for (const variant of variants) {
     assert.deepEqual(control.persisted.position, desktopPosition);
   });
 
-  test(`${variant.name}: missing, inactive or undersized host cannot escape through dragging or explicit show`, async t => {
+  test(`${variant.name}: missing or undersized host cannot escape through dragging or explicit show`, async t => {
     const control = controller(variant); t.after(() => control.close());
     control.patch({ stayInCodexWindow: true }); await flush();
     for (const snapshot of [hostSnapshot({ windows: [], foregroundWindow: '0' }),
-      hostSnapshot({ foregroundWindow: '0', foregroundPid: 200, windows: [{ ...hostSnapshot().windows[0], foreground: false }] }),
       hostSnapshot({ windows: [{ ...hostSnapshot().windows[0], bounds: { ...hostBounds, width: 100, height: 100 } }] })]) {
       await control.poll(snapshot); assert.equal(control.visible, false);
       const savedPosition = control.persisted.position;
@@ -1077,6 +1076,22 @@ for (const variant of variants) {
       assert.equal(control.visible, false); assert.deepEqual(control.persisted.position, savedPosition);
     }
     await control.poll(hostSnapshot()); assert.equal(control.visible, true);
+  });
+
+  test(`${variant.name}: foreign foreground respects the platform follow visibility without saving a desktop move`, async t => {
+    const control = controller(variant); t.after(() => control.close());
+    control.patch({ stayInCodexWindow: true }); await flush();
+    await control.poll(hostSnapshot({ foregroundWindow: '0', foregroundPid: 200,
+      windows: [{ ...hostSnapshot().windows[0], foreground: false }] }));
+    const savedPosition = control.persisted.position;
+    control.drag('start'); control.moveCursor(5000, 5000); control.drag('move'); control.drag('end');
+    control.action('show'); await control.settle();
+    assert.equal(control.visible, variant.platform === 'win32', 'Windows stays in the host scene; macOS follows foreground visibility');
+    assert.deepEqual(control.persisted.position, savedPosition);
+    if (variant.platform === 'win32') {
+      const area = control.mode.getArea(), current = control.bounds;
+      assert.ok(current.x >= area.x && current.y >= area.y && current.x + current.width <= area.x + area.width && current.y + current.height <= area.y + area.height);
+    }
   });
 
   test(`${variant.name}: older settings default the mode off and preserve other preferences through persistence`, async t => {

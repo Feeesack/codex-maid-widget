@@ -595,7 +595,7 @@ function relocateChatProject({ projectRoot, parentDir, folderName = 'codex-maid-
   const inside = value => !path.isAbsolute(value) && value !== '..' && !value.startsWith(`..${path.sep}`);
   if (!relative || inside(relative) || inside(reverse) || io.existsSync(destination)) fail('CHAT_RELOCATION_OVERLAP');
   const manifest = root => { const output = {}; const visit = (directory, prefix = '') => { for (const item of io.readdirSync(directory, { withFileTypes: true })) { const name = prefix ? `${prefix}/${item.name}` : item.name, file = path.join(directory, item.name); if (item.isSymbolicLink()) fail('CHAT_RELOCATION_LINK'); if (item.isDirectory()) visit(file, name); else if (item.isFile()) output[name] = createHash('sha256').update(io.readFileSync(file)).digest('hex'); else fail('CHAT_RELOCATION_SPECIAL_FILE'); } }; visit(root); return output; };
-  const before = manifest(original.root); io.mkdirSync(destination);
+  const before = manifest(original.root);
   io.cpSync(original.root, destination, { recursive: true, force: false, errorOnExist: true, filter: file => { if (io.lstatSync(file).isSymbolicLink()) fail('CHAT_RELOCATION_LINK'); return true; } });
   if (JSON.stringify(manifest(destination)) !== JSON.stringify(before) || JSON.stringify(manifest(original.root)) !== JSON.stringify(before)) fail('CHAT_RELOCATION_CHANGED');
   return { ...resumeChatProject(destination, { fs: io }), copied: true, verified: true, originalPreserved: true, requiresExplicitSwitch: true };
