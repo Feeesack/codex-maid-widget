@@ -161,9 +161,15 @@ for (const variant of variants) {
     const h = await start(t, variant), counts = { calls: h.calls.length, status: h.statusChanges }; await h.advance(1000);
     assert.equal(h.providers[0].queries, 11); assert.equal(h.calls.length, counts.calls); assert.equal(h.statusChanges, counts.status);
   });
-  test(variant.name + ': manual hide survives observations; explicit 40-ms show is cancellable', async t => {
+  test(variant.name + ': manual hide survives observations and explicit show respects the platform surface', async t => {
     const h = await start(t, variant); h.mode.hide(); assert.equal(h.visible, false); await h.advance(500); assert.equal(h.visible, false);
-    h.mode.show(); await h.advance(39); assert.equal(h.visible, false); await h.advance(1); assert.equal(h.visible, true);
+    h.mode.show();
+    if (variant.platform === 'win32') {
+      assert.equal(h.visible, true, 'an independent Windows surface shows without an unmap/remap cycle');
+      assert.equal(h.mode.visibility.snapshot().pending, false);
+    } else {
+      await h.advance(39); assert.equal(h.visible, false); await h.advance(1); assert.equal(h.visible, true);
+    }
     h.mode.show(); h.mode.hide(); await h.advance(100); assert.equal(h.visible, false);
   });
   test(variant.name + ': renderer readiness/reload synchronizes final presence without fake CSS motion', async t => {
@@ -183,6 +189,7 @@ for (const variant of variants) {
   test(variant.name + ': disabling drops pending observations and restores standalone position/top', async t => {
     const pending = deferred(), h = harness(variant, { answers: [[pending.promise]] }); t.after(() => h.mode.close());
     h.mode.configure(true, { position: { x: -900, y: 450 }, alwaysOnTop: true }); h.mode.configure(false, { alwaysOnTop: true });
+    await flush(); // The native topmost/close queue drains before standalone restoration is verified.
     assert.equal(h.providers[0].closes, 1); assert.equal(h.timers.size, 0); assert.deepEqual(h.bounds, { x: -900, y: 450, ...size }); assert.equal(h.visible, true); assert.equal(h.top, true);
     await flush(); const count = h.calls.length; pending.resolve(snapshot()); await flush(); assert.equal(h.calls.length, count); assert.equal(h.timers.size, 0);
   });
@@ -207,8 +214,10 @@ for (const variant of variants) {
     assert.equal(h.normalizedSnapshot(snapshot({ coordinateSpace: 'physical-pixels' }), { screen: { screenToDipRect() { throw new Error('removed display'); } } }).known, false);
   });
   test(variant.name + ': failed native stacking cannot be reported visible and can retry', async t => {
-    const h = await start(t, variant, { stack(_id, count) { if (count === 2) throw new Error('fixture stack failure'); } });
-    assert.equal(h.visible, false); assert.equal(h.mode.getState().visible, false); await h.advance(140); assert.equal(h.visible, true); assert.equal(h.mode.getState().visible, true);
+    let failStack = true;
+    const h = await start(t, variant, { stack(_id, count) { if (failStack && count >= 2) throw new Error('fixture stack failure'); } });
+    assert.equal(h.visible, false); assert.equal(h.mode.getState().visible, false);
+    failStack = false; await h.advance(140); assert.equal(h.visible, true); assert.equal(h.mode.getState().visible, true);
   });
   test(variant.name + ': close clears timers and ignores late query results', async () => {
     const pending = deferred(), h = harness(variant, { answers: [[pending.promise]] }); h.mode.configure(true); h.mode.close(); assert.equal(h.providers[0].closes, 1); assert.equal(h.timers.size, 0);

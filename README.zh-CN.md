@@ -31,6 +31,8 @@
 
 更新说明和 SHA-256 校验值放在 [Releases](https://github.com/Feeesack/codex-maid-widget/releases)。安装包已带上运行环境和可选的本地 Codex 插件，不用另装 Node.js、npm，也不用下载源码。
 
+当前源码维护版本为 **0.5.15**，修复聊天项目目录迁移并更新 CI 测试夹具；上方下载仍是已发布的 **v0.5.14** 安装包。详见[更新记录](CHANGELOG.md)。
+
 [0.3.48 发布说明](docs/releases/0.3.48.md)汇总了 0.3.21 以来的更新：按下／抬起两段互动，含「DSH 小黄鸭」的五套音色，多账号重置提醒，两种新小龙娘形象，对话上下文、压缩次数与 Git 状态，Motion 镜像动画，Hugeicons 图标，页面排序与显隐，外观及探头宽度实时预览，以及 Windows 安装路径修复。各音效来源与独立许可范围见[音频资料](docs/interaction-audio.md)。
 
 [0.5.14 发布说明](docs/releases/0.5.14.md)介绍本次更新，前置本地更新见[更新记录](CHANGELOG.md)。Windows 设置、导入形象和原始素材保留；macOS 通用安装包已在 Apple Silicon 与 Intel 环境完成安装启动验证。Spaces、全屏、多屏、Retina、声音和登录会话的人工体验仍需单独验收。

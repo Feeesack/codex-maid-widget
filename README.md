@@ -31,6 +31,8 @@ These screenshots show the 0.3.48 Windows interface with **synthetic demo data**
 
 Release notes and SHA-256 checksums are on the [Releases](https://github.com/Feeesack/codex-maid-widget/releases) page. The installers include the runtime and optional local Codex plugin, so you don't need to install Node.js or npm, or download the source.
 
+The current source maintenance version is **0.5.15**. It fixes chat-project relocation and updates CI fixtures; the downloads above remain the released **v0.5.14** packages. See the [changelog](CHANGELOG.md).
+
 The [0.3.48 release notes](docs/releases/0.3.48.md) bring together the changes since 0.3.21: paired press/release interactions; five sound choices including DSH Duck; multi-account reset reminders; two new dragon-girl poses; conversation context, compaction and Git status; Motion mirroring; Hugeicons controls; page ordering and visibility; live appearance and corner-hiding previews; and Windows installation-path fixes. Sound sources and their separate license scopes are documented in [audio provenance](docs/interaction-audio.md).
 
 The [0.5.14 release notes](docs/releases/0.5.14.md) describe this release, and the [changelog](CHANGELOG.md) records its preceding local updates. Windows settings, imported characters and original assets are retained. The macOS universal installer has completed native installation and startup checks on Apple Silicon and Intel; hands-on acceptance for Spaces, full screen, multiple displays, Retina, audio and login sessions remains separate.

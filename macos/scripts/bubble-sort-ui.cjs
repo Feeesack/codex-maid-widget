@@ -4,6 +4,10 @@
 const assert = require('node:assert/strict');
 
 async function checkBubbleSortUi({win,evaluate,pause,publish,getSettings,getRevision,getWrites,getDiskWrites,failNextSave,capture}) {
+  // Bubble-page controls live in the display category.  Activate that real
+  // panel before measuring or dispatching input; querying a hidden panel gives
+  // zero-sized endpoints and would reject the drag before Sortable sees it.
+  await evaluate("document.getElementById('settings-tab-display')?.click()"); await pause(80);
   const config = () => {
     const value=getSettings();
     return {bubblePageOrder:[...value.bubblePageOrder],bubbleHiddenPages:[...value.bubbleHiddenPages],defaultBubblePage:value.defaultBubblePage};
@@ -26,7 +30,12 @@ async function checkBubbleSortUi({win,evaluate,pause,publish,getSettings,getRevi
   const original=config();
   await publish({bubbleHiddenPages:['conversation','lastTurn']});
   const drag = async (source,target,{reject=false,statusDuringDrag=false}={}) => {
-    await evaluate(`document.getElementById('bubble-pages').scrollIntoView({block:'center'})`);await pause(80);
+    // Put the dragged row at the lower edge of the viewport.  Centering the
+    // source leaves the first target above the viewport on small/retina macOS
+    // settings windows, so the route assertion would fail before any input
+    // was dispatched.  End alignment keeps both endpoints visible while
+    // preserving the long, real pointer route through the intervening rows.
+    await evaluate(`document.getElementById('bubble-pages').scrollIntoView({block:'end',inline:'nearest'})`);await pause(80);
     const saved=config(),writes=getWrites(),diskWrites=getDiskWrites?.(),revision=getRevision(),before=await evaluate(`Object.fromEntries([...document.querySelectorAll('#bubble-pages>.bubble-page-card')].map(row=>[row.dataset.pageId,row.getBoundingClientRect().y]))`);
     const from=await center('page-handle-'+source),targetBox=await evaluate(`document.getElementById(${JSON.stringify('page-'+target)}).getBoundingClientRect().toJSON()`);
     const to={x:from.x,y:targetBox.y+5};
