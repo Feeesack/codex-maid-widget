@@ -129,13 +129,13 @@ function countdown() {
   $('reset-tag').textContent = t(secs ? '重置' : '待刷新');
 }
 function renderPhrase() {
-  const list = current?.settings?.phrases || ['Tibo 义父，reset please……'];
+  const list = current?.settings?.phrases || ['别急着重置嘛，让我再蹬蹬。'];
   const source = list[Math.max(0, phraseIndex)] || '';
   // A custom phrase remains user content, even if one line matches a stock phrase.
   $('phrase').textContent = i18n?.isDefaultPhrases?.(list) ? t(source) : source;
   fitPhraseText();
 }
-function nextPhrase() { const list = current?.settings?.phrases || ['Tibo 义父，reset please……']; phraseIndex = (phraseIndex + 1) % list.length; renderPhrase(); }
+function nextPhrase() { const list = current?.settings?.phrases || ['别急着重置嘛，让我再蹬蹬。']; phraseIndex = (phraseIndex + 1) % list.length; renderPhrase(); }
 function resetForecastTime(value) {
   const date = typeof value === 'string' ? new Date(value) : null;
   return date && Number.isFinite(date.getTime()) ? date.toLocaleString(locale(), {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '--';

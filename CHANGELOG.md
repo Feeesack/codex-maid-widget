@@ -5,11 +5,13 @@
 - Fix chat-project relocation on Node versions that reject an already-created copy destination. Existing projects are preserved, and overlapping or occupied destinations remain rejected.
 - Update native-window fixtures for the compressed stdin bootstrap and current Windows visibility/close behavior. Open the display settings panel before real pointer drag checks.
 - Isolate synthetic chat-service tests from unrelated native model initialization; real semantic retrieval remains covered separately.
+- Remove the personal-name reference from the shipped default dialogue. Untouched saved defaults migrate to the remaining lines; custom phrases are preserved.
 - Source and local runtime maintenance version. The published v0.5.14 installers and checksums remain unchanged.
 
 - 修复聊天项目迁移时预先创建目标目录导致的 `EEXIST`，保留原目录、重叠及已占用目标保护。
 - 更新原生窗口测试以匹配压缩 stdin 引导协议和当前 Windows 显示/关闭流程；真实拖拽测试先打开显示设置面板。
 - 合成聊天服务测试隔离无关的原生模型初始化，真实语义检索仍有独立回归覆盖。
+- 移除默认台词中指名个人的一句；未改动过的默认台词会迁移到剩余台词，自定义台词保持不变。
 - 本节记录源码及本机维护版本；已发布的 v0.5.14 安装包与校验值保持不变。
 
 ## 0.5.14 — Companion chat, persistent memory, reset reminders and a clearer interface

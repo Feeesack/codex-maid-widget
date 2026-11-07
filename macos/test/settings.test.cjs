@@ -413,6 +413,18 @@ const previousDefaultPhrases = [
   '需求又追加？行吧，这次的支线任务得加一块布丁。',
   '别急着重构宇宙，眼前这只史莱姆还卡着编译呢。',
 ];
+const retiredDefaultPhrases = [
+  'Tibo 义父，reset please……',
+  '别急着重置嘛，让我再蹬蹬。',
+  '蹬个 token 都要拼尽全力？杂鱼～',
+  '今日职业：yes 工程师。',
+  '说好让 AI 干活，怎么我成监工了。',
+  '以前缺 token，现在缺觉……',
+  '先别让 Codex 清电脑，我怕它把自己也清了。',
+  '下班啦。AI 没跑完，明天再说。',
+  '嘘，Codex 会干这活的事，先别告诉老板。',
+  '还不睡？睡前还得给 Codex 留作业是吧。',
+];
 test('settings reject invalid values and preserve useful preferences',()=>{
   const s=sanitize({scale:99,opacity:NaN,refreshSeconds:-10,mode:'bad',clickThrough:'yes',phrases:['',' hi ',null],position:{x:-1800,y:40}});
   assert.equal(s.scale,1.6);assert.equal(s.opacity,1);assert.equal(s.refreshSeconds,30);assert.equal(s.mode,'quota');assert.equal(s.clickThrough,false);assert.deepEqual(s.phrases,['hi']);assert.equal(s.position.x,-1800);
@@ -456,6 +468,18 @@ test('the rejected 0.3.4 preset upgrades and persists without changing other pre
   writeSettings(file,upgraded);
   assert.deepEqual(readSettings(file),upgraded);
 });
+test('the 0.5.15 preset without the named figure upgrades and persists',t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'maid-dialogue-0515-'));
+  t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'settings.json');
+  const old=sanitize({phrases:retiredDefaultPhrases,activeCharacterId:'lilac-dragon',scale:1.1,sound:false,mode:'phrase'});
+  writeSettings(file,old);
+  const upgraded=readSettings(file);
+  assert.deepEqual(upgraded,{...old,phrases:DEFAULTS.phrases});
+  assert.equal(DEFAULTS.phrases.some(phrase=>/tibo/i.test(phrase)),false);
+  writeSettings(file,upgraded);
+  assert.deepEqual(readSettings(file),upgraded);
+});
 test('custom dialogue including an edited old preset is preserved across upgrades',t=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'maid-dialogue-custom-'));
   t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
@@ -465,6 +489,7 @@ test('custom dialogue including an edited old preset is preserved across upgrade
     ['主人，今天也一起把想法变成代码吧。','额度我来照看，你只管专心创造。','写累了记得喝水，休息一下也很好。','这句是我改的。'],
     [...previousDefaultPhrases.slice(0,-1),'这句是我自己改的。'],
     previousDefaultPhrases.slice(1),
+    [...retiredDefaultPhrases.slice(0,-1),'这句是我自己改的。'],
     [...DEFAULTS.phrases],
   ]) {
     writeSettings(file,sanitize({phrases}));
