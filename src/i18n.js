@@ -8,10 +8,9 @@
   let locale = 'zh-CN';
   const dictionary = Object.create(null);
   const defaultPhrases = Object.freeze([
-    'Tibo 义父，reset please……', '别急着重置嘛，让我再蹬蹬。', '蹬个 token 都要拼尽全力？杂鱼～',
-    '今日职业：yes 工程师。', '说好让 AI 干活，怎么我成监工了。', '以前缺 token，现在缺觉……',
-    '先别让 Codex 清电脑，我怕它把自己也清了。', '下班啦。AI 没跑完，明天再说。',
-    '嘘，Codex 会干这活的事，先别告诉老板。', '还不睡？睡前还得给 Codex 留作业是吧。',
+    '别急着重置嘛，让我再蹬蹬。', '蹬个 token 都要拼尽全力？杂鱼～', '今日职业：yes 工程师。',
+    '说好让 AI 干活，怎么我成监工了。', '以前缺 token，现在缺觉……', '先别让 Codex 清电脑，我怕它把自己也清了。',
+    '下班啦。AI 没跑完，明天再说。', '嘘，Codex 会干这活的事，先别告诉老板。', '还不睡？睡前还得给 Codex 留作业是吧。',
   ]);
   function normalizeLocale(value) {
     return typeof value === 'string' && /^en(?:[-_][a-z0-9]+)*$/i.test(value.trim()) ? 'en' : 'zh-CN';
@@ -177,7 +176,6 @@
     '工作区': 'Workspace', '未命名聊天': 'Untitled chat', '演示': 'Demo', '演示额度': 'Demo quota',
     '个人': 'Personal', '工作空间': 'Workspace', '未知范围': 'Unknown scope', '未知套餐': 'Unknown plan',
     '昵称未读取': 'Name unavailable', '昵称未读取 {number}': 'Account {number}',
-    'Tibo 义父，reset please……': 'Tibo, my savior… reset, please.',
     '别急着重置嘛，让我再蹬蹬。': 'Hold that reset—let me squeeze in a few more tokens.',
     '蹬个 token 都要拼尽全力？杂鱼～': 'All that effort for one token? You little lightweight~',
     '今日职业：yes 工程师。': 'Today’s job: professional “Yes” clicker.',

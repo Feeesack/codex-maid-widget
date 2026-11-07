@@ -174,7 +174,7 @@ async function checkNativePhraseSizing(defaultPhrases,longPhrases) {
       await native.webContents.executeJavaScript(`$('widget').classList.remove('is-mirrored');$('phrase').textContent=${JSON.stringify(defaultPhrases[0])};fitPhraseText();reveal()`);
       native.showInactive();await pause(550);
       fs.mkdirSync(screenshotDirectory, { recursive: true });
-      fs.writeFileSync(path.join(screenshotDirectory,'widget-dragon-tibo-native-demo.png'),(await native.webContents.capturePage()).toPNG());
+      fs.writeFileSync(path.join(screenshotDirectory,'widget-dragon-phrase-native-demo.png'),(await native.webContents.capturePage()).toPNG());
     }
   } finally { native.webContents.setZoomFactor(1); native.destroy(); }
 }
@@ -912,7 +912,6 @@ app.whenReady().then(async()=>{
       assert.equal(phrase.fontSize,24,`every shipped short line should keep 24px (${mirror?'left':'right'}): ${phrase.text}`);
       assert.ok(defaultPhrases.includes(phrase.text));
       assert.equal(phrase.fits,true,`default dialogue should fit without scrolling (${mirror?'left':'right'}): ${phrase.text}`);
-      if(!mirror&&phrase.text.includes('Tibo')) { await pause(500);await capture('widget-dragon-tibo-demo.png'); }
     }
     await evaluate(`phraseIndex=-1;nextPhrase()`);await pause(500);
     await capture(mirror?'widget-dragon-phrase-left-demo.png':'widget-dragon-phrase-demo.png');

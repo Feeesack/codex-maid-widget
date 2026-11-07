@@ -19,6 +19,18 @@ const PREVIOUS_DEFAULT_PHRASES = [
   '需求又追加？行吧，这次的支线任务得加一块布丁。',
   '别急着重构宇宙，眼前这只史莱姆还卡着编译呢。',
 ];
+const RETIRED_DEFAULT_PHRASES = [
+  'Tibo 义父，reset please……',
+  '别急着重置嘛，让我再蹬蹬。',
+  '蹬个 token 都要拼尽全力？杂鱼～',
+  '今日职业：yes 工程师。',
+  '说好让 AI 干活，怎么我成监工了。',
+  '以前缺 token，现在缺觉……',
+  '先别让 Codex 清电脑，我怕它把自己也清了。',
+  '下班啦。AI 没跑完，明天再说。',
+  '嘘，Codex 会干这活的事，先别告诉老板。',
+  '还不睡？睡前还得给 Codex 留作业是吧。',
+];
 const DEFAULTS = Object.freeze({
   language: 'zh-CN',
   chatPageEnabled: false,
@@ -30,7 +42,6 @@ const DEFAULTS = Object.freeze({
   peekSidePercent: 100, peekBottomPercent: 50,
   bucketId: '', mode: 'quota', characterPath: '', activeCharacterId: 'frost-glass-cheek', position: null, mirror: false,
   phrases: [
-    'Tibo 义父，reset please……',
     '别急着重置嘛，让我再蹬蹬。',
     '蹬个 token 都要拼尽全力？杂鱼～',
     '今日职业：yes 工程师。',
@@ -95,7 +106,7 @@ function readSettings(file) {
     // 100% now means the former 60%. Preserve a saved visual size across upgrades.
     if (input.sizeBaseline !== 2 && typeof input.scale === 'number') input.scale /= 0.6;
     // Replace only untouched shipped presets; keep every custom line and selection.
-    if (Array.isArray(input.phrases) && [LEGACY_DEFAULT_PHRASES, PREVIOUS_DEFAULT_PHRASES].some(preset =>
+    if (Array.isArray(input.phrases) && [LEGACY_DEFAULT_PHRASES, PREVIOUS_DEFAULT_PHRASES, RETIRED_DEFAULT_PHRASES].some(preset =>
       input.phrases.length === preset.length && input.phrases.every((phrase, index) => phrase === preset[index]))) input.phrases = DEFAULTS.phrases;
     return sanitize(input);
   } catch { return sanitize(); }
