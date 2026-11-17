@@ -58,9 +58,14 @@ for (const folder of ['', 'macos']) {
     const h = harness(folder);
     h.renderAccounts({accounts: [{id:'one',label:'账号 1',current:true,planType:'pro',planLabel:'Pro',scopeLabel:'个人',resetsAt:2000009000,remainingPercent:23,observedAt:1999999999,weeklyRemainingPercent:90,weeklyObservedAt:1999999998,weeklyResetsAt:2000020000}, {id:'two',label:'账号 2',planType:'team',planLabel:'Team',scopeLabel:'工作空间',resetsAt:null}]});
     const first = h.accountCards.get('one'), second = h.accountCards.get('two');
-    assert.equal(first.bar.style.strokeDashoffset, '50');
+    assert.equal(first.rings['upper-value'].style.strokeDasharray, '6.389 100');
+    assert.equal(first.rings['upper-value'].style.strokeDashoffset, '0.000');
+    assert.equal(first.rings['lower-value'].style.strokeDasharray, '55.000 100');
+    assert.equal(first.rings['lower-value'].style.strokeDashoffset, '-6.111');
     assert.equal(first.track.attributes['aria-valuenow'], '50');
-    assert.match(first.countdown.textContent, /02:30:00/);
+    assert.match(first.countdownRows[0].time.textContent, /02:30:00/);
+    assert.equal(first.countdownRows[0].time === undefined, false);
+    assert.match(first.countdownRows[1].time.textContent, /^\d{2}:\d{2}:\d{2}$/, 'the weekly countdown is shown too');
     assert.equal(first.remaining.textContent, '5h 23% · 周 90%');
     assert.match(first.remaining.title, /五小时额度剩余 23%；周额度剩余 90%/);
     assert.match(first.remaining.title, /5h 最近观察/);
@@ -69,10 +74,14 @@ for (const folder of ['', 'macos']) {
     assert.equal(first.plan.textContent, 'Pro · 个人');
     assert.equal(second.plan.textContent, 'Team · 工作空间');
     assert.equal(second.track.attributes['aria-valuenow'], undefined);
-    assert.match(second.countdown.textContent, /未知/);
+    assert.equal(second.countdownRows[0].time.textContent, '未知');
+    assert.equal(second.countdownRows[1].row.hidden, true);
     h.advance(10000); h.updateAccountTimers();
-    assert.equal(first.bar.style.strokeDashoffset, '0');
-    assert.equal(first.countdown.textContent, '预计已重置，待登录确认');
+    assert.equal(first.rings['upper-value'].style.strokeDasharray, '0 100');
+    assert.equal(first.countdownRows[0].label.textContent, '7d', 'the week takes the loud cell once 5h has reset');
+    assert.match(first.countdownRows[0].time.textContent, /^\d{2}:\d{2}:\d{2}$/);
+    assert.equal(first.countdownRows[1].label.textContent, '5h');
+    assert.equal(first.countdownRows[1].time.textContent, '预计已重置');
     assert.equal(first.account.remainingPercent, 23, 'local clock must not fabricate or overwrite observed quota');
     assert.equal(first.remaining.textContent, '5h -- · 周 90%');
     h.advance(10000); h.updateAccountTimers();
@@ -97,7 +106,7 @@ for (const folder of ['', 'macos']) {
     assert.deepEqual(h.nodes.get('account-list').children.map(card=>card.dataset.accountId),['due','current-later','soon','same-time','unknown','invalid']);
     assert.equal(h.accountCards.get('current-later'),entry);assert.equal(entry.input.value,'未完成的别名');assert.equal(entry.editor.hidden,false);
     assert.equal(h.accountCards.get('unknown').track.attributes['aria-valuenow'],undefined);
-    assert.equal(h.accountCards.get('unknown').cycle.textContent,'?');
+    assert.equal(h.accountCards.get('unknown').track.classList.contains('account-cycle-unknown'), true);
   });
   test(`${platform}: keyed refreshes preserve unfinished alias edits and only render names as text`, () => {
     const h = harness(folder), account = {id:'one',label:'<img src=x>',labelSource:'manual',userEdited:true,resetsAt:2000009000};

@@ -7,17 +7,14 @@ const crypto = require('node:crypto');
 const os = require('node:os');
 const i18n = require('./i18n.js');
 const { t } = i18n;
-const { execFile } = require('node:child_process');
 const { readSettings, writeSettings, sanitize, widgetDimensions, constrainPosition, snapBounds, mirrorForBounds, bottomCorner, cornerPeekOffset, projectVisualBounds } = require('./settings.cjs');
 const { CharacterLibrary } = require('./character-library.cjs');
 const { CodexDataSource } = require('./codex-data.cjs');
 const { CodexDesktopMonitor, buildLaunchArgs } = require('./codex-desktop.cjs');
 const { watchAuthChanges } = require('./auth-change-watch.cjs');
 const { launchThroughExplorer } = require('./windows-launch.cjs');
-const { launchMacWatcher, finalizeMacWatcherRemoval } = require('./macos-launch.cjs');
-const { supportsDesktopFollow, configureMacApp, configureWidgetWorkspace, trayImage } = require('./platform.cjs');
 const { prepareDataHome } = require('./data-home.cjs');
-const { readDesktopObservation, sameExecutable } = require('./desktop-observation.cjs');
+const { readDesktopObservation } = require('./desktop-observation.cjs');
 app.setName('codex-maid-widget');
 const demoMode = process.argv.includes('--demo');
 const root = path.join(__dirname, '..');
@@ -46,10 +43,8 @@ function notifyAccountReset(event) {
 let widget, settingsWindow, chatWindow, chatService, tray, source, timer, controlServer, library, desktopMonitor, stopAuthWatch, authRefreshTimer;
 let resetForecastSource;
 let followRegistered = null, followLaunchGeneration = 0, refreshGeneration = 0;
-let followOperation = Promise.resolve();
-const followSupported = supportsDesktopFollow({ packaged: app.isPackaged, demo: demoMode });
+const followSupported = process.platform === 'win32' && app.isPackaged && !demoMode;
 let followError = '';
-let connectingPlugin = false;
 let snapshot = { status: 'connecting', buckets: [], today: null, lastTurn: null };
 let quitting = false, drag = null, refreshing = null, ownsControl = false;
 let chatQuitPreparing = false, chatQuitPrepared = false;
@@ -64,7 +59,7 @@ function state() {
   const characters = library.list();
   const active = characters.find(item => item.id === settings.activeCharacterId && item.available) || characters.find(item => item.id === library.defaultId);
   const dock = cornerDockState();
-  return { settings, settingsRevision, snapshot, resetForecast: resetForecastSource?.snapshot() || { status: 'connecting', source: 'https://codex-reset.com/' }, demo: demoMode, version: app.getVersion(), platform: process.platform, characters, followSupported, followError: t(followError), windowContainment: windowModeState(), cornerDock: dock, visualPose: visualPoseState(dock),
+  return { settings, settingsRevision, snapshot, resetForecast: resetForecastSource?.snapshot() || { status: 'connecting', source: 'https://codex-reset.com/' }, demo: demoMode, version: app.getVersion(), characters, followSupported, followError: t(followError), windowContainment: windowModeState(), cornerDock: dock, visualPose: visualPoseState(dock),
     activeCharacterId: active.id, characterUrl: active.url, characterName: i18n.characterName(active), accountManagement: accountManagement() };
 }
 function broadcast() {
@@ -156,7 +151,7 @@ function previewCornerPeek(patch) {
 function saveDraggedPosition(position, area) {
   let saved = position;
   if (appearancePreview) {
-    const size = widgetDimensions(settings.scale), corner = bottomCorner({ ...position, ...dimensions() }, area);
+    const size = widgetDimensions(settings.scale, settings.bubbleScale), corner = bottomCorner({ ...position, ...dimensions() }, area);
     const target = corner ? { x: corner === 'left' ? area.x : area.x + area.width - size.width,
       y: area.y + area.height - size.height } : position;
     saved = snapBounds({ ...target, ...size }, area);
@@ -170,7 +165,7 @@ function saveDraggedPosition(position, area) {
   if (!windowMode?.enabled) settings.position = { x: saved.x, y: saved.y };
   settings.mirror = saved.mirror; save();
 }
-function dimensions() { return widgetDimensions(effectiveAppearanceSettings().scale); }
+function dimensions() { return widgetDimensions(effectiveAppearanceSettings().scale, effectiveAppearanceSettings().bubbleScale); }
 function cornerDockState() {
   if (!widget || widget.isDestroyed()) return { corner: null, peeking: false };
   const contained = windowMode?.enabled;
@@ -265,7 +260,11 @@ function windowModeState() {
 function syncWindowMode() {
   if (!windowMode) {
     const { CodexWindowMode } = require('./window-mode.cjs');
-    windowMode = new CodexWindowMode({ widget, screen, getSize: dimensions, onStatus: windowModeChanged, onRecreate: rebuildWidget });
+    windowMode = new CodexWindowMode({ widget, screen, getSize: dimensions, onStatus: windowModeChanged, onRecreate: rebuildWidget,
+      // A cross-process WS_CHILD can leave Chromium's caret visible while the
+      // Codex host keeps the real keyboard focus. Follow with a contained
+      // top-level widget so Windows routes input to its own renderer.
+      allowNativeChild: false });
     if (widgetManuallyHidden) windowMode.hide();
   }
   windowMode?.configure(settings.stayInCodexWindow, { position: settings.position, alwaysOnTop: settings.alwaysOnTop });
@@ -296,24 +295,14 @@ function readyWatcherRecord() {
   try {
     const record = JSON.parse(fs.readFileSync(path.join(dataDir,'watcher.json'),'utf8'));
     if (!Number.isInteger(record.pid) || record.pid <= 0 || record.version !== app.getVersion() ||
-        !sameExecutable(record.executable, process.execPath) ||
+        typeof record.executable !== 'string' || path.resolve(record.executable).toLowerCase() !== path.resolve(process.execPath).toLowerCase() ||
         typeof record.loginStartupEnabled !== 'boolean') return null;
     process.kill(record.pid,0);
     return record;
   } catch { return null; }
 }
-function dispatchDesktopWatcher(extraArgs = [], enabled = true) {
-  const options = { executable:process.execPath, args:[...buildLaunchArgs({packaged:app.isPackaged,appRoot:root,flag:'--watch-codex'}),'--maid-home='+dataDir,...extraArgs], cwd:path.dirname(process.execPath), dataDir };
-  return process.platform === 'darwin' ? launchMacWatcher({ ...options, enabled }) : launchThroughExplorer(options);
-}
-function queueDesktopFollow(generation, operation) {
-  if (process.platform !== 'darwin') return operation();
-  // A quick off/on must finish removal before the new LaunchAgent is loaded.
-  const pending = followOperation.catch(() => {}).then(() => {
-    if (!quitting && generation === followLaunchGeneration) return operation();
-  });
-  followOperation = pending;
-  return pending;
+function dispatchDesktopWatcher(extraArgs = []) {
+  return launchThroughExplorer({ executable:process.execPath, args:[...buildLaunchArgs({packaged:app.isPackaged,appRoot:root,flag:'--watch-codex'}),'--maid-home='+dataDir,...extraArgs], cwd:path.dirname(process.execPath) });
 }
 async function ensureDesktopWatcher(generation) {
   // A detached child can still belong to Codex's Windows Job. Ask the existing
@@ -329,19 +318,14 @@ async function ensureDesktopWatcher(generation) {
 }
 async function disableDesktopWatcher(generation) {
   const requestId = crypto.randomUUID();
-  await dispatchDesktopWatcher(['--follow-request='+requestId], false);
+  await dispatchDesktopWatcher(['--follow-request='+requestId]);
   const deadline = Date.now()+6000;
-  // Once a macOS removal was sent, hold the queue until its receipt arrives.
-  // Otherwise an off/on toggle could bootstrap just before the old helper
-  // unlinks the plist, leaving a running observer without login persistence.
-  while (!quitting && (process.platform === 'darwin' || (!settings.followCodex && generation === followLaunchGeneration))) {
+  while (!quitting && !settings.followCodex && generation === followLaunchGeneration) {
     let record;
     try { record = JSON.parse(fs.readFileSync(path.join(dataDir,'follow-startup.json'),'utf8')); } catch {}
     if (record?.requestId === requestId && record.version === app.getVersion() &&
-        sameExecutable(record.executable, process.execPath)) {
-      if (process.platform === 'darwin' && record.loginStartupEnabled === true && generation !== followLaunchGeneration && !record.loginStartupError) return;
+        typeof record.executable === 'string' && path.resolve(record.executable).toLowerCase() === path.resolve(process.execPath).toLowerCase()) {
       if (record.loginStartupEnabled !== false || record.loginStartupError) throw new Error('startup-removal-failed');
-      if (process.platform === 'darwin') await finalizeMacWatcherRemoval();
       return;
     }
     if (Date.now() >= deadline) throw new Error('startup-removal-not-confirmed');
@@ -356,13 +340,13 @@ function syncDesktopFollow() {
     // Writes from a Codex/MSIX child can land in a private registry view.
     followError = ''; followRegistered = settings.followCodex;
     if (settings.followCodex) {
-      void queueDesktopFollow(generation, () => ensureDesktopWatcher(generation)).then(record => {
+      void ensureDesktopWatcher(generation).then(record => {
         if (!record || quitting || !settings.followCodex || generation !== followLaunchGeneration) return;
-        followError = record.loginStartupEnabled ? '' : process.platform === 'darwin' ? 'macOS 后台启动助手未启用，请检查系统设置中的登录项与后台活动。' : 'Windows 登录启动项未启用，请在系统启动应用中开启 CodexMaidFollow。';
+        followError = record.loginStartupEnabled ? '' : 'Windows 登录启动项未启用，请在系统启动应用中开启 CodexMaidFollow。';
         broadcast();
       }).catch(() => {
         if (quitting || !settings.followCodex || generation !== followLaunchGeneration) return;
-        followError = process.platform === 'darwin' ? '后台启动助手未能就绪，请检查 macOS 登录项与后台活动权限，再重新开启跟随。' : '后台启动助手未能就绪，请重新开启跟随开关；需保持 Windows 资源管理器运行。';
+        followError = '后台启动助手未能就绪，请重新开启跟随开关；需保持 Windows 资源管理器运行。';
         followRegistered = null; broadcast();
       });
       desktopMonitor?.stop();
@@ -373,15 +357,15 @@ function syncDesktopFollow() {
       desktopMonitor?.stop(); desktopMonitor = null;
       // Dispatch even if the old helper is gone so disabling follow also
       // removes its real login entry outside the MSIX registry view.
-      void queueDesktopFollow(generation, () => disableDesktopWatcher(generation)).catch(() => {
+      void disableDesktopWatcher(generation).catch(() => {
         if (quitting || settings.followCodex || generation !== followLaunchGeneration) return;
-        followError = '未能移除系统登录启动项，请重新开启再关闭跟随开关。';
+        followError = '未能移除 Windows 登录启动项，请重新开启再关闭跟随开关。';
         followRegistered = null; broadcast();
       });
     }
   } catch {
     followRegistered = null;
-    followError = '未能保存自动跟随设置，请检查系统登录启动项权限后重试。';
+    followError = '未能保存自动跟随设置，请检查 Windows 启动项权限后重试。';
   }
 }
 function updateSettings(patch) {
@@ -393,9 +377,21 @@ function updateSettings(patch) {
   const previous = settings, previousRevision = settingsRevision;
   settings = sanitize({ ...settings, ...safe });
   if (appearanceOrigin && !appearanceOrigin.contained && !settings.stayInCodexWindow && Object.hasOwn(safe, 'scale')) {
-    const bounds = appearanceBounds(appearanceOrigin, widgetDimensions(settings.scale));
+    const bounds = appearanceBounds(appearanceOrigin, widgetDimensions(settings.scale, settings.bubbleScale));
     settings.position = { x: bounds.x, y: bounds.y };
     settings.mirror = mirrorForBounds(bounds, screen.getDisplayMatching(bounds).workArea);
+  }
+  // The bubble grows to the left, so its window keeps the right edge: the
+  // character and the saved position stay put while the surface widens.
+  if (appearanceOrigin && !appearanceOrigin.contained && !settings.stayInCodexWindow && Object.hasOwn(safe, 'bubbleScale')) {
+    const size = dimensions(), area = screen.getDisplayMatching(appearanceOrigin.bounds).workArea;
+    const right = appearanceOrigin.bounds.x + appearanceOrigin.bounds.width;
+    const bottom = appearanceOrigin.bounds.y + appearanceOrigin.bounds.height;
+    const bounds = { ...constrainPosition({ x: right - size.width, y: bottom - size.height, width: size.width, height: size.height }, area), ...size };
+    settings.position = { x: bounds.x, y: bounds.y };
+    settings.mirror = mirrorForBounds(bounds, area);
+    appearanceOrigin.bounds = { ...bounds };
+    appearanceOrigin.corner = bottomCorner(bounds, area);
   }
   settingsRevision++;
   try { save(); }
@@ -420,7 +416,6 @@ function updateTray() {
     { label: t('桌宠聊天'), click: openChatManager },
     { label: t('切换形象'), submenu: characterMenuItems() },
     { label: t('设置'), click: openSettings },
-    ...(process.platform === 'darwin' ? [{ label: t('连接 Codex 工具…'), click: connectCodexPlugin }] : []),
     { type: 'separator' },
     { label: t('鼠标穿透 · Ctrl+Alt+Shift+M'), type: 'checkbox', checked: settings.clickThrough, click: i => updateSettings({ clickThrough: i.checked }) },
     { label: t('始终置顶'), type: 'checkbox', checked: settings.alwaysOnTop, click: i => updateSettings({ alwaysOnTop: i.checked }) },
@@ -430,33 +425,6 @@ function updateTray() {
     { type: 'separator' },
     { label: t('退出'), click: () => app.quit() },
   ]));
-}
-async function connectCodexPlugin() {
-  if (connectingPlugin) return;
-  connectingPlugin = true;
-  try {
-    const connector = path.join(process.resourcesPath, 'integration', 'connect.cjs');
-    if (!fs.existsSync(connector)) {
-      await dialog.showMessageBox({ type: 'info', message: t('连接工具随 Mac 安装包提供。'), detail: t('请安装完整应用后，从菜单栏选择“连接 Codex 工具”。') });
-      return;
-    }
-    const answer = await dialog.showMessageBox({ type: 'question', message: t('将女仆挂件连接到 Codex？'),
-      detail: t('这会在本机注册并安装女仆插件，让 Codex 对话可以读取挂件状态、刷新额度和互动。完成后请重启 Codex 并新建聊天。'),
-      buttons: [t('连接'), t('取消')], defaultId: 0, cancelId: 1 });
-    if (answer.response !== 0) return;
-    const result = await new Promise(resolve => {
-      execFile(process.execPath, [connector, '--install'], {
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', CODEX_MAID_HOME: dataDir },
-        timeout: 90000, maxBuffer: 256 * 1024, windowsHide: true,
-      }, (error, stdout) => {
-        try {
-          const value = JSON.parse(stdout);
-          resolve({ ok: !error && value.ok === true, message: typeof value.message === 'string' ? value.message.slice(0, 2000) : '' });
-        } catch { resolve({ ok: false, message: t('连接未完成。请确认已安装最新 Codex，然后从菜单栏重试。') }); }
-      });
-    });
-    await dialog.showMessageBox({ type: result.ok ? 'info' : 'error', message: result.ok ? t('Codex 工具已连接') : t('Codex 工具连接未完成'), detail: i18n.connectorMessage(result.message) });
-  } finally { connectingPlugin = false; }
 }
 function characterMenuItems() {
   const activeId = state().activeCharacterId;
@@ -612,7 +580,7 @@ async function createWidget() {
     icon: windowIcon, hasShadow: false, skipTaskbar: true, show: false, backgroundColor: '#00000000',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false } });
   widget = created;
-  secureWindow(created); configureWidgetWorkspace(created);
+  secureWindow(created);
   created.on('close', event => { if (!quitting) { event.preventDefault(); hide(); } });
   created.on('closed', () => {
     if (quitting || widget !== created) return;
@@ -719,7 +687,11 @@ function setupIpc() {
     if (!foregroundAllowed || anotherWindowFocused || (!win.isFocused?.() && !pointerInside)) {
       await mode.setInputActive(false); return false;
     }
-    if (mode?.nativeChild) { win.webContents.focus(); return true; }
+    // The embedded production provider owns the child HWND focus. Calling
+    // BrowserWindow/WebContents.focus() here can route focus back through the
+    // Codex host renderer and select its editor again. The legacy detached
+    // fallback still needs the explicit top-level focus.
+    if (mode?.nativeChild) return true;
     win.focus(); win.webContents.focus(); return true;
   });
   const chatHandle = (name, callback) => handle(name, (event, ...args) => {
@@ -897,7 +869,6 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => widget && show());
   app.whenReady().then(async () => {
-    configureMacApp(app);
     library = new CharacterLibrary({ dataDir, assetRoot: path.join(root,'assets'), validateImage: file => {
       if (/\.(gif|webp)$/i.test(file)) return; // Decoded by validateBrowserImage before import/migration.
       const decoded = nativeImage.createFromPath(file);
@@ -934,7 +905,7 @@ else {
     // On Windows the ICO path lets Electron request an actual DPI-sized HICON.
     // A composed PNG NativeImage uses its 1x bitmap in this Electron version,
     // which Windows then enlarges and blurs on high-DPI displays.
-    tray = new Tray(trayImage({ root, nativeImage }));
+    tray = new Tray(process.platform === 'win32' ? path.join(root, 'assets', 'app-icon.ico') : path.join(root, 'assets', 'icons', 'tray-32.png'));
     tray.setToolTip(t('Codex 女仆 · 额度与陪伴')); tray.on('click', show); updateTray();
     screen.on('display-removed', () => resetPosition());
     globalShortcut.register('Control+Alt+M', () => widget.isVisible() ? hide() : show());
@@ -945,7 +916,6 @@ else {
   }).catch(error => { dialog.showErrorBox(t('Codex 女仆启动失败'), t(error.message)); app.quit(); });
 }
 app.on('window-all-closed', () => {});
-app.on('activate', () => { if (widget && !widget.isDestroyed()) show(); });
 app.on('before-quit', event => {
   if (chatService?.hasPendingDrafts()) {
     const response = dialog.showMessageBoxSync(chatWindow && !chatWindow.isDestroyed() ? chatWindow : widget, {
