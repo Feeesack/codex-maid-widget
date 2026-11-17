@@ -60,6 +60,8 @@
     '3 秒后': 'After 3 seconds', '5 秒后': 'After 5 seconds', '10 秒后': 'After 10 seconds', '30 秒后': 'After 30 seconds', '60 秒后': 'After 60 seconds',
     '她的样子': 'Appearance',
     '挂件大小': 'Companion size',
+    '气泡大小': 'Bubble size',
+    '只缩放气泡：放大时窗口向左扩展，人物位置不动': 'Scales only the bubble. Growing it widens the window to the left; the companion stays put.',
     '100% = 原版的 60%，默认更小巧': '100% is 60% of the original size, for a smaller default companion.',
     '不透明度': 'Opacity',
     '拖动即时预览，松开后保存；按 Esc 取消本次预览。': 'Drag to preview; release to save. Press Esc to cancel the preview.',

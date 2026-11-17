@@ -25,7 +25,7 @@ const DEFAULTS = Object.freeze({
   chatModel: 'gpt-6.1-sol',
   chatReasoningEffort: 'medium',
   sizeBaseline: 2,
-  scale: 1, opacity: 1, alwaysOnTop: true, clickThrough: false, sound: true, interactionSound: defaultInteractionSound, accountResetAlerts: true,
+  scale: 1, bubbleScale: 1, opacity: 1, alwaysOnTop: true, clickThrough: false, sound: true, interactionSound: defaultInteractionSound, accountResetAlerts: true,
   autoStart: false, followCodex: true, stayInCodexWindow: false, peekAtCorners: false, showBubble: true, autoHideSeconds: 5, refreshSeconds: 60,
   peekSidePercent: 100, peekBottomPercent: 50,
   bucketId: '', mode: 'quota', characterPath: '', activeCharacterId: 'frost-glass-cheek', position: null, mirror: false,
@@ -56,6 +56,7 @@ function sanitize(input = {}) {
     if (typeof input[key] === 'boolean') s[key] = input[key];
   }
   s.scale = clamp(input.scale, 0.6, 1.6, DEFAULTS.scale);
+  s.bubbleScale = clamp(input.bubbleScale, 0.8, 1.4, DEFAULTS.bubbleScale);
   s.peekSidePercent = Math.round(clamp(input.peekSidePercent, 0, 200, DEFAULTS.peekSidePercent));
   s.peekBottomPercent = Math.round(clamp(input.peekBottomPercent, 0, 200, DEFAULTS.peekBottomPercent));
   s.opacity = clamp(input.opacity, 0.35, 1, DEFAULTS.opacity);
@@ -100,9 +101,28 @@ function readSettings(file) {
     return sanitize(input);
   } catch { return sanitize(); }
 }
-function widgetDimensions(scale = DEFAULTS.scale) {
+// The bubble spans the whole canvas already, so growing it enlarges the window.
+// The added width goes to the LEFT and the bubble is anchored to its right edge:
+// the character, the window's right edge and the user's saved position all stay
+// exactly where they were, and only the bubble reaches further left.
+const BUBBLE_CANVAS_WIDTH = 380;
+const BUBBLE_CANVAS_HEIGHT = 480;
+const BUBBLE_WIDTH = 354;
+const BUBBLE_HEIGHT = 246;
+function bubbleCanvasWidth(bubbleScale = DEFAULTS.bubbleScale) {
+  const value = clamp(bubbleScale, 0.8, 1.4, DEFAULTS.bubbleScale);
+  return BUBBLE_CANVAS_WIDTH + Math.round(BUBBLE_WIDTH * (value - 1));
+}
+// The bubble scales around its bottom-right corner, so the surface has to gain
+// room above it as well; the companion is bottom-anchored and never moves.
+function bubbleCanvasHeight(bubbleScale = DEFAULTS.bubbleScale) {
+  const value = clamp(bubbleScale, 0.8, 1.4, DEFAULTS.bubbleScale);
+  return BUBBLE_CANVAS_HEIGHT + Math.round(BUBBLE_HEIGHT * (value - 1));
+}
+function widgetDimensions(scale = DEFAULTS.scale, bubbleScale = DEFAULTS.bubbleScale) {
   const value = clamp(scale, 0.6, 1.6, DEFAULTS.scale);
-  return { width: Math.round(228 * value), height: Math.round(288 * value) };
+  return { width: Math.round(bubbleCanvasWidth(bubbleScale) * 0.6 * value),
+    height: Math.round(bubbleCanvasHeight(bubbleScale) * 0.6 * value) };
 }
 function writeSettings(file, settings) {
   let original;
@@ -148,7 +168,7 @@ function bottomCorner(bounds, area, tolerance = 2) {
 }
 function cornerPeekOffset(corner, size, settings = {}) {
   if (corner !== 'left' && corner !== 'right') return { x: 0, y: 0 };
-  const scale = size.width / 380;
+  const scale = size.width / bubbleCanvasWidth(settings?.bubbleScale);
   const side = Math.round(clamp(settings?.peekSidePercent, 0, 200, DEFAULTS.peekSidePercent)) / 100;
   const bottom = Math.round(clamp(settings?.peekBottomPercent, 0, 200, DEFAULTS.peekBottomPercent)) / 100;
   return { x: side === 0 ? 0 : (corner === 'left' ? -48 : 48) * scale * side, y: 56 * scale * bottom };
@@ -163,4 +183,4 @@ function mirrorForBounds(bounds, area) {
   // Use the fixed surface centre, independent of mirrored artwork/bubble layout.
   return bounds.x + bounds.width / 2 < area.x + area.width / 2;
 }
-module.exports = { DEFAULTS, sanitize, readSettings, writeSettings, widgetDimensions, constrainPosition, snapBounds, mirrorForBounds, bottomCorner, cornerPeekOffset, projectVisualBounds };
+module.exports = { DEFAULTS, sanitize, readSettings, writeSettings, widgetDimensions, bubbleCanvasWidth, bubbleCanvasHeight, BUBBLE_CANVAS_WIDTH, BUBBLE_CANVAS_HEIGHT, constrainPosition, snapBounds, mirrorForBounds, bottomCorner, cornerPeekOffset, projectVisualBounds };
