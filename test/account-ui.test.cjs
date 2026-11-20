@@ -96,6 +96,32 @@ for (const folder of ['', 'macos']) {
       assert.match(h.accountCards.get('one').remaining.attributes['aria-label'], /五小时额度剩余.*周额度剩余/);
     }
   });
+  test(`${platform}: a weekly-only plan draws one closed ring and counts the week alone`, () => {
+    const h = harness(folder);
+    h.renderAccounts({accounts: [
+      {id:'w', label:'周额度', current:true, planType:'pro', planLabel:'Pro', scopeLabel:'个人',
+       weeklyOnly:true, hasFiveHour:false, hasWeekly:true, resetsAt:null, remainingPercent:null,
+       weeklyResetsAt:2000020000, weeklyRemainingPercent:77, weeklyObservedAt:1999999999},
+      {id:'e', label:'周额度过期', planType:'pro', planLabel:'Pro', scopeLabel:'个人',
+       weeklyOnly:true, hasFiveHour:false, hasWeekly:true, resetsAt:null,
+       weeklyResetsAt:1999999990, weeklyRemainingPercent:40, weeklyObservedAt:1999999000},
+    ]});
+    const only = h.accountCards.get('w'), expired = h.accountCards.get('e');
+    assert.equal(only.track.classList.contains('account-weekly-only'), true);
+    assert.equal(only.track.classList.contains('account-cycle-unknown'), false, 'a weekly deadline is a real deadline');
+    assert.equal(only.rings['full-value'].style.strokeDasharray, '77.000 100');
+    assert.equal(only.rings['upper-value'].style.strokeDasharray, undefined, 'no split arc is drawn');
+    assert.equal(only.countdownRows[0].label.textContent, '7d');
+    assert.match(only.countdownRows[0].time.textContent, /^\d{2}:\d{2}:\d{2}$/);
+    assert.equal(only.countdownRows[1].row.hidden, true, 'there is no second window to show');
+    assert.equal(only.remaining.textContent, '周 77%');
+    assert.match(only.countdown.title, /只返回周额度/, 'hover explains why 5h is missing');
+    assert.doesNotMatch(only.countdown.title, /5h /);
+    // An expired week is the pending state of the whole ring, not a half of it.
+    assert.equal(expired.track.classList.contains('account-cycle-pending'), true);
+    assert.equal(expired.track.classList.contains('account-weekly-pending'), false);
+    assert.equal(expired.rings['full-value'].style.strokeDasharray, '0 100');
+  });
   test(`${platform}: accounts sort by time to reset, keep equal deadlines stable and put unknown times last`, () => {
     const h=harness(folder);
     const account=(id,resetsAt,current=false)=>({id,resetsAt,current,label:id,userEdited:true});

@@ -109,7 +109,12 @@ for (const source of ['../src/account-registry.cjs', '../macos/src/account-regis
       { id: 'unknown', primary: { remainingPercent: 30, resetsAt: seconds(NOW) + 60 } },
     ] });
     const account = registry.snapshot().accounts[0];
-    assert.equal(account.status, 'unknown');
+    // The weekly deadline is the only one this account has, so it drives the
+    // status instead of leaving the record unread.
+    assert.equal(account.status, 'countdown');
+    assert.equal(account.weeklyOnly, true);
+    assert.equal(account.hasFiveHour, false);
+    assert.equal(account.hasWeekly, true);
     assert.equal(account.resetsAt, null);
     assert.equal(account.remainingPercent, null);
     assert.equal(account.weeklyRemainingPercent, 50);

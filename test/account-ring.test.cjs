@@ -25,7 +25,7 @@ function loadRing(folder) {
   const context = {};
   vm.runInNewContext(source.slice(start, end) + '\nglobalThis.renderAccountRing = renderAccountRing;', context);
   return { render: context.renderAccountRing, source,
-    entry: () => ({ rings: { 'upper-value': { style: {} }, 'lower-value': { style: {} } } }) };
+    entry: () => ({ rings: { 'upper-value': { style: {} }, 'lower-value': { style: {} }, 'full-value': { style: {} } } }) };
 }
 const near = (actual, expected, what = '') =>
   assert.ok(Math.abs(actual - expected) < 0.002, `${what}: expected ~${expected}, got ${actual}`);
@@ -45,6 +45,21 @@ for (const folder of ['', 'macos/']) {
     // Full arcs start at their own path origin, which is what the stylesheet draws.
     near(described(value.rings['lower-value']).offset, 0, 'lower starts at its anchor');
     near(described(value.rings['upper-value']).offset, 0, 'a full upper arc starts at its origin');
+  });
+
+  test(`${label}: a single-window plan fills one closed loop`, () => {
+    const { render, entry } = loadRing(folder);
+    const value = entry();
+    // Pro, and sometimes a Plus account, only gets the weekly window: there is
+    // no junction to split on, so the whole circle is the week.
+    render(value, null, 0.77, true);
+    near(described(value.rings['full-value']).length, 77, 'the loop is the weekly remainder');
+    near(described(value.rings['full-value']).offset, 0, 'fills from the element origin');
+    assert.equal(value.rings['upper-value'].style.strokeDasharray, undefined, 'split arcs stay untouched');
+    render(value, null, 0, true);
+    near(described(value.rings['full-value']).length, 0, 'an expired week leaves an empty loop');
+    render(value, null, null, true);
+    assert.equal(value.rings['full-value'].style.strokeDasharray, '0 100', 'an unobserved week draws nothing');
   });
 
   test(`${label}: the lit arc shrinks toward the split and never overruns its span`, () => {

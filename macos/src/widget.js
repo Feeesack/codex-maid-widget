@@ -447,11 +447,13 @@ function createAccountCard(account) {
   // its own arc and its dash then lies inside [0, span] without crossing zero.
   const rings = {};
   const ringRotation = { upper: 300 + RING_GAP - 90, lower: 60 + RING_GAP - 90 };
+  const split = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  split.setAttribute('class', 'account-ring-split'); svg.append(split);
   for (const name of ['upper-track', 'lower-track', 'upper-value', 'lower-value']) {
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     for (const [key, value] of Object.entries({class:'account-ring-' + name, cx:'18', cy:'18', r:'15', pathLength:'100'})) circle.setAttribute(key, value);
     circle.setAttribute('transform', `rotate(${ringRotation[name.split('-')[0]]} 18 18)`);
-    svg.append(circle); rings[name] = circle;
+    split.append(circle); rings[name] = circle;
   }
   // Expected-to-refill state: each segment becomes a hollow outline, a pale
 // outer rim in the remaining colour and an inner rim in the spent colour, so it
@@ -468,7 +470,22 @@ function createAccountCard(account) {
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('class', `account-ring-ghost account-ring-ghost-${segment} account-ring-ghost-${rim}`);
     path.setAttribute('d', d);
-    svg.append(path); rings[`${segment}-ghost-${rim}`] = path;
+    split.append(path); rings[`${segment}-ghost-${rim}`] = path;
+  }
+  // A plan with a single window gets one closed loop instead of two segments: it
+  // starts at twelve and fills clockwise, with no junction gaps to explain.
+  const full = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  full.setAttribute('class', 'account-ring-full'); svg.append(full);
+  for (const name of ['full-track', 'full-value']) {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    for (const [key, value] of Object.entries({class:'account-ring-' + name, cx:'18', cy:'18', r:'15', pathLength:'100'})) circle.setAttribute(key, value);
+    circle.setAttribute('transform', 'rotate(-90 18 18)');
+    full.append(circle); rings[name] = circle;
+  }
+  for (const [name, radius] of [['full-ghost-outer', '16.5'], ['full-ghost-inner', '13.5']]) {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    for (const [key, value] of Object.entries({class:`account-ring-ghost account-ring-full-ghost account-ring-${name}`, cx:'18', cy:'18', r:radius})) circle.setAttribute(key, value);
+    full.append(circle); rings[name] = circle;
   }
   cycle.setAttribute('aria-hidden', 'true'); cycle.append(core);
   track.setAttribute('role', 'progressbar'); track.setAttribute('aria-valuemin', '0'); track.setAttribute('aria-valuemax', '100'); track.append(svg, cycle);
@@ -577,7 +594,7 @@ function renderAccounts(value) {
 const RING_GAP = 10;
 const RING_UPPER_SPAN = (120 - 2 * RING_GAP) / 3.6;
 const RING_LOWER_SPAN = (240 - 2 * RING_GAP) / 3.6;
-function renderAccountRing(entry, fiveHour, weekly) {
+function renderAccountRing(entry, fiveHour, weekly, weeklyOnly) {
   // Both circles are rotated to the start of their own arc. The upper arc runs
   // left to right from its origin; the lower one ends on the left, so its lit
   // part is the tail of the span.
@@ -588,6 +605,7 @@ function renderAccountRing(entry, fiveHour, weekly) {
     circle.style.strokeDasharray = `${length.toFixed(3)} 100`;
     circle.style.strokeDashoffset = (fromEnd ? length - span : 0).toFixed(3);
   };
+  if (weeklyOnly) { draw(entry.rings['full-value'], weekly, 100, false); return; }
   draw(entry.rings['upper-value'], fiveHour, RING_UPPER_SPAN, false);
   draw(entry.rings['lower-value'], weekly, RING_LOWER_SPAN, true);
 }
@@ -605,12 +623,20 @@ function countdownStateLabel(seconds) {
 function resetStamp(value) {
   return new Date(value * 1000).toLocaleString(locale(), {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});
 }
-function renderAccountCountdown(entry, five, weekly) {
+function renderAccountCountdown(entry, five, weekly, weeklyOnly) {
   const [primary, secondary] = entry.countdownRows;
+  primary.label.hidden = false;
+  // One window only: there is nothing to hand over to, so the week simply is
+  // the countdown.
+  if (weeklyOnly) {
+    primary.label.textContent = '7d';
+    primary.time.textContent = countdownStateLabel(weekly);
+    secondary.row.hidden = true;
+    return;
+  }
   // An expired five-hour window is expected to refill, so it stops being a
   // countdown: the week takes the loud cell and the reset becomes a note.
   const handedOver = five === 0 && weekly !== null;
-  primary.label.hidden = false;
   primary.label.textContent = handedOver ? '7d' : '5h';
   primary.time.textContent = countdownStateLabel(handedOver ? weekly : five);
   secondary.row.hidden = weekly === null;
@@ -619,43 +645,58 @@ function renderAccountCountdown(entry, five, weekly) {
   secondary.time.textContent = handedOver ? t('预计已重置') : countdownStateLabel(weekly);
 }
 function updateAccountTimers() {
-  const now = Date.now() / 1000;
+  const now = Date.now() / 1000, WEEK_SECONDS = 604800;
   for (const entry of accountCards.values()) {
     const account = entry.account, known = Number.isFinite(account.resetsAt) && account.resetsAt > 0;
     const seconds = known ? Math.max(0, Math.ceil(account.resetsAt - now)) : null;
     const weeklyKnown = Number.isFinite(account.weeklyResetsAt) && account.weeklyResetsAt > 0;
     const weeklySeconds = weeklyKnown ? Math.max(0, Math.ceil(account.weeklyResetsAt - now)) : null;
-    const progress = known ? Math.max(0, Math.min(100, (now - (account.resetsAt - 18000)) / 180)) : 0;
-    entry.track.classList.toggle('account-cycle-unknown', !known);
-    entry.track.classList.toggle('account-cycle-pending', known && seconds === 0);
-    if (known) entry.track.setAttribute('aria-valuenow', String(Math.round(progress))); else entry.track.removeAttribute('aria-valuenow');
-    entry.track.setAttribute('aria-valuetext', known ? t('五小时周期已过 {percent}%', {percent:Math.round(progress)}) : t('重置时间未知'));
-    renderAccountCountdown(entry, known ? seconds : null, weeklyKnown ? weeklySeconds : null);
+    // A plan that returns one window has no five-hour deadline to count down,
+    // so the weekly one drives the ring, the countdown and the status instead.
+    const weeklyOnly = account.weeklyOnly === true;
+    const primaryKnown = weeklyOnly ? weeklyKnown : known;
+    const primarySeconds = weeklyOnly ? weeklySeconds : seconds;
+    const progress = weeklyOnly
+      ? weeklyKnown ? Math.max(0, Math.min(100, (now - (account.weeklyResetsAt - WEEK_SECONDS)) / WEEK_SECONDS * 100)) : 0
+      : known ? Math.max(0, Math.min(100, (now - (account.resetsAt - 18000)) / 180)) : 0;
+    entry.track.classList.toggle('account-weekly-only', weeklyOnly);
+    entry.track.classList.toggle('account-cycle-unknown', !primaryKnown);
+    entry.track.classList.toggle('account-cycle-pending', primaryKnown && primarySeconds === 0);
+    if (primaryKnown) entry.track.setAttribute('aria-valuenow', String(Math.round(progress))); else entry.track.removeAttribute('aria-valuenow');
+    entry.track.setAttribute('aria-valuetext', primaryKnown
+      ? weeklyOnly ? t('周额度周期已过 {percent}%', {percent:Math.round(progress)}) : t('五小时周期已过 {percent}%', {percent:Math.round(progress)})
+      : t('重置时间未知'));
+    renderAccountCountdown(entry, known ? seconds : null, weeklyKnown ? weeklySeconds : null, weeklyOnly);
     entry.reset.textContent = known ? t('预计 {time} 重置', {time:resetStamp(account.resetsAt)}) : t('读取此账号额度后才能推算');
-    const fivePercent = Number.isFinite(account.remainingPercent) && !(known && seconds === 0) ? Number(account.remainingPercent.toFixed(1)) : null;
+    const fivePercent = !weeklyOnly && Number.isFinite(account.remainingPercent) && !(known && seconds === 0) ? Number(account.remainingPercent.toFixed(1)) : null;
     const weeklyExpired = weeklyKnown && weeklySeconds === 0;
     // An expired window is expected to refill, so its arc shows a ghost fill
-    // instead of reading as empty.
-    entry.track.classList.toggle('account-weekly-pending', weeklyExpired);
+    // instead of reading as empty. A single-window ring empties as a whole.
+    entry.track.classList.toggle('account-weekly-pending', weeklyExpired && !weeklyOnly);
     const weeklyPercent = Number.isFinite(account.weeklyRemainingPercent) && !weeklyExpired ? Number(account.weeklyRemainingPercent.toFixed(1)) : null;
     const remaining = fivePercent === null ? '--' : `${fivePercent}%`;
     const weekly = weeklyPercent === null ? '--' : `${weeklyPercent}%`;
-    renderAccountRing(entry, fivePercent === null ? null : fivePercent / 100, weeklyPercent === null ? null : weeklyPercent / 100);
-    entry.remaining.textContent = t('5h {primary} · 周 {weekly}', {primary:remaining, weekly});
-    const quotaLabel = t('五小时额度剩余 {primary}；周额度剩余 {weekly}', {primary:remaining, weekly});
+    renderAccountRing(entry, fivePercent === null ? null : fivePercent / 100, weeklyPercent === null ? null : weeklyPercent / 100, weeklyOnly);
+    entry.remaining.textContent = weeklyOnly
+      ? t('周 {weekly}', {weekly})
+      : t('5h {primary} · 周 {weekly}', {primary:remaining, weekly});
+    const quotaLabel = weeklyOnly ? t('周额度剩余 {weekly}', {weekly}) : t('五小时额度剩余 {primary}；周额度剩余 {weekly}', {primary:remaining, weekly});
     entry.remaining.setAttribute('aria-label', quotaLabel);
     entry.remaining.title = [quotaLabel, Number.isFinite(account.observedAt) ? t('5h 最近观察：{time}', {time:new Date(account.observedAt * 1000).toLocaleString(locale())}) : t('尚无额度观察记录'), Number.isFinite(account.weeklyObservedAt) ? t('周额度最近观察：{time}', {time:new Date(account.weeklyObservedAt * 1000).toLocaleString(locale())}) : t('尚无周额度观察记录')].join('\n');
     // Hover text carries both windows: the countdown, the expected reset and
-    // the quota each one is spending.
+    // the quota each one is spending. An expired window has no countdown left,
+    // so repeating its old deadline as "expected" would read backwards.
     const fiveLine = !known ? t('五小时重置时间未知')
       : seconds === 0 ? t('5h 已到预计重置时间（{at}），登录后重新读取', {at:resetStamp(account.resetsAt)})
         : t('5h 重置剩余 {time}，预计 {at} 重置', {time:countdownClock(seconds), at:resetStamp(account.resetsAt)});
     const weeklyLine = !weeklyKnown ? t('尚无周额度重置时间')
       : weeklySeconds === 0 ? t('7d 已到预计重置时间（{at}），登录后重新读取', {at:resetStamp(account.weeklyResetsAt)})
         : t('7d 重置剩余 {time}，预计 {at} 重置', {time:countdownClock(weeklySeconds), at:resetStamp(account.weeklyResetsAt)});
-    entry.countdown.title = [fiveLine, weeklyLine, quotaLabel].join('\n');
-    entry.countdown.setAttribute('aria-label', [fiveLine, weeklyLine].join('；'));
-    entry.track.title = [entry.track.getAttribute('aria-valuetext'), fiveLine, weeklyLine, quotaLabel].join('\n');
+    const planLine = weeklyOnly ? t('此套餐只返回周额度') : null;
+    const lines = planLine ? [weeklyLine, planLine] : [fiveLine, weeklyLine];
+    entry.countdown.title = [...lines, quotaLabel].join('\n');
+    entry.countdown.setAttribute('aria-label', lines.join('；'));
+    entry.track.title = [entry.track.getAttribute('aria-valuetext'), ...lines, quotaLabel].join('\n');
   }
 }
 async function refreshAccounts() {

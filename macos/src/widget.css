@@ -150,6 +150,13 @@ footer button:hover:not(:disabled){background:var(--theme-pill-hover);color:var(
 .account-ring-ghost{display:none;fill:none;stroke:var(--account-remaining);stroke-width:1.15;stroke-linecap:butt;stroke-linejoin:round}
 .account-cycle-pending .account-ring-ghost-upper,.account-weekly-pending .account-ring-ghost-lower{display:block}
 .account-cycle-pending .account-ring-upper-value,.account-weekly-pending .account-ring-lower-value{opacity:0}
+.account-ring-full{display:none}
+.account-weekly-only .account-ring-split{display:none}
+.account-weekly-only .account-ring-full{display:block}
+.account-ring-full-track{stroke:var(--account-spent)}
+.account-ring-full-value{stroke:var(--account-remaining);stroke-linecap:butt}
+.account-weekly-only.account-cycle-pending .account-ring-full-value{opacity:0}
+.account-weekly-only.account-cycle-pending .account-ring-full-ghost{display:block}
 .account-cycle{position:absolute;inset:0;display:grid;place-items:center;font-size:10px;font-weight:700;color:var(--theme-muted)}
 .account-core{display:block;width:8px;height:8px;border-radius:1.5px;background:var(--account-core);rotate:45deg;transition:background .2s,opacity .2s}
 .account-cycle-unknown .account-core{opacity:0}
