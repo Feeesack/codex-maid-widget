@@ -30,7 +30,7 @@
 .chat-compose-hint{display:none}
 .composer-expanded #chat-compose-slot::after{content:'…';display:block;font-size:14px;line-height:22px;text-align:center;color:var(--theme-muted)}
 .composer-expanded #chat-compose-slot{min-height:22px}
-.chat-compose-panel{position:absolute;left:18px;right:18px;top:258px;z-index:5;padding:12px 14px;border:1px solid color-mix(in srgb,var(--theme-outline) 28%,transparent);border-radius:20px;background:linear-gradient(145deg,var(--theme-fill-start),var(--theme-soft));box-shadow:0 10px 30px color-mix(in srgb,var(--theme-outline) 17%,transparent),0 2px 7px #00000009;color:var(--theme-text);cursor:default;animation:chat-compose-in .2s cubic-bezier(.2,.8,.2,1)}
+.chat-compose-panel{position:absolute;left:calc(18px + var(--bubble-extra,0px));right:18px;top:258px;z-index:5;padding:12px 14px;border:1px solid color-mix(in srgb,var(--theme-outline) 28%,transparent);border-radius:20px;background:linear-gradient(145deg,var(--theme-fill-start),var(--theme-soft));box-shadow:0 10px 30px color-mix(in srgb,var(--theme-outline) 17%,transparent),0 2px 7px #00000009;color:var(--theme-text);cursor:default;animation:chat-compose-in .2s cubic-bezier(.2,.8,.2,1)}
 .chat-compose-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
 .chat-compose-header>div{display:flex;flex-direction:column;gap:3px;min-width:0}
 .chat-compose-eyebrow{display:none;font-size:10px;line-height:14px;font-weight:600;letter-spacing:1px;color:var(--theme-muted)}

@@ -117,6 +117,10 @@ function readLedger(file) {
         observedAt: timestamp(item.observedAt), remainingPercent: percentage(item.remainingPercent),
         weeklyObservedAt: timestamp(item.weeklyObservedAt), weeklyRemainingPercent: percentage(item.weeklyRemainingPercent),
         weeklyResetsAt: timestamp(item.weeklyResetsAt),
+        // Which windows the last observation actually carried. `null` means the
+        // record predates this field, so absence must not be read as "no window".
+        hasFiveHour: typeof item.hasFiveHour === 'boolean' ? item.hasFiveHour : null,
+        hasWeekly: typeof item.hasWeekly === 'boolean' ? item.hasWeekly : null,
         confirmedResetsAt, resetSource: confirmedResetsAt ? item.resetSource === 'observed' ? 'observed' : 'estimated' : null,
         alertedThrough: timestamp(item.alertedThrough) || 0,
       });
@@ -192,6 +196,7 @@ class AccountRegistry {
         planType: null, firstSeenAt: seconds, lastSeenAt: seconds, observedAt: null, remainingPercent: null,
         weeklyObservedAt: null, weeklyRemainingPercent: null, weeklyResetsAt: null,
         confirmedResetsAt: null, resetSource: null, alertedThrough: 0,
+        hasFiveHour: null, hasWeekly: null,
       };
       accounts.push(account); nextOrdinal += 1;
     }
@@ -241,6 +246,14 @@ class AccountRegistry {
       // boundary and make an old weekly observation live forever.
       if (reset !== null && reset >= seconds - WEEK_SECONDS && reset <= seconds + WEEK_SECONDS + 60) account.weeklyResetsAt = reset;
     }
+    // Some plans return one window only (Pro has no five-hour window, and a Plus
+    // account can be served that way too). Recording which windows came back is
+    // the only way to tell "this plan has no five-hour window" apart from "the
+    // five-hour window was never observed".
+    if (Array.isArray(input.buckets)) {
+      account.hasFiveHour = !!window;
+      account.hasWeekly = !!weekly;
+    }
     this._commit(accounts, nextOrdinal);
     return true;
   }
@@ -252,6 +265,10 @@ class AccountRegistry {
         const resetsAt = account.confirmedResetsAt;
         const expired = resetsAt !== null && resetsAt <= seconds;
         const weeklyExpired = account.weeklyResetsAt !== null && account.weeklyResetsAt <= seconds;
+        // One window only: the weekly deadline is then the whole story, so the
+        // status and the ring must be driven by it instead of the absent
+        // five-hour window.
+        const weeklyOnly = account.hasFiveHour === false && account.hasWeekly === true;
         return {
           id: account.id, label: account.label, autoLabel: account.autoLabel, labelSource: account.labelSource,
           userEdited: account.userEdited, profileNickname: account.profileNickname,
@@ -262,8 +279,11 @@ class AccountRegistry {
           remainingPercent: expired ? null : account.remainingPercent,
           weeklyRemainingPercent: weeklyExpired ? null : account.weeklyRemainingPercent,
           weeklyObservedAt: account.weeklyObservedAt, weeklyResetsAt: account.weeklyResetsAt,
+          hasFiveHour: account.hasFiveHour, hasWeekly: account.hasWeekly, weeklyOnly,
           resetsAt, resetSource: resetsAt === null ? null : account.resetSource,
-          status: resetsAt === null ? 'unknown' : expired ? 'awaiting-confirmation' : 'countdown',
+          status: weeklyOnly
+            ? account.weeklyResetsAt === null ? 'unknown' : weeklyExpired ? 'awaiting-confirmation' : 'countdown'
+            : resetsAt === null ? 'unknown' : expired ? 'awaiting-confirmation' : 'countdown',
           windowDurationMins: WINDOW_MINUTES,
           elapsedPercent: resetsAt === null ? null : Math.max(0, Math.min(100, (seconds - (resetsAt - WINDOW_SECONDS)) / WINDOW_SECONDS * 100)),
         };

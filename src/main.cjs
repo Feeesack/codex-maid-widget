@@ -151,7 +151,7 @@ function previewCornerPeek(patch) {
 function saveDraggedPosition(position, area) {
   let saved = position;
   if (appearancePreview) {
-    const size = widgetDimensions(settings.scale), corner = bottomCorner({ ...position, ...dimensions() }, area);
+    const size = widgetDimensions(settings.scale, settings.bubbleScale), corner = bottomCorner({ ...position, ...dimensions() }, area);
     const target = corner ? { x: corner === 'left' ? area.x : area.x + area.width - size.width,
       y: area.y + area.height - size.height } : position;
     saved = snapBounds({ ...target, ...size }, area);
@@ -165,7 +165,7 @@ function saveDraggedPosition(position, area) {
   if (!windowMode?.enabled) settings.position = { x: saved.x, y: saved.y };
   settings.mirror = saved.mirror; save();
 }
-function dimensions() { return widgetDimensions(effectiveAppearanceSettings().scale); }
+function dimensions() { return widgetDimensions(effectiveAppearanceSettings().scale, effectiveAppearanceSettings().bubbleScale); }
 function cornerDockState() {
   if (!widget || widget.isDestroyed()) return { corner: null, peeking: false };
   const contained = windowMode?.enabled;
@@ -377,9 +377,21 @@ function updateSettings(patch) {
   const previous = settings, previousRevision = settingsRevision;
   settings = sanitize({ ...settings, ...safe });
   if (appearanceOrigin && !appearanceOrigin.contained && !settings.stayInCodexWindow && Object.hasOwn(safe, 'scale')) {
-    const bounds = appearanceBounds(appearanceOrigin, widgetDimensions(settings.scale));
+    const bounds = appearanceBounds(appearanceOrigin, widgetDimensions(settings.scale, settings.bubbleScale));
     settings.position = { x: bounds.x, y: bounds.y };
     settings.mirror = mirrorForBounds(bounds, screen.getDisplayMatching(bounds).workArea);
+  }
+  // The bubble grows to the left, so its window keeps the right edge: the
+  // character and the saved position stay put while the surface widens.
+  if (appearanceOrigin && !appearanceOrigin.contained && !settings.stayInCodexWindow && Object.hasOwn(safe, 'bubbleScale')) {
+    const size = dimensions(), area = screen.getDisplayMatching(appearanceOrigin.bounds).workArea;
+    const right = appearanceOrigin.bounds.x + appearanceOrigin.bounds.width;
+    const bottom = appearanceOrigin.bounds.y + appearanceOrigin.bounds.height;
+    const bounds = { ...constrainPosition({ x: right - size.width, y: bottom - size.height, width: size.width, height: size.height }, area), ...size };
+    settings.position = { x: bounds.x, y: bounds.y };
+    settings.mirror = mirrorForBounds(bounds, area);
+    appearanceOrigin.bounds = { ...bounds };
+    appearanceOrigin.corner = bottomCorner(bounds, area);
   }
   settingsRevision++;
   try { save(); }

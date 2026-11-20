@@ -75,7 +75,7 @@ function renderLanguage(settings) {
   }
 }
 const booleans = ['showBubble','alwaysOnTop','clickThrough','sound','accountResetAlerts','followCodex','stayInCodexWindow','peekAtCorners'];
-const numbers = ['scale','opacity','refreshSeconds','autoHideSeconds'];
+const numbers = ['scale','bubbleScale','opacity','refreshSeconds','autoHideSeconds'];
 const peekPercentages = ['peekBottomPercent','peekSidePercent'];
 let current, phrasesEdited = false;
 const chatModels = window.MaidChatView?.mountModels({document,maid:window.maid,t});
@@ -588,6 +588,7 @@ function render(value) {
       'manual-hidden': '已手动隐藏；可从托盘或快捷键恢复。', 'other-foreground': '切换到了其他应用，挂件暂时隐藏。', 'host-hidden': 'Codex 窗口已最小化或隐藏，挂件随之隐藏。' })[windowMode?.reason]
       || '正在等待可见的 Codex 窗口；窗口内模式不使用全局置顶。');
   for(const id of numbers.filter(id=>!['scale','opacity'].includes(id))) $(id).value = value.settings[id];
+  $('bubbleScale-value').textContent = Math.round((value.settings.bubbleScale ?? 1) * 100) + '%';
   renderBubblePages();
   $('bucketId').replaceChildren();
   for(const item of [{id:'',name:t('自动选择')},...(value.snapshot.buckets || [])]) { const option=document.createElement('option'); option.value=item.id; option.textContent=item.id==='demo'&&item.name==='演示额度'?t('演示额度'):item.name||item.id; $('bucketId').append(option); }
@@ -622,6 +623,7 @@ if ($('language')) $('language').addEventListener('change', async () => {
 for(const id of booleans.filter(id => id !== 'sound' && id !== 'peekAtCorners')) $(id).addEventListener('change',()=>window.maid.setSettings({[id]:$(id).checked}));
 if ($('chatPageEnabled')) $('chatPageEnabled').addEventListener('change', () => window.maid.setSettings({chatPageEnabled:$('chatPageEnabled').checked}));
 if ($('open-chat-manager')) $('open-chat-manager').addEventListener('click', () => window.maid.openChatManager());
+$('bubbleScale').addEventListener('input',()=>{$('bubbleScale-value').textContent=Math.round(Number($('bubbleScale').value)*100)+'%';});
 for(const id of [...numbers.filter(id=>!['scale','opacity'].includes(id)),'bucketId']) {
   $(id).addEventListener('change',()=>window.maid.setSettings({[id]:numbers.includes(id)?Number($(id).value):$(id).value}));
 }

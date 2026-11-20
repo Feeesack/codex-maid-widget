@@ -58,9 +58,14 @@ for (const folder of ['', 'macos']) {
     const h = harness(folder);
     h.renderAccounts({accounts: [{id:'one',label:'账号 1',current:true,planType:'pro',planLabel:'Pro',scopeLabel:'个人',resetsAt:2000009000,remainingPercent:23,observedAt:1999999999,weeklyRemainingPercent:90,weeklyObservedAt:1999999998,weeklyResetsAt:2000020000}, {id:'two',label:'账号 2',planType:'team',planLabel:'Team',scopeLabel:'工作空间',resetsAt:null}]});
     const first = h.accountCards.get('one'), second = h.accountCards.get('two');
-    assert.equal(first.bar.style.strokeDashoffset, '50');
+    assert.equal(first.rings['upper-value'].style.strokeDasharray, '6.389 100');
+    assert.equal(first.rings['upper-value'].style.strokeDashoffset, '0.000');
+    assert.equal(first.rings['lower-value'].style.strokeDasharray, '55.000 100');
+    assert.equal(first.rings['lower-value'].style.strokeDashoffset, '-6.111');
     assert.equal(first.track.attributes['aria-valuenow'], '50');
-    assert.match(first.countdown.textContent, /02:30:00/);
+    assert.match(first.countdownRows[0].time.textContent, /02:30:00/);
+    assert.equal(first.countdownRows[0].time === undefined, false);
+    assert.match(first.countdownRows[1].time.textContent, /^\d{2}:\d{2}:\d{2}$/, 'the weekly countdown is shown too');
     assert.equal(first.remaining.textContent, '5h 23% · 周 90%');
     assert.match(first.remaining.title, /五小时额度剩余 23%；周额度剩余 90%/);
     assert.match(first.remaining.title, /5h 最近观察/);
@@ -69,10 +74,14 @@ for (const folder of ['', 'macos']) {
     assert.equal(first.plan.textContent, 'Pro · 个人');
     assert.equal(second.plan.textContent, 'Team · 工作空间');
     assert.equal(second.track.attributes['aria-valuenow'], undefined);
-    assert.match(second.countdown.textContent, /未知/);
+    assert.equal(second.countdownRows[0].time.textContent, '未知');
+    assert.equal(second.countdownRows[1].row.hidden, true);
     h.advance(10000); h.updateAccountTimers();
-    assert.equal(first.bar.style.strokeDashoffset, '0');
-    assert.equal(first.countdown.textContent, '预计已重置，待登录确认');
+    assert.equal(first.rings['upper-value'].style.strokeDasharray, '0 100');
+    assert.equal(first.countdownRows[0].label.textContent, '7d', 'the week takes the loud cell once 5h has reset');
+    assert.match(first.countdownRows[0].time.textContent, /^\d{2}:\d{2}:\d{2}$/);
+    assert.equal(first.countdownRows[1].label.textContent, '5h');
+    assert.equal(first.countdownRows[1].time.textContent, '预计已重置');
     assert.equal(first.account.remainingPercent, 23, 'local clock must not fabricate or overwrite observed quota');
     assert.equal(first.remaining.textContent, '5h -- · 周 90%');
     h.advance(10000); h.updateAccountTimers();
@@ -87,6 +96,32 @@ for (const folder of ['', 'macos']) {
       assert.match(h.accountCards.get('one').remaining.attributes['aria-label'], /五小时额度剩余.*周额度剩余/);
     }
   });
+  test(`${platform}: a weekly-only plan draws one closed ring and counts the week alone`, () => {
+    const h = harness(folder);
+    h.renderAccounts({accounts: [
+      {id:'w', label:'周额度', current:true, planType:'pro', planLabel:'Pro', scopeLabel:'个人',
+       weeklyOnly:true, hasFiveHour:false, hasWeekly:true, resetsAt:null, remainingPercent:null,
+       weeklyResetsAt:2000020000, weeklyRemainingPercent:77, weeklyObservedAt:1999999999},
+      {id:'e', label:'周额度过期', planType:'pro', planLabel:'Pro', scopeLabel:'个人',
+       weeklyOnly:true, hasFiveHour:false, hasWeekly:true, resetsAt:null,
+       weeklyResetsAt:1999999990, weeklyRemainingPercent:40, weeklyObservedAt:1999999000},
+    ]});
+    const only = h.accountCards.get('w'), expired = h.accountCards.get('e');
+    assert.equal(only.track.classList.contains('account-weekly-only'), true);
+    assert.equal(only.track.classList.contains('account-cycle-unknown'), false, 'a weekly deadline is a real deadline');
+    assert.equal(only.rings['full-value'].style.strokeDasharray, '77.000 100');
+    assert.equal(only.rings['upper-value'].style.strokeDasharray, undefined, 'no split arc is drawn');
+    assert.equal(only.countdownRows[0].label.textContent, '7d');
+    assert.match(only.countdownRows[0].time.textContent, /^\d{2}:\d{2}:\d{2}$/);
+    assert.equal(only.countdownRows[1].row.hidden, true, 'there is no second window to show');
+    assert.equal(only.remaining.textContent, '周 77%');
+    assert.match(only.countdown.title, /只返回周额度/, 'hover explains why 5h is missing');
+    assert.doesNotMatch(only.countdown.title, /5h /);
+    // An expired week is the pending state of the whole ring, not a half of it.
+    assert.equal(expired.track.classList.contains('account-cycle-pending'), true);
+    assert.equal(expired.track.classList.contains('account-weekly-pending'), false);
+    assert.equal(expired.rings['full-value'].style.strokeDasharray, '0 100');
+  });
   test(`${platform}: accounts sort by time to reset, keep equal deadlines stable and put unknown times last`, () => {
     const h=harness(folder);
     const account=(id,resetsAt,current=false)=>({id,resetsAt,current,label:id,userEdited:true});
@@ -97,7 +132,7 @@ for (const folder of ['', 'macos']) {
     assert.deepEqual(h.nodes.get('account-list').children.map(card=>card.dataset.accountId),['due','current-later','soon','same-time','unknown','invalid']);
     assert.equal(h.accountCards.get('current-later'),entry);assert.equal(entry.input.value,'未完成的别名');assert.equal(entry.editor.hidden,false);
     assert.equal(h.accountCards.get('unknown').track.attributes['aria-valuenow'],undefined);
-    assert.equal(h.accountCards.get('unknown').cycle.textContent,'?');
+    assert.equal(h.accountCards.get('unknown').track.classList.contains('account-cycle-unknown'), true);
   });
   test(`${platform}: keyed refreshes preserve unfinished alias edits and only render names as text`, () => {
     const h = harness(folder), account = {id:'one',label:'<img src=x>',labelSource:'manual',userEdited:true,resetsAt:2000009000};
