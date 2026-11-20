@@ -148,6 +148,7 @@ footer button:hover:not(:disabled){background:var(--theme-pill-hover);color:var(
 /* Expected to refill: a faint dotted arc fills the segment instead of an empty
    one, so "waiting for sign-in" does not read as "no quota left". */
 .account-ring-ghost{display:none;fill:none;stroke:var(--account-remaining);stroke-width:1.15;stroke-linecap:butt;stroke-linejoin:round}
+.account-track .account-ring-ghost{stroke-width:1.15}
 .account-cycle-pending .account-ring-ghost-upper,.account-weekly-pending .account-ring-ghost-lower{display:block}
 .account-cycle-pending .account-ring-upper-value,.account-weekly-pending .account-ring-lower-value{opacity:0}
 .account-ring-full{display:none}
